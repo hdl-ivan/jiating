@@ -51,8 +51,16 @@
         }
     </script>
     <style>
-        html, body { background-color:#FBF2E6; }
-        body { font-family:'Inter','Noto Sans TC',sans-serif; color:#3A3330; -webkit-tap-highlight-color:transparent; overscroll-behavior:none; }
+        /* 讓 body 完全不可捲動：iOS Safari 的網址列伸縮會改變 100dvh，
+           若 body 可捲，整頁（含上下橫幅）就會跟著手指位移，導覽列也會卡在半途。
+           固定 body、把捲動權完全交給 #appMain，是唯一穩定的作法。 */
+        html, body {
+            background-color:#FBF2E6; height:100%; margin:0;
+            overflow:hidden; position:fixed; inset:0;
+            overscroll-behavior:none; touch-action:manipulation;
+        }
+        body { font-family:'Inter','Noto Sans TC',sans-serif; color:#3A3330; -webkit-tap-highlight-color:transparent; }
+        #appMain { -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
         /* 已加入主畫面時，整個底色改成 App 奶油色，狀態列區域才不會露出不同色 */
         @media (display-mode: standalone) { html, body { background-color:#FFF8F0; } }
         .hide-scrollbar::-webkit-scrollbar { display:none; }
@@ -74,6 +82,28 @@
         .swipe-bg { transition:background-color .15s linear; }
 
         .js-hide { display:none !important; }
+
+        /* 橫向時擋住主畫面（排除桌機大螢幕） */
+        #rotateGate { display:none; }
+        @media (orientation:landscape) and (max-height:560px) {
+            #rotateGate { display:flex; }
+            #appFrame  { display:none; }
+        }
+
+        /* 6. 觸覺感 UI：按下時輕微下沉 */
+        .tactile { transition:transform .09s ease, box-shadow .09s ease; }
+        .tactile:active { transform:translateY(2px); box-shadow:0 1px 4px rgba(160,130,100,.14) !important; }
+
+        /* 8. 記帳完成微互動：金幣飛向大頭貼 */
+        .coin { position:absolute; width:26px; height:26px; border-radius:9999px;
+                background:radial-gradient(circle at 32% 30%, #FFE9A8, #F8C850 60%, #E0A81E);
+                box-shadow:0 2px 8px rgba(224,168,30,.5); z-index:96; pointer-events:none;
+                display:flex; align-items:center; justify-content:center;
+                font-size:13px; font-weight:700; color:#8A6410; }
+
+        /* 新增後在明細高亮該筆 */
+        @keyframes newFlash { 0%{box-shadow:0 0 0 0 rgba(248,160,72,.65)} 100%{box-shadow:0 0 0 14px rgba(248,160,72,0)} }
+        .is-new > .swipe-inner { animation:newFlash 1.6s ease-out 2; border-color:#F8A048 !important; }
         @keyframes spin { to { transform:rotate(360deg); } }
         .spinner { animation:spin .8s linear infinite; }
         @keyframes pulseSoft { 0%,100%{opacity:.5} 50%{opacity:1} }
@@ -108,9 +138,16 @@
         }
     </style>
 </head>
-<body class="flex justify-center min-h-[100dvh] p-0 md:p-6 text-sm">
+<body class="flex justify-center h-full p-0 md:p-6 text-sm">
 
-<div class="w-full max-w-md bg-pastel-bg h-[100dvh] md:h-[880px] md:rounded-[44px] shadow-2xl flex flex-col overflow-hidden relative border-0 md:border-[10px] border-stone-800">
+<!-- 1. 直向鎖定：iOS 不支援 Screen Orientation API，只能用提示層擋住橫向 -->
+<div id="rotateGate" class="fixed inset-0 z-[200] bg-pastel-bg flex-col items-center justify-center text-center px-10 gap-4">
+    <img src="./av48.png" alt="" class="w-20 h-20 float">
+    <div class="font-bold text-stone-800">請把手機轉回直向</div>
+    <div class="text-xs text-pastel-muted leading-relaxed">家庭記帳為直向設計。<br>若轉回後仍是橫的，請從控制中心開啟「直向鎖定」。</div>
+</div>
+
+<div id="appFrame" class="w-full max-w-md bg-pastel-bg h-full md:h-[880px] md:rounded-[44px] shadow-2xl flex flex-col overflow-hidden relative border-0 md:border-[10px] border-stone-800">
 
     <div id="fakeStatusBar" class="pt-3 px-7 pb-1 flex justify-between items-center text-xs text-stone-500 font-medium select-none bg-pastel-bg z-20 shrink-0">
         <span class="font-bold text-stone-700 tracking-wider" id="clock">09:41</span>
@@ -166,7 +203,7 @@
         <button id="titleChip" onclick="openProfileModal()" class="flex-shrink-0 max-w-[92px] text-[10px] font-bold px-2.5 py-1.5 rounded-full bg-white border border-pastel-border text-pastel-muted shadow-sm truncate"></button>
     </header>
 
-    <main id="appMain" class="flex-1 overflow-y-auto px-5 py-4 hide-scrollbar pb-32 js-hide bg-[#FBF2E6]">
+    <main id="appMain" class="flex-1 min-h-0 overflow-y-auto px-5 py-4 hide-scrollbar pb-16 js-hide bg-[#FBF2E6]">
         <div id="dashboardView" class="space-y-4"></div>
         <div id="transactionsView" class="space-y-4 hidden"></div>
         <div id="addView" class="space-y-4 hidden"></div>
@@ -174,13 +211,13 @@
         <div id="settingsView" class="space-y-4 hidden"></div>
     </main>
 
-    <div id="toast" class="absolute left-0 right-0 bottom-28 z-[95] flex justify-center opacity-0 pointer-events-none transition-opacity duration-300"></div>
+    <div id="toast" class="absolute left-0 right-0 bottom-24 z-[95] flex justify-center opacity-0 pointer-events-none transition-opacity duration-300"></div>
 
-    <nav id="appNav" class="absolute bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-pastel-border px-6 pt-2.5 flex justify-between items-center z-30 shadow-[0_-10px_40px_rgba(160,130,100,0.06)] js-hide"
+    <nav id="appNav" class="shrink-0 relative bg-white/95 backdrop-blur-md border-t border-pastel-border px-6 pt-2.5 flex justify-between items-center z-30 shadow-[0_-10px_40px_rgba(160,130,100,0.06)] js-hide"
          style="padding-bottom:calc(0.625rem + env(safe-area-inset-bottom))">
         <button onclick="switchTab('dashboard')" id="navDashboard" class="flex flex-col items-center text-pastel-accent w-12 nav-btn"><i class="fa-solid fa-house-chimney text-lg mb-1"></i><span class="text-[10px] font-bold">首頁</span></button>
         <button onclick="switchTab('transactions')" id="navTransactions" class="flex flex-col items-center text-pastel-muted w-12 nav-btn"><i class="fa-solid fa-list-ul text-lg mb-1"></i><span class="text-[10px] font-bold">明細</span></button>
-        <button onclick="switchTab('add')" id="navAdd" aria-label="新增" class="relative -mt-10 nav-btn">
+        <button onclick="switchTab('add')" id="navAdd" aria-label="新增" class="relative -mt-10 nav-btn tactile">
             <div id="addBtnInner" class="w-16 h-16 bg-pastel-accent text-white rounded-full flex items-center justify-center shadow-soft border-[6px] border-[#FBF2E6] transition-all duration-300"><i class="fa-solid fa-plus text-3xl"></i></div>
         </button>
         <button onclick="switchTab('stats')" id="navStats" class="flex flex-col items-center text-pastel-muted w-12 nav-btn"><i class="fa-solid fa-chart-pie text-lg mb-1"></i><span class="text-[10px] font-bold">圖表</span></button>
@@ -210,7 +247,7 @@
        ========================================================== */
 
     const CONFIG = {
-        VERSION: 'v4.3.0',
+        VERSION: 'v4.4.0',
         // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
         API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         DEMO: false
@@ -224,6 +261,12 @@
     const currentYM = () => todayISO().slice(0, 7);
     const daysInYM = ym => new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0).getDate();
     const uid = () => 'tmp_' + Math.random().toString(36).slice(2, 10);
+    /* 後端寫入的 created_at 是台北時間、無時區字尾；前端若用 toISOString()（UTC）
+       會比後端小 8 小時，導致剛新增的那筆在排序時沉到同日其他紀錄下面。 */
+    const localStamp = () => {
+        const d = new Date();
+        return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+    };
 
     const AVATARS = ['av2', 'av4', 'av5', 'av12', 'av14', 'av20', 'av21', 'av37', 'av46', 'av48'];
     const EMOJI_AVATARS = ['🐱', '🐻', '🐰', '🦊', '🐼', '🐨', '🐸', '🐧', '🦉', '🐢', '🐔', '🦖'];
@@ -277,7 +320,7 @@ let addState = { mode: 'expense', expr: '0', cat: '', tag: '', nature: '', date:
     let pendingReceipt = null;
     let editingTxnId = null;
     let viewYM = currentYM();
-    let filters = { type: 'all', natures: [], cats: [], tags: [], min: '', max: '', q: '' };
+    let filters = { type: 'all', natures: [], cats: [], tags: [], min: '', max: '', q: '', allTime: false };
 
 /* 分類顏色：讓每個分類有自己的識別色，明細與圖表一致 */
 const FALLBACK_HEX = ['#F8A048', '#3090F8', '#40B868', '#F0A8B0', '#F8C850', '#88D8F8', '#A084E8', '#F05838'];
@@ -552,6 +595,31 @@ function hexA(hex, a) {
     function renderAll() { renderDashboard(); renderTransactions(); initAddForm(); renderStats(); renderSettings(); }
     function renderDataViews() { renderDashboard(); renderTransactions(); renderStats(); updateLevelDisplays(); checkNewAchievements(); }
 
+    /* ---------- 記帳完成微互動：金幣飛向大頭貼 ---------- */
+    function coinFly() {
+        const frame = document.getElementById('appFrame'), av = document.getElementById('userAvatar');
+        if (!frame || !av) return;
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        const fr = frame.getBoundingClientRect(), ar = av.getBoundingClientRect();
+        const tx = ar.left - fr.left + ar.width / 2 - 13, ty = ar.top - fr.top + ar.height / 2 - 13;
+        const sx = fr.width / 2 - 13, sy = fr.height * 0.52;
+        for (let i = 0; i < 5; i++) {
+            const c = document.createElement('div');
+            c.className = 'coin'; c.textContent = '$';
+            c.style.left = sx + (Math.random() * 40 - 20) + 'px';
+            c.style.top = sy + 'px';
+            frame.appendChild(c);
+            const dur = 620 + i * 70;
+            c.animate([
+                { transform: 'translate(0,0) scale(.5)', opacity: 0 },
+                { transform: `translate(${(tx - sx) * .35}px, ${-70 - i * 8}px) scale(1)`, opacity: 1, offset: .35 },
+                { transform: `translate(${tx - sx}px, ${ty - sy}px) scale(.35)`, opacity: 0 }
+            ], { duration: dur, easing: 'cubic-bezier(.35,.6,.3,1)', delay: i * 55 })
+                .onfinish = () => c.remove();
+        }
+        buzz(12);
+    }
+
     /* ---------- 成就解鎖慶祝 ---------- */
     function achKey() { return 'ach_' + AUTH.memberId; }
     function checkNewAchievements() {
@@ -647,6 +715,7 @@ function hexA(hex, a) {
         ['dashboardView', 'transactionsView', 'addView', 'statsView', 'settingsView'].forEach(v => document.getElementById(v).classList.add('hidden'));
         document.getElementById(tab + 'View').classList.remove('hidden');
         document.getElementById('appMain').scrollTop = 0;
+        if (tab === 'add') setTimeout(maybeAutoOpenDrawer, 220);
     }
 
     function switchViewMode(mode) {
@@ -930,7 +999,7 @@ function hexA(hex, a) {
        ========================================================== */
     async function optimisticAdd(txn, receipt, okMsg) {
         const local = {
-            txn_id: uid(), created_at: new Date().toISOString(), is_rollup: false,
+            txn_id: uid(), created_at: localStamp(), is_rollup: false, _new: true,
             status: '有效', parent_txn_id: '', recurring_rule_id: '', receipt_file_id: '',
             member_id: STATE.me.member_id, payer_id: STATE.me.member_id, related_id: '',
             _pending: true, ...txn
@@ -941,8 +1010,13 @@ function hexA(hex, a) {
         try {
             const r = await api.call('addTransaction', { txn, receipt });
             const i = STATE.transactions.findIndex(t => t.txn_id === local.txn_id);
-            if (i >= 0) STATE.transactions[i] = r.txn;
+            if (i >= 0) STATE.transactions[i] = { ...r.txn, _new: true };
             renderDataViews();
+            coinFly();                       // 寫入成功之後才播動畫，不會出現「慶祝了但其實失敗」
+            setTimeout(() => {
+                const x = STATE.transactions.find(t => t._new);
+                if (x) { delete x._new; renderTransactions(); }
+            }, 3600);
         } catch (e) {
             STATE.transactions = STATE.transactions.filter(t => t.txn_id !== local.txn_id);
             renderDataViews(); toast('儲存失敗：' + e.message, true);
@@ -976,11 +1050,12 @@ function hexA(hex, a) {
     }
     function scopedTxns(ym) {
         const meId = STATE.me?.member_id;
-        const rows = activeTxns().filter(t => inMonth(t.date, ym));
+        const rows = activeTxns().filter(t => !ym || inMonth(t.date, ym));
         return currentMode === 'personal' ? rows.filter(t => t.payer_id === meId) : rows.filter(t => FAMILY_NATURES.includes(t.nature));
     }
     function filteredTxns() {
-        let rows = scopedTxns(viewYM);
+        // 全期間模式：跨月搜尋，找「去年那台除濕機多少錢」不必先猜月份
+        let rows = filters.allTime ? scopedTxns(null) : scopedTxns(viewYM);
         if (filters.type === 'expense') rows = rows.filter(t => t.entry_type === '支出');
         if (filters.type === 'income') rows = rows.filter(t => t.entry_type === '收入');
         if (filters.natures.length) rows = rows.filter(t => filters.natures.includes(t.nature));
@@ -1054,7 +1129,9 @@ function hexA(hex, a) {
                 <h2 class="text-lg font-bold text-stone-800">${currentMode === 'personal' ? '我的明細' : '家庭公帳明細'}</h2>
                 <button onclick="refreshData()" aria-label="同步" class="text-stone-400 text-lg px-1"><i class="fa-solid fa-rotate"></i></button>
             </div>
-            ${monthNav()}
+            ${filters.allTime ? `<div class="flex items-center justify-between bg-pastel-accentLight border border-pastel-accent/40 rounded-tile px-4 py-2.5 text-xs font-bold text-pastel-accent">
+                <span><i class="fa-solid fa-infinity mr-1.5"></i>正在搜尋全部期間</span>
+                <button onclick="toggleAllTime()" class="underline">回到單月</button></div>` : monthNav()}
             <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card">
                 <div class="flex justify-between items-center mb-2">
                     <span class="text-xs font-bold text-stone-500">收支趨勢（月累計）</span>
@@ -1064,7 +1141,8 @@ function hexA(hex, a) {
             <div class="flex gap-2">
                 <div class="relative flex-1 field">
                     <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-pastel-muted text-xs"></i>
-                    <input id="txnSearch" oninput="onSearchInput()" value="${esc(filters.q)}" placeholder="搜尋備註、分類、帳戶" class="w-full bg-white border border-pastel-border rounded-full pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-pastel-accent shadow-sm">
+                    <input id="txnSearch" oninput="onSearchInput()" value="${esc(filters.q)}" placeholder="${filters.allTime ? '搜尋全部期間' : '搜尋本月備註、分類、帳戶'}" class="w-full bg-white border border-pastel-border rounded-full pl-10 pr-20 py-2.5 text-sm focus:outline-none focus:border-pastel-accent shadow-sm">
+                    <button onclick="toggleAllTime()" class="absolute right-1.5 top-1/2 -translate-y-1/2 px-2.5 py-1.5 rounded-full text-[10px] font-bold transition-all ${filters.allTime ? 'bg-pastel-accent text-white' : 'bg-pastel-bg text-pastel-muted border border-pastel-border'}">全期間</button>
                 </div>
                 <button onclick="openFilterSheet()" class="relative w-11 flex-shrink-0 bg-white border border-pastel-border rounded-full shadow-sm flex items-center justify-center text-stone-500">
                     <i class="fa-solid fa-sliders"></i>
@@ -1082,7 +1160,7 @@ function hexA(hex, a) {
         const isExp = t.entry_type === '支出' || t.entry_type === '注資';
         const isTr = t.entry_type === '轉帳';
         return `
-        <div class="swipe-wrap relative rounded-card overflow-hidden ${t._pending ? 'pending' : ''}" data-id="${esc(t.txn_id)}">
+        <div class="swipe-wrap relative rounded-card overflow-hidden ${t._pending ? 'pending' : ''} ${t._new ? 'is-new' : ''}" data-id="${esc(t.txn_id)}">
             <!-- 修正：底層改為整條滿版單一色塊，滑動時不會再出現中間斷色 -->
             <div class="swipe-bg absolute inset-0 rounded-card flex items-center justify-between px-6 text-white font-bold text-sm opacity-0 bg-pastel-blue">
                 <span class="sw-edit flex items-center gap-2"><i class="fa-solid fa-pen"></i>編輯</span>
@@ -1166,7 +1244,8 @@ function hexA(hex, a) {
         });
     }
 
-    function clearAllFilters() { filters = { type: 'all', natures: [], cats: [], tags: [], min: '', max: '', q: '' }; renderTransactions(); }
+    function clearAllFilters() { filters = { type: 'all', natures: [], cats: [], tags: [], min: '', max: '', q: '', allTime: false }; renderTransactions(); }
+    function toggleAllTime() { filters.allTime = !filters.allTime; buzz(); renderTransactions(); }
 
     let _searchTimer;
     function onSearchInput() {
@@ -1195,7 +1274,7 @@ function hexA(hex, a) {
     }
     function toggleFilter(key, val) { const a = filters[key], i = a.indexOf(val); if (i >= 0) a.splice(i, 1); else a.push(val); openFilterSheet(); }
     function setFilterType(v) { filters.type = v; openFilterSheet(); }
-    function resetFilters() { filters = { type: 'all', natures: [], cats: [], tags: [], min: '', max: '', q: filters.q }; openFilterSheet(); }
+    function resetFilters() { filters = { type: 'all', natures: [], cats: [], tags: [], min: '', max: '', q: filters.q, allTime: filters.allTime }; openFilterSheet(); }
     function applyFilters() {
         filters.min = document.getElementById('fMin').value;
         filters.max = document.getElementById('fMax').value;
@@ -1302,7 +1381,7 @@ function hexA(hex, a) {
     }
 
     function paintAmount() {
-        const d = document.getElementById('amtDisplay'), h = document.getElementById('amtHint');
+        const d = document.getElementById('kpAmt'), h = document.getElementById('kpHint');
         if (!d) return;
         const v = evalExpr(addState.expr);
         d.innerHTML = hasOp(addState.expr)
@@ -1312,24 +1391,15 @@ function hexA(hex, a) {
     }
 
     function setAddMode(m) {
+        buzz();
         addState.mode = m;
         addState.cat = '';
         initAddForm(true);
+        if (m !== 'transfer') setTimeout(openCatDrawer, 180);
     }
-    function pickCat(n) { buzz(); addState.cat = n; paintCatGrid(); }
     function pickTag(n) { buzz(); addState.tag = n; paintTagRow(); }
     function toggleMore() { addState.more = !addState.more; document.getElementById('moreBox').classList.toggle('hidden', !addState.more); document.getElementById('moreCaret').className = `fa-solid fa-chevron-${addState.more ? 'up' : 'down'} text-xs`; }
 
-    function paintCatGrid() {
-        const g = document.getElementById('catGrid'); if (!g) return;
-        g.querySelectorAll('[data-cat]').forEach(b => {
-            const on = b.dataset.cat === addState.cat, col = catColor(b.dataset.cat);
-            b.style.background = on ? col : hexA(col, .12);
-            b.style.color = on ? '#fff' : '#3A3330';
-            b.style.boxShadow = on ? `0 4px 14px ${hexA(col, .45)}` : 'none';
-            b.style.transform = on ? 'translateY(-2px)' : 'none';
-        });
-    }
     function paintTagRow() {
         const r = document.getElementById('tagRow'); if (!r) return;
         r.querySelectorAll('[data-tag]').forEach(b => {
@@ -1377,6 +1447,11 @@ function hexA(hex, a) {
     }
     function toggleRecurringBox() { document.getElementById('recurringBox').classList.toggle('hidden', !document.getElementById('isRecurring').checked); }
 
+    /* ==========================================================
+       新增流程（抽屜式）
+       點 + → 選收支類型 → 分類抽屜 → 數字鍵盤抽屜（金額與分類同框可見）
+              → 日期 → 備註 → 標籤 → 照片 → 重複性 → 費用歸屬
+       ========================================================== */
     function initAddForm(keepValues) {
         if (!keepValues) {
             addState = {
@@ -1390,10 +1465,15 @@ function hexA(hex, a) {
         }
         const isExp = addState.mode === 'expense', isTr = addState.mode === 'transfer';
         const group = isExp ? 'EXPENSE_CATEGORY' : 'INCOME_CATEGORY';
-        const cats = STATE.categories.filter(c => c.item_group === group);
-        if (!addState.cat && cats.length) addState.cat = PREF.get('cat_' + group, '') || cats[0].item_name;
+        const amt = evalExpr(addState.expr);
+        const col = isTr ? '#3090F8' : isExp ? '#F05838' : '#40B868';
 
-        const key = (k, label, cls) => `<button onclick="kp('${k}')" class="${cls || 'bg-white text-stone-800'} rounded-tile py-3.5 text-xl font-bold shadow-sm border border-pastel-border/70">${label}</button>`;
+        const rowBtn = (label, valueHtml, onclick) => `
+            <button onclick="${onclick}" class="w-full flex items-center justify-between gap-3 px-4 py-3.5 tactile text-left">
+                <span class="text-sm text-stone-600 flex-shrink-0">${label}</span>
+                <span class="flex items-center gap-2 min-w-0">
+                    <span class="text-sm font-bold text-stone-800 truncate">${valueHtml}</span>
+                    <i class="fa-solid fa-chevron-right text-[10px] text-pastel-muted flex-shrink-0"></i></span></button>`;
 
         document.getElementById('addView').innerHTML = `
             <div id="editBanner" class="${editingTxnId ? '' : 'hidden'} bg-pastel-blueLight border border-pastel-blue/30 text-pastel-blue rounded-tile p-3 text-xs font-bold flex justify-between items-center">
@@ -1401,62 +1481,63 @@ function hexA(hex, a) {
 
             <div class="flex bg-stone-200/40 p-1.5 rounded-tile w-full">
                 ${[['expense', '支出', 'text-pastel-red'], ['income', '收入', 'text-pastel-green'], ['transfer', '轉帳', 'text-pastel-blue']]
-                .map(([m, l, col]) => `<button onclick="setAddMode('${m}')" class="flex-1 py-2 rounded-xl text-sm font-bold transition-all ${addState.mode === m ? `bg-white ${col} shadow-sm` : 'text-pastel-muted'}">${l}</button>`).join('')}
+                .map(([m, l, c]) => `<button onclick="setAddMode('${m}')" class="flex-1 py-2 rounded-xl text-sm font-bold transition-all tactile ${addState.mode === m ? `bg-white ${c} shadow-sm` : 'text-pastel-muted'}">${l}</button>`).join('')}
             </div>
 
-            <div class="rounded-card p-5 shadow-md text-white" style="background:linear-gradient(135deg,${isTr ? '#3090F8,#2B7BD6' : isExp ? '#F8A048,#F0863A' : '#40B868,#35A25A'})">
-                <div class="text-[11px] font-bold opacity-80 mb-1">${isTr ? '轉帳金額' : isExp ? '支出金額' : '收入金額'}</div>
-                <div id="amtDisplay" class="text-5xl font-bold font-rounded tracking-tight leading-none break-all"></div>
-                <div id="amtHint" class="text-xs opacity-80 mt-2 h-4"></div>
-            </div>
+            <!-- 金額（點擊開鍵盤抽屜） -->
+            <button onclick="openKeypadDrawer()" class="w-full rounded-card p-5 shadow-md text-white text-left tactile"
+                    style="background:linear-gradient(135deg,${isTr ? '#3090F8,#2B7BD6' : isExp ? '#F8A048,#F0863A' : '#40B868,#35A25A'})">
+                <div class="flex justify-between items-center mb-1">
+                    <span class="text-[11px] font-bold opacity-85">${isTr ? '轉帳金額' : isExp ? '支出金額' : '收入金額'}</span>
+                    <span class="text-[10px] font-bold bg-white/25 px-2 py-1 rounded-md">點擊輸入 <i class="fa-solid fa-calculator ml-1"></i></span></div>
+                <div class="text-5xl font-bold font-rounded tracking-tight leading-none">
+                    <span class="num-sym text-2xl">$</span>${Number(amt).toLocaleString('en-US')}</div>
+            </button>
 
-            ${isTr ? `
-            <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-4">
-                <p class="text-[11px] text-pastel-muted">轉帳只記錄資金在帳戶間移動，<b>不會計入收支統計</b>。</p>
-                <div class="grid grid-cols-2 gap-3">
-                    <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">從</label>
-                        <select id="trFrom" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm truncate">
+            <div class="bg-white border border-pastel-border/60 rounded-card shadow-card divide-y divide-pastel-border/70 overflow-hidden">
+                ${isTr ? `
+                <div class="px-4 py-3.5 grid grid-cols-2 gap-3">
+                    <div class="field"><label class="block text-[11px] font-bold text-stone-500 mb-1.5">從</label>
+                        <select id="trFrom" class="w-full p-2.5 rounded-xl bg-pastel-bg border border-pastel-border text-sm truncate">
                             ${STATE.tags.map(t => `<option ${addState.from === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
-                    <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">到</label>
-                        <select id="trTo" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm truncate">
+                    <div class="field"><label class="block text-[11px] font-bold text-stone-500 mb-1.5">到</label>
+                        <select id="trTo" class="w-full p-2.5 rounded-xl bg-pastel-bg border border-pastel-border text-sm truncate">
                             ${STATE.tags.map(t => `<option ${addState.to === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
-                </div>
-            </div>` : `
-            <div id="catGrid" class="grid grid-cols-4 gap-2.5">
-                ${cats.map(c => `<button data-cat="${esc(c.item_name)}" onclick="pickCat('${esc(c.item_name)}')"
-                    class="rounded-tile py-3 px-1 flex flex-col items-center gap-1 transition-all duration-150">
-                    <span class="text-2xl leading-none">${esc(c.icon_emoji)}</span>
-                    <span class="text-[10px] font-bold leading-tight text-center truncate w-full px-0.5">${esc(c.item_name)}</span></button>`).join('')}
-                <button onclick="addItem('${group}')" class="rounded-tile py-3 px-1 flex flex-col items-center gap-1 border-2 border-dashed border-pastel-border text-pastel-muted">
-                    <span class="text-2xl leading-none">＋</span><span class="text-[10px] font-bold">新增</span></button>
-            </div>
+                </div>`
+                : rowBtn('分類', addState.cat
+                    ? `<span style="color:${catColor(addState.cat)}">${esc(catIcon(addState.cat))}</span> ${esc(addState.cat)}`
+                    : '<span class="text-pastel-muted font-normal">請選擇</span>', 'openCatDrawer()')}
 
-            <div id="tagRow" class="flex gap-2 overflow-x-auto hide-scrollbar pb-1">
-                ${STATE.tags.map(t => `<button data-tag="${esc(t.item_name)}" onclick="pickTag('${esc(t.item_name)}')"></button>`).join('')}
-            </div>`}
-
-            <input id="inpNote" type="text" value="${esc(addState.note)}" oninput="addState.note=this.value" placeholder="備註（選填）"
-                class="w-full p-3.5 rounded-tile bg-white border border-pastel-border text-stone-800 shadow-sm">
-
-            <button onclick="toggleMore()" class="w-full flex items-center justify-between px-4 py-3 bg-white/70 border border-pastel-border rounded-tile text-xs font-bold text-stone-600">
-                <span><i class="fa-solid fa-sliders mr-2 text-pastel-muted"></i>更多選項（日期 · 歸屬 · 單據 · 重複）</span>
-                <i id="moreCaret" class="fa-solid fa-chevron-${addState.more ? 'up' : 'down'} text-xs"></i></button>
-
-            <div id="moreBox" class="${addState.more ? '' : 'hidden'} bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-4">
-                <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">日期</label>
+                <div class="px-4 py-3 flex items-center justify-between gap-3">
+                    <span class="text-sm text-stone-600 flex-shrink-0">日期</span>
                     <input id="inpDate" type="date" value="${esc(addState.date)}" onchange="addState.date=this.value"
-                        class="w-full py-3 px-4 rounded-tile bg-pastel-bg border border-pastel-border text-stone-800 font-medium font-sans"></div>
-                <div id="advancedLogicContainer"></div>
+                        class="field flex-1 max-w-[190px] py-2 px-3 rounded-xl bg-pastel-bg border border-pastel-border text-sm font-bold text-stone-800 font-sans"></div>
+
+                <div class="px-4 py-3 flex items-center gap-3">
+                    <span class="text-sm text-stone-600 flex-shrink-0">備註</span>
+                    <input id="inpNote" type="text" value="${esc(addState.note)}" oninput="addState.note=this.value" placeholder="寫點什麼…"
+                        class="field flex-1 py-2 px-3 rounded-xl bg-pastel-bg border border-pastel-border text-sm text-right text-stone-800"></div>
+
+                <div class="px-4 py-3">
+                    <div class="text-sm text-stone-600 mb-2">標籤 / 帳戶</div>
+                    <div id="tagRow" class="flex gap-2 overflow-x-auto hide-scrollbar pb-1">
+                        ${STATE.tags.map(t => `<button data-tag="${esc(t.item_name)}" onclick="pickTag('${esc(t.item_name)}')"></button>`).join('')}
+                        <button onclick="addItem('PAYMENT_TAG')" class="flex-shrink-0 px-3.5 py-2 rounded-full text-xs font-bold border border-dashed border-pastel-border text-pastel-muted">＋</button>
+                    </div></div>
+
                 <input type="file" id="inpReceipt" accept="image/*" class="hidden" onchange="handleReceipt(event)">
-                <div id="receiptBox" onclick="document.getElementById('inpReceipt').click()" class="flex items-center justify-center gap-2 p-3.5 border-2 border-dashed border-pastel-border rounded-tile text-pastel-muted text-sm cursor-pointer">
-                    <i class="fa-solid fa-camera text-lg"></i><span class="font-bold">拍攝或上傳發票單據</span></div>
+                <button id="receiptBox" onclick="document.getElementById('inpReceipt').click()" class="w-full flex items-center justify-between px-4 py-3.5 tactile">
+                    <span class="text-sm text-stone-600">單據照片</span>
+                    <span class="flex items-center gap-2 text-sm ${pendingReceipt ? 'text-pastel-green font-bold' : 'text-pastel-muted'}">
+                        ${pendingReceipt ? '<i class="fa-solid fa-circle-check"></i> 已附加' : '<i class="fa-solid fa-camera"></i> 選填'}</span></button>
+
                 ${isTr || editingTxnId ? '' : `
-                <div>
-                    <label class="flex items-center gap-3 cursor-pointer">
-                        <div class="relative flex items-center">
+                <div class="px-4 py-3.5">
+                    <label class="flex items-center justify-between cursor-pointer">
+                        <span class="text-sm text-stone-600">設為重複性收支</span>
+                        <span class="relative flex items-center">
                             <input type="checkbox" id="isRecurring" onchange="toggleRecurringBox()" class="peer w-5 h-5 appearance-none border-2 border-pastel-border rounded checked:bg-pastel-accent checked:border-pastel-accent transition-all">
-                            <i class="fa-solid fa-check absolute text-white text-xs left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 peer-checked:opacity-100 pointer-events-none"></i></div>
-                        <span class="text-sm font-bold text-stone-700">設為重複性收支</span></label>
+                            <i class="fa-solid fa-check absolute text-white text-xs left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 peer-checked:opacity-100 pointer-events-none"></i></span></label>
                     <div id="recurringBox" class="hidden mt-3 p-4 bg-pastel-bg border border-pastel-border rounded-tile space-y-3">
                         <div class="grid grid-cols-2 gap-3">
                             <div class="field"><label class="block text-[11px] font-bold text-stone-600 mb-1">週期</label>
@@ -1467,24 +1548,83 @@ function hexA(hex, a) {
                                     <option>自動記帳</option><option>僅提醒</option></select></div></div>
                         <div class="field"><label class="block text-[11px] font-bold text-stone-600 mb-1">結束日期（可留空）</label>
                             <input id="recEnd" type="date" class="w-full py-2.5 px-3 rounded-xl bg-white border border-pastel-border text-sm"></div>
+                        <p class="text-[11px] text-pastel-muted">歸屬：${currentMode === 'family' ? '家庭公帳（全家可見）' : '個人（只有你看得到）'}</p>
                     </div>
                 </div>`}
             </div>
 
-            <div class="kp grid grid-cols-4 gap-2.5">
+            <div id="advancedLogicContainer"></div>
+            <button id="saveBtn" onclick="saveTransaction()" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-soft text-base tactile">${editingTxnId ? '更新紀錄' : '儲存紀錄'}</button>`;
+
+        if (!isTr) paintTagRow();
+        renderAddFormLogic();
+    }
+
+    /* 進入新增頁時自動彈出分類抽屜，少一次點擊 */
+    function maybeAutoOpenDrawer() {
+        if (currentTab !== 'add' || editingTxnId) return;
+        if (addState.mode === 'transfer') return;
+        if (evalExpr(addState.expr) > 0) return;
+        openCatDrawer();
+    }
+
+    function openCatDrawer() {
+        const group = addState.mode === 'income' ? 'INCOME_CATEGORY' : 'EXPENSE_CATEGORY';
+        const cats = STATE.categories.filter(c => c.item_group === group);
+        openSheet(`
+            <h3 class="text-lg font-bold text-stone-800 mb-1">選擇分類</h3>
+            <p class="text-xs text-pastel-muted mb-5">選好後會自動跳出金額鍵盤</p>
+            <div class="grid grid-cols-4 gap-2.5">
+                ${cats.map(c => {
+            const on = c.item_name === addState.cat, col = catColor(c.item_name);
+            return `<button onclick="chooseCat('${esc(c.item_name)}')" class="rounded-tile py-3 px-1 flex flex-col items-center gap-1 tactile transition-all"
+                        style="background:${on ? col : hexA(col, .12)};color:${on ? '#fff' : '#3A3330'};${on ? `box-shadow:0 4px 14px ${hexA(col, .45)}` : ''}">
+                        <span class="text-2xl leading-none">${esc(c.icon_emoji)}</span>
+                        <span class="text-[10px] font-bold leading-tight text-center truncate w-full px-0.5">${esc(c.item_name)}</span></button>`;
+        }).join('')}
+                <button onclick="addItem('${group}')" class="rounded-tile py-3 px-1 flex flex-col items-center gap-1 border-2 border-dashed border-pastel-border text-pastel-muted">
+                    <span class="text-2xl leading-none">＋</span><span class="text-[10px] font-bold">新增</span></button>
+            </div>`);
+    }
+
+    function chooseCat(name) {
+        buzz();
+        addState.cat = name;
+        closeSheet();
+        setTimeout(openKeypadDrawer, 260);
+    }
+
+    /* 鍵盤抽屜：金額與分類同框顯示，輸入時永遠看得到自己打了多少 */
+    function openKeypadDrawer() {
+        const isTr = addState.mode === 'transfer', isExp = addState.mode === 'expense';
+        const col = isTr ? '#3090F8' : isExp ? '#F05838' : '#40B868';
+        const key = (k, label, cls) => `<button onclick="kp('${k}')" class="${cls || 'bg-white text-stone-800'} rounded-tile py-4 text-xl font-bold shadow-sm border border-pastel-border/70 tactile">${label}</button>`;
+        openSheet(`
+            <div class="rounded-card p-4 mb-4 text-white" style="background:linear-gradient(135deg,${isTr ? '#3090F8,#2B7BD6' : isExp ? '#F8A048,#F0863A' : '#40B868,#35A25A'})">
+                <div class="flex justify-between items-center mb-1">
+                    <span class="text-[11px] font-bold opacity-85">${isTr ? '轉帳' : isExp ? '支出' : '收入'}${addState.cat ? ' · ' + esc(addState.cat) : ''}</span>
+                    ${addState.cat ? `<button onclick="closeSheet();setTimeout(openCatDrawer,240)" class="text-[10px] font-bold bg-white/25 px-2 py-1 rounded-md">換分類</button>` : ''}</div>
+                <div id="kpAmt" class="text-5xl font-bold font-rounded tracking-tight leading-none break-all"></div>
+                <div id="kpHint" class="text-xs opacity-85 mt-1.5 h-4"></div>
+            </div>
+            <div class="kp grid grid-cols-4 gap-2.5 mb-3">
                 ${key('7', '7')}${key('8', '8')}${key('9', '9')}${key('÷', '÷', 'bg-pastel-bg text-pastel-accent')}
                 ${key('4', '4')}${key('5', '5')}${key('6', '6')}${key('×', '×', 'bg-pastel-bg text-pastel-accent')}
                 ${key('1', '1')}${key('2', '2')}${key('3', '3')}${key('-', '−', 'bg-pastel-bg text-pastel-accent')}
                 ${key('.', '.')}${key('0', '0')}${key('del', '<i class="fa-solid fa-delete-left text-base"></i>', 'bg-pastel-bg text-stone-600')}${key('+', '+', 'bg-pastel-bg text-pastel-accent')}
             </div>
             <div class="flex gap-2.5">
-                <button onclick="kp('C')" class="w-20 py-4 bg-white border border-pastel-border text-stone-500 font-bold rounded-tile text-sm shadow-sm">清除</button>
-                <button id="saveBtn" onclick="saveTransaction()" class="flex-1 py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-soft text-base">${editingTxnId ? '更新紀錄' : '儲存紀錄'}</button>
-            </div>`;
-
-        if (!isTr) { paintCatGrid(); paintTagRow(); }
-        renderAddFormLogic();
+                <button onclick="kp('C')" class="w-20 py-4 bg-white border border-pastel-border text-stone-500 font-bold rounded-tile text-sm shadow-sm tactile">清除</button>
+                <button onclick="confirmAmount()" class="flex-1 py-4 text-white font-bold rounded-tile shadow-md text-base tactile" style="background:${col}">完成</button>
+            </div>`);
         paintAmount();
+    }
+
+    function confirmAmount() {
+        if (evalExpr(addState.expr) <= 0) { buzz(30); return toast('請輸入金額', true); }
+        addState.expr = String(evalExpr(addState.expr));
+        closeSheet(); buzz();
+        initAddForm(true);
     }
 
     function handleReceipt(e) {
@@ -1517,8 +1657,9 @@ function hexA(hex, a) {
 
     async function saveTransaction() {
         const amount = evalExpr(addState.expr);
-        if (!amount || amount <= 0) { buzz(30); return toast('請輸入正確金額', true); }
+        if (!amount || amount <= 0) { buzz(30); openKeypadDrawer(); return toast('請先輸入金額', true); }
         const isTr = addState.mode === 'transfer';
+        if (!isTr && !addState.cat) { buzz(30); openCatDrawer(); return toast('請先選擇分類', true); }
         if (isTr) {
             const from = document.getElementById('trFrom').value, to = document.getElementById('trTo').value;
             if (from === to) return toast('轉出與轉入帳戶不能相同', true);
@@ -1526,6 +1667,7 @@ function hexA(hex, a) {
             const note = addState.note || `${from} → ${to}`;
             initAddForm();
             switchTab('transactions'); buzz(14);
+            viewYM = addState.date.slice(0, 7);
             return optimisticAdd({
                 date: addState.date, entry_type: '轉帳', category: '', tag: from, amount, note,
                 nature: '純個人', related_id: to, member_id: STATE.me.member_id, payer_id: STATE.me.member_id
@@ -1555,7 +1697,8 @@ function hexA(hex, a) {
             tag: txn.tag, amount, note: txn.note, nature,
             freq: document.getElementById('recFreq').value,
             auto_mode: document.getElementById('recMode').value,
-            start_date: txn.date, end_date: document.getElementById('recEnd').value || ''
+            start_date: txn.date, end_date: document.getElementById('recEnd').value || '',
+            scope: currentMode === 'family' ? 'family' : 'personal'
         } : null;
 
         if (editingTxnId) {
@@ -1576,8 +1719,12 @@ function hexA(hex, a) {
             return;
         }
 
-        pendingReceipt = null; initAddForm(); switchTab('dashboard'); buzz(14);
+        pendingReceipt = null; initAddForm();
+        viewYM = txn.date.slice(0, 7);          // 跳到該筆所在月份，確保看得到
+        filters.q = ''; filters.type = 'all';
+        switchTab('transactions'); buzz(14);
         await optimisticAdd(txn, receipt);
+        document.getElementById('appMain').scrollTop = 0;
         if (rec) {
             try {
                 const r = await api.call('saveRule', { rule: rec, first_run_done: true });
@@ -1749,7 +1896,9 @@ function hexA(hex, a) {
                 <button class="text-stone-400 text-[10px] flex-shrink-0" onclick="archiveItem('${esc(c.item_name)}','${group}')"><i class="fa-solid fa-xmark"></i></button>
             </div>`).join('') : `<div class="col-span-2 text-xs text-pastel-muted">尚無項目</div>`;
 
-        const rules = STATE.rules.filter(r => r.status !== '刪除');
+        // 個人規則只有本人看得到；家庭規則全家可見
+        const rules = STATE.rules.filter(r => r.status !== '刪除' &&
+            (r.scope === 'family' || r.member_id === STATE.me?.member_id));
         const fam = STATE.members.filter(m => m.member_id !== 'family_pool' && m.status !== '停用');
 
         document.getElementById('settingsView').innerHTML = `
@@ -1808,7 +1957,9 @@ function hexA(hex, a) {
                             <div class="w-10 h-10 rounded-tile bg-white border border-pastel-border flex items-center justify-center text-lg flex-shrink-0">${esc(catIcon(r.category) || (r.entry_type === '收入' ? '💰' : '📺'))}</div>
                             <div class="min-w-0">
                                 <div class="font-bold text-stone-800 text-sm truncate">${esc(r.name)}${r.status === '停用' ? ' <span class="text-[9px] bg-stone-200 text-stone-500 px-1.5 py-0.5 rounded">已停用</span>' : ''}</div>
-                                <div class="text-[10px] text-pastel-muted mt-0.5 truncate">${esc(r.freq)} · ${esc(r.auto_mode)} · 下次 ${esc(r.next_run || '—')}</div></div></div>
+                                <div class="text-[10px] text-pastel-muted mt-0.5 truncate">
+                                    <span class="px-1.5 py-0.5 rounded ${r.scope === 'family' ? 'bg-pastel-blueLight text-pastel-blue' : 'bg-pastel-bg text-pastel-muted'} font-bold">${r.scope === 'family' ? '家庭' : '個人'}</span>
+                                    ${esc(r.freq)} · ${esc(r.auto_mode)} · 下次 ${esc(r.next_run || '—')}</div></div></div>
                         <div class="text-right flex-shrink-0 ml-2">
                             <div class="font-bold font-rounded text-sm ${r.entry_type === '收入' ? 'text-pastel-green' : 'text-stone-800'}">${fmt(r.amount)}</div>
                             <div class="flex gap-3 mt-1 justify-end">
@@ -1839,7 +1990,8 @@ function hexA(hex, a) {
                 <div class="font-bold text-sm text-stone-800 flex items-center gap-2"><i class="fa-solid fa-circle-info text-pastel-muted"></i> 關於</div>
                 <div class="flex justify-between text-xs text-pastel-muted"><span>版本</span><span class="font-mono">${esc(CONFIG.VERSION)}</span></div>
                 <div class="flex justify-between text-xs text-pastel-muted"><span>家庭</span><span>${esc(STATE.familyName)}</span></div>
-                <button onclick="refreshData()" class="w-full py-2.5 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border">立即同步資料</button>
+                <button onclick="exportCSV()" class="w-full py-2.5 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border tactile"><i class="fa-solid fa-file-csv mr-1.5"></i>匯出目前檢視的明細（CSV）</button>
+                <button onclick="refreshData()" class="w-full py-2.5 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border tactile">立即同步資料</button>
                 <button onclick="location.reload()" class="w-full py-2.5 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border">強制重新載入（更新版本）</button>
                 <button onclick="logout()" class="w-full py-2.5 bg-white text-pastel-red font-bold rounded-tile text-xs border border-pastel-red/30">登出</button>
             </div>`;
@@ -1881,9 +2033,15 @@ function hexA(hex, a) {
                         <input id="rStart" type="date" value="${esc(r?.start_date || todayISO())}" class="w-full py-3 px-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm"></div>
                     <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">結束（可留空）</label>
                         <input id="rEnd" type="date" value="${esc(r?.end_date || '')}" class="w-full py-3 px-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm"></div></div>
-                <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">費用歸屬</label>
-                    <select id="rNature" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
-                        ${['純個人', '家庭公帳', '家庭代墊'].map(n => `<option ${r && r.nature === n ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">費用歸屬</label>
+                        <select id="rNature" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
+                            ${['純個人', '家庭公帳', '家庭代墊'].map(n => `<option ${r && r.nature === n ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
+                    <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">誰看得到</label>
+                        <select id="rScope" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
+                            <option value="personal" ${(!r || r.scope !== 'family') ? 'selected' : ''}>只有我</option>
+                            <option value="family" ${r && r.scope === 'family' ? 'selected' : ''}>全家可見</option></select></div>
+                </div>
                 ${r ? `<label class="flex items-center gap-2 text-sm text-stone-700"><input type="checkbox" id="rPaused" ${r.status === '停用' ? 'checked' : ''} class="w-4 h-4"> 暫停此規則</label>` : ''}
                 <button onclick="saveRule('${esc(ruleId || '')}')" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm">${r ? '儲存變更' : '建立規則'}</button>
             </div>`);
@@ -1904,6 +2062,7 @@ function hexA(hex, a) {
             start_date: document.getElementById('rStart').value || todayISO(),
             end_date: document.getElementById('rEnd').value || '',
             nature: document.getElementById('rNature').value, note: document.getElementById('rName').value.trim(),
+            scope: document.getElementById('rScope')?.value || 'personal',
             status: document.getElementById('rPaused')?.checked ? '停用' : '啟用'
         };
         if (!rule.name) return toast('請輸入名稱', true);
@@ -1949,6 +2108,31 @@ function hexA(hex, a) {
         catch (e) { STATE.categories = bc; STATE.tags = bt; renderSettings(); initAddForm(); toast(e.message, true); }
     }
 
+    /* ---------- CSV 匯出 ---------- */
+    function exportCSV() {
+        const rows = filteredTxns();
+        if (!rows.length) return toast('目前沒有可匯出的紀錄', true);
+        const head = ['日期', '類型', '分類', '帳戶標籤', '金額', '備註', '費用歸屬', '記帳者'];
+        const cell = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+        const csv = '\uFEFF' + [head.map(cell).join(',')]     // BOM 讓 Excel 正確辨識中文
+            .concat(rows.map(t => [t.date, t.entry_type, t.category, t.tag, t.amount, t.note, t.nature, nameOf(t.member_id)].map(cell).join(',')))
+            .join('\r\n');
+        const name = `家庭記帳_${filters.allTime ? '全期間' : viewYM}_${currentMode === 'family' ? '家庭' : STATE.me?.nickname}.csv`;
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+
+        // iOS PWA 對 <a download> 支援差，優先用系統分享
+        const file = (typeof File !== 'undefined') ? new File([blob], name, { type: 'text/csv' }) : null;
+        if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+            navigator.share({ files: [file], title: name }).catch(() => { });
+            return;
+        }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = name; document.body.appendChild(a); a.click();
+        setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1200);
+        toast(`已匯出 ${rows.length} 筆`);
+    }
+
     /* ---------- DEMO ---------- */
     function DEMO_API(action) {
         const members = [
@@ -1984,6 +2168,7 @@ function hexA(hex, a) {
     if (window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches) {
         document.getElementById('fakeStatusBar').classList.add('js-hide');
     }
+    try { screen.orientation && screen.orientation.lock && screen.orientation.lock('portrait').catch(() => { }); } catch (e) { }
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => { });
     window.addEventListener('DOMContentLoaded', bootstrap);
     </script>
