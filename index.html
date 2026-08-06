@@ -81,7 +81,7 @@
         }
         #appMain { -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
         /* 導覽列背景延伸到 Home Indicator 底下，padding 只負責把內容推上來 */
-        #appNav { padding-bottom:calc(0.625rem + env(safe-area-inset-bottom, 0px)); }
+        #appNav { padding-bottom:calc(0.625rem + var(--sab, env(safe-area-inset-bottom, 0px))); }
         /* 已加入主畫面時，整個底色改成 App 奶油色，狀態列區域才不會露出不同色 */
         @media (display-mode: standalone) { html, body { background-color:#FFF8F0; } }
         .hide-scrollbar::-webkit-scrollbar { display:none; }
@@ -273,7 +273,7 @@
        ========================================================== */
 
     const CONFIG = {
-        VERSION: 'v4.4.2',
+        VERSION: 'v4.4.3',
         // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
         API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         DEMO: false
@@ -353,8 +353,11 @@ const FALLBACK_HEX = ['#F8A048', '#3090F8', '#40B868', '#F0A8B0', '#F8C850', '#8
 function catColor(name) {
     const c = STATE.categories.find(x => x.item_name === name) || STATE.tags.find(x => x.item_name === name);
     if (c && c.hex_color) return c.hex_color;
-    const i = STATE.categories.findIndex(x => x.item_name === name);
-    return FALLBACK_HEX[(i < 0 ? 0 : i) % FALLBACK_HEX.length];
+    // 沒設顏色的自訂項目（例如手動新增的「富邦-信用卡」）用名稱雜湊，
+    // 保證同名永遠同色、不同名盡量不同色
+    let h = 0;
+    for (let i = 0; i < String(name).length; i++) h = (h * 31 + String(name).charCodeAt(i)) >>> 0;
+    return FALLBACK_HEX[h % FALLBACK_HEX.length];
 }
 function hexA(hex, a) {
     const h = String(hex).replace('#', '');
@@ -1426,12 +1429,25 @@ function hexA(hex, a) {
     function pickTag(n) { buzz(); addState.tag = n; paintTagRow(); }
     function toggleMore() { addState.more = !addState.more; document.getElementById('moreBox').classList.toggle('hidden', !addState.more); document.getElementById('moreCaret').className = `fa-solid fa-chevron-${addState.more ? 'up' : 'down'} text-xs`; }
 
+    /* 修正：原本只更新 className、從未寫入文字，所以按鈕是一顆顆空色塊。
+       改為整列重繪，並帶上標籤名稱與識別色點。 */
     function paintTagRow() {
         const r = document.getElementById('tagRow'); if (!r) return;
-        r.querySelectorAll('[data-tag]').forEach(b => {
-            const on = b.dataset.tag === addState.tag;
-            b.className = `flex-shrink-0 px-3.5 py-2 rounded-full text-xs font-bold border transition-all ${on ? 'bg-stone-800 text-white border-stone-800' : 'bg-white text-stone-600 border-pastel-border'}`;
-        });
+        if (!STATE.tags.length) {
+            r.innerHTML = `<button onclick="addItem('PAYMENT_TAG')" class="flex-shrink-0 px-4 py-2 rounded-full text-xs font-bold border border-dashed border-pastel-border text-pastel-muted">＋ 先新增一個帳戶</button>`;
+            return;
+        }
+        r.innerHTML = STATE.tags.map(t => {
+            const on = t.item_name === addState.tag, col = catColor(t.item_name);
+            return `<button onclick="pickTag('${esc(t.item_name)}')"
+                class="flex-shrink-0 flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-bold border transition-all tactile ${on ? 'text-white border-transparent shadow-sm' : 'bg-white text-stone-700 border-pastel-border'}"
+                style="${on ? `background:${col}` : ''}">
+                <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${on ? 'rgba(255,255,255,.9)' : col}"></span>
+                <span class="whitespace-nowrap">${esc(t.item_name)}</span>
+                ${on ? '<i class="fa-solid fa-check text-[10px]"></i>' : ''}
+            </button>`;
+        }).join('') +
+            `<button onclick="addItem('PAYMENT_TAG')" class="flex-shrink-0 px-3.5 py-2 rounded-full text-xs font-bold border border-dashed border-pastel-border text-pastel-muted">＋</button>`;
     }
 
     function renderAddFormLogic(keepNature) {
@@ -1545,11 +1561,10 @@ function hexA(hex, a) {
                         class="field flex-1 py-2 px-3 rounded-xl bg-pastel-bg border border-pastel-border text-sm text-right text-stone-800"></div>
 
                 <div class="px-4 py-3">
-                    <div class="text-sm text-stone-600 mb-2">標籤 / 帳戶</div>
-                    <div id="tagRow" class="flex gap-2 overflow-x-auto hide-scrollbar pb-1">
-                        ${STATE.tags.map(t => `<button data-tag="${esc(t.item_name)}" onclick="pickTag('${esc(t.item_name)}')"></button>`).join('')}
-                        <button onclick="addItem('PAYMENT_TAG')" class="flex-shrink-0 px-3.5 py-2 rounded-full text-xs font-bold border border-dashed border-pastel-border text-pastel-muted">＋</button>
-                    </div></div>
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-sm text-stone-600">標籤 / 帳戶</span>
+                        <span class="text-xs font-bold ${addState.tag ? 'text-stone-800' : 'text-pastel-muted'}">${esc(addState.tag || '未選擇')}</span></div>
+                    <div id="tagRow" class="flex gap-2 overflow-x-auto hide-scrollbar pb-1"></div></div>
 
                 <input type="file" id="inpReceipt" accept="image/*" class="hidden" onchange="handleReceipt(event)">
                 <button id="receiptBox" onclick="document.getElementById('inpReceipt').click()" class="w-full flex items-center justify-between px-4 py-3.5 tactile">
@@ -1917,7 +1932,7 @@ function hexA(hex, a) {
        ========================================================== */
     function renderSettings() {
         const itemGrid = (list, group) => list.length ? list.map(c => `
-            <div class="p-2.5 bg-pastel-bg rounded-tile border border-pastel-border flex items-center gap-2 justify-between min-w-0">
+            <div class="p-2.5 rounded-tile border border-pastel-border flex items-center gap-2 justify-between min-w-0" style="background:${hexA(catColor(c.item_name), .1)}">
                 <div class="flex items-center gap-2 min-w-0"><span class="text-base">${esc(c.icon_emoji)}</span><span class="font-bold text-stone-800 truncate">${esc(c.item_name)}</span></div>
                 <button class="text-stone-400 text-[10px] flex-shrink-0" onclick="archiveItem('${esc(c.item_name)}','${group}')"><i class="fa-solid fa-xmark"></i></button>
             </div>`).join('') : `<div class="col-span-2 text-xs text-pastel-muted">尚無項目</div>`;
@@ -2219,9 +2234,13 @@ function hexA(hex, a) {
         const probe = document.createElement('div');
         probe.style.cssText = 'position:fixed;bottom:0;height:env(safe-area-inset-bottom,0px);width:0';
         document.body.appendChild(probe);
-        const sab = Math.round(probe.getBoundingClientRect().height);
-        document.documentElement.style.setProperty('--sab', sab + 'px');
+        let sab = Math.round(probe.getBoundingClientRect().height);
         probe.remove();
+        // iOS 偶爾在 standalone 下把 env(safe-area-inset-bottom) 回報成 0，
+        // 但機身其實有 Home Indicator。以「無實體 Home 鍵機型」為判準補上固定值。
+        const standalone = !!(window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches);
+        if (sab === 0 && standalone && window.innerHeight >= 780) sab = 20;
+        document.documentElement.style.setProperty('--sab', sab + 'px');
 
         syncFrameHeight();
         window.addEventListener('resize', syncFrameHeight);
@@ -2277,4 +2296,3 @@ function hexA(hex, a) {
 
 </body>
 </html>
- 
