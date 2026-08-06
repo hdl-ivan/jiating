@@ -51,16 +51,33 @@
         }
     </script>
     <style>
-        /* 讓 body 完全不可捲動：iOS Safari 的網址列伸縮會改變 100dvh，
-           若 body 可捲，整頁（含上下橫幅）就會跟著手指位移，導覽列也會卡在半途。
-           固定 body、把捲動權完全交給 #appMain，是唯一穩定的作法。 */
+        /* 版面錨定：不使用任何百分比高度。
+           iOS 的 position:fixed + height:100% 在工具列伸縮時解析出的值不等於實際可視高度，
+           底部會差一截；直接把外框釘在視窗四邊（inset:0）才會真正貼底。 */
         html, body {
-            background-color:#FBF2E6; height:100%; margin:0;
-            overflow:hidden; position:fixed; inset:0;
-            overscroll-behavior:none; touch-action:manipulation;
+            background-color:#FBF2E6; height:100%; margin:0; padding:0;
+            overflow:hidden; overscroll-behavior:none; touch-action:manipulation;
         }
         body { font-family:'Inter','Noto Sans TC',sans-serif; color:#3A3330; -webkit-tap-highlight-color:transparent; }
+
+        /* ID 選擇器優先權高於 Tailwind class，直接覆寫外框定位 */
+        #appFrame {
+            position:fixed; inset:0;
+            width:auto; max-width:none; height:auto;
+            border-radius:0; border:0;
+        }
+        /* 桌機恢復置中的手機外框 */
+        @media (min-width:768px) {
+            html, body { height:auto; overflow:auto; }
+            #appFrame {
+                position:relative; inset:auto; margin:0 auto;
+                width:100%; max-width:28rem; height:880px;
+                border-radius:44px; border-width:10px;
+            }
+        }
         #appMain { -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
+        /* 導覽列背景延伸到 Home Indicator 底下，padding 只負責把內容推上來 */
+        #appNav { padding-bottom:calc(0.625rem + env(safe-area-inset-bottom, 0px)); }
         /* 已加入主畫面時，整個底色改成 App 奶油色，狀態列區域才不會露出不同色 */
         @media (display-mode: standalone) { html, body { background-color:#FFF8F0; } }
         .hide-scrollbar::-webkit-scrollbar { display:none; }
@@ -138,7 +155,7 @@
         }
     </style>
 </head>
-<body class="flex justify-center h-full p-0 md:p-6 text-sm">
+<body class="flex justify-center p-0 md:p-6 text-sm">
 
 <!-- 1. 直向鎖定：iOS 不支援 Screen Orientation API，只能用提示層擋住橫向 -->
 <div id="rotateGate" class="fixed inset-0 z-[200] bg-pastel-bg flex-col items-center justify-center text-center px-10 gap-4">
@@ -213,8 +230,7 @@
 
     <div id="toast" class="absolute left-0 right-0 bottom-24 z-[95] flex justify-center opacity-0 pointer-events-none transition-opacity duration-300"></div>
 
-    <nav id="appNav" class="shrink-0 relative bg-white/95 backdrop-blur-md border-t border-pastel-border px-6 pt-2.5 flex justify-between items-center z-30 shadow-[0_-10px_40px_rgba(160,130,100,0.06)] js-hide"
-         style="padding-bottom:calc(0.625rem + env(safe-area-inset-bottom))">
+    <nav id="appNav" class="shrink-0 relative bg-white border-t border-pastel-border px-6 pt-2.5 flex justify-between items-center z-30 shadow-[0_-10px_40px_rgba(160,130,100,0.06)] js-hide">
         <button onclick="switchTab('dashboard')" id="navDashboard" class="flex flex-col items-center text-pastel-accent w-12 nav-btn"><i class="fa-solid fa-house-chimney text-lg mb-1"></i><span class="text-[10px] font-bold">首頁</span></button>
         <button onclick="switchTab('transactions')" id="navTransactions" class="flex flex-col items-center text-pastel-muted w-12 nav-btn"><i class="fa-solid fa-list-ul text-lg mb-1"></i><span class="text-[10px] font-bold">明細</span></button>
         <button onclick="switchTab('add')" id="navAdd" aria-label="新增" class="relative -mt-10 nav-btn tactile">
@@ -247,7 +263,7 @@
        ========================================================== */
 
     const CONFIG = {
-        VERSION: 'v4.4.0',
+        VERSION: 'v4.4.1',
         // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
         API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         DEMO: false
