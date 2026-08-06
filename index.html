@@ -60,17 +60,21 @@
         }
         body { font-family:'Inter','Noto Sans TC',sans-serif; color:#3A3330; -webkit-tap-highlight-color:transparent; }
 
-        /* ID 選擇器優先權高於 Tailwind class，直接覆寫外框定位 */
+        /* ID 選擇器優先權高於 Tailwind class，直接覆寫外框定位。
+           高度不用 inset:0 也不用 dvh —— iOS 對這兩者的解析在標準列／安全區存在時
+           不見得等於使用者實際看到的高度。改由 JS 量測 visualViewport 寫入 --appH，
+           這是唯一保證與螢幕所見一致的來源。 */
         #appFrame {
-            position:fixed; inset:0;
-            width:auto; max-width:none; height:auto;
+            position:fixed; top:0; left:0; right:0; bottom:auto;
+            width:auto; max-width:none;
+            height:var(--appH, 100dvh);
             border-radius:0; border:0;
         }
         /* 桌機恢復置中的手機外框 */
         @media (min-width:768px) {
             html, body { height:auto; overflow:auto; }
             #appFrame {
-                position:relative; inset:auto; margin:0 auto;
+                position:relative; top:auto; left:auto; right:auto; margin:0 auto;
                 width:100%; max-width:28rem; height:880px;
                 border-radius:44px; border-width:10px;
             }
@@ -228,6 +232,12 @@
         <div id="settingsView" class="space-y-4 hidden"></div>
     </main>
 
+    <div id="updateBar" class="js-hide absolute left-0 right-0 top-0 z-[99] px-4 pt-2">
+        <button onclick="applyUpdate()" class="w-full flex items-center justify-center gap-2 py-3 rounded-tile bg-stone-800 text-white text-xs font-bold shadow-lg tactile">
+            <i class="fa-solid fa-arrow-rotate-right"></i> 有新版本可用，點此更新
+        </button>
+    </div>
+
     <div id="toast" class="absolute left-0 right-0 bottom-24 z-[95] flex justify-center opacity-0 pointer-events-none transition-opacity duration-300"></div>
 
     <nav id="appNav" class="shrink-0 relative bg-white border-t border-pastel-border px-6 pt-2.5 flex justify-between items-center z-30 shadow-[0_-10px_40px_rgba(160,130,100,0.06)] js-hide">
@@ -263,7 +273,7 @@
        ========================================================== */
 
     const CONFIG = {
-        VERSION: 'v4.4.1',
+        VERSION: 'v4.4.2',
         // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
         API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         DEMO: false
@@ -2006,6 +2016,8 @@ function hexA(hex, a) {
                 <div class="font-bold text-sm text-stone-800 flex items-center gap-2"><i class="fa-solid fa-circle-info text-pastel-muted"></i> 關於</div>
                 <div class="flex justify-between text-xs text-pastel-muted"><span>版本</span><span class="font-mono">${esc(CONFIG.VERSION)}</span></div>
                 <div class="flex justify-between text-xs text-pastel-muted"><span>家庭</span><span>${esc(STATE.familyName)}</span></div>
+                <div class="flex justify-between text-xs text-pastel-muted"><span>版面診斷</span>
+                    <span class="font-mono text-[10px]">${LAYOUT.used || '?'} / in${LAYOUT.innerH || '?'} / vv${LAYOUT.visualH ?? '-'} / sab${(LAYOUT.safeBottom || '?')} / ${LAYOUT.standalone ? 'PWA' : 'WEB'}</span></div>
                 <button onclick="exportCSV()" class="w-full py-2.5 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border tactile"><i class="fa-solid fa-file-csv mr-1.5"></i>匯出目前檢視的明細（CSV）</button>
                 <button onclick="refreshData()" class="w-full py-2.5 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border tactile">立即同步資料</button>
                 <button onclick="location.reload()" class="w-full py-2.5 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border">強制重新載入（更新版本）</button>
@@ -2180,13 +2192,87 @@ function hexA(hex, a) {
         return Promise.resolve({ familyName: '示範家庭', members, categories, tags, transactions, rules, budgets: [], poolInitial: 65000, generated: 0 });
     }
 
+    /* ==========================================================
+       版面高度：唯一可靠的來源是 visualViewport / innerHeight
+       ========================================================== */
+    let LAYOUT = {};
+    function syncFrameHeight() {
+        if (window.innerWidth >= 768) {                 // 桌機交回 CSS 處理
+            document.documentElement.style.removeProperty('--appH');
+            return;
+        }
+        const vv = window.visualViewport;
+        // 鍵盤彈出時 visualViewport 會縮小；此時改用 innerHeight，避免導覽列被頂上來
+        const kbOpen = vv && (window.innerHeight - vv.height) > 120;
+        const h = Math.round(kbOpen ? window.innerHeight : (vv ? vv.height : window.innerHeight));
+        document.documentElement.style.setProperty('--appH', h + 'px');
+        LAYOUT = {
+            innerH: window.innerHeight,
+            visualH: vv ? Math.round(vv.height) : null,
+            used: h,
+            standalone: !!(window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches),
+            safeBottom: getComputedStyle(document.documentElement).getPropertyValue('--sab').trim() || '?'
+        };
+    }
+    function bindLayout() {
+        // 讀出安全區數值供診斷用
+        const probe = document.createElement('div');
+        probe.style.cssText = 'position:fixed;bottom:0;height:env(safe-area-inset-bottom,0px);width:0';
+        document.body.appendChild(probe);
+        const sab = Math.round(probe.getBoundingClientRect().height);
+        document.documentElement.style.setProperty('--sab', sab + 'px');
+        probe.remove();
+
+        syncFrameHeight();
+        window.addEventListener('resize', syncFrameHeight);
+        window.addEventListener('orientationchange', () => setTimeout(syncFrameHeight, 260));
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', syncFrameHeight);
+            window.visualViewport.addEventListener('scroll', syncFrameHeight);
+        }
+    }
+
+    /* ==========================================================
+       自動更新：偵測到新版就跳橫幅，不必再手動刪圖示重加
+       ========================================================== */
+    let swReg = null, reloadedOnce = false;
+    function showUpdateBar() { document.getElementById('updateBar').classList.remove('js-hide'); }
+    function applyUpdate() {
+        document.getElementById('updateBar').classList.add('js-hide');
+        toast('更新中…');
+        if (swReg && swReg.waiting) swReg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        setTimeout(() => location.reload(), 600);
+    }
+    function initServiceWorker() {
+        if (!('serviceWorker' in navigator)) return;
+        navigator.serviceWorker.register('./sw.js').then(reg => {
+            swReg = reg;
+            if (reg.waiting) showUpdateBar();
+            reg.addEventListener('updatefound', () => {
+                const nw = reg.installing;
+                if (!nw) return;
+                nw.addEventListener('statechange', () => {
+                    if (nw.state === 'installed' && navigator.serviceWorker.controller) showUpdateBar();
+                });
+            });
+            setInterval(() => reg.update().catch(() => { }), 30 * 60 * 1000);   // 每 30 分鐘查一次
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) reg.update().catch(() => { });
+            });
+        }).catch(() => { });
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+            if (reloadedOnce) return; reloadedOnce = true;
+            location.reload();
+        });
+    }
+
     /* ---------- 啟動 ---------- */
     if (window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches) {
         document.getElementById('fakeStatusBar').classList.add('js-hide');
     }
     try { screen.orientation && screen.orientation.lock && screen.orientation.lock('portrait').catch(() => { }); } catch (e) { }
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => { });
-    window.addEventListener('DOMContentLoaded', bootstrap);
+    initServiceWorker();
+    window.addEventListener('DOMContentLoaded', () => { bindLayout(); bootstrap(); });
     </script>
 
 </body>
