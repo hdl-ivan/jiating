@@ -65,11 +65,21 @@
            不見得等於使用者實際看到的高度。改由 JS 量測 visualViewport 寫入 --appH，
            這是唯一保證與螢幕所見一致的來源。 */
         #appFrame {
-            position:fixed; top:0; left:0; right:0; bottom:0;
-            width:auto; max-width:none;
+            position:fixed; inset:0;
+            width:100%; max-width:none;
             height:var(--appH, 100dvh);
             border-radius:0; border:0;
             display:flex; flex-direction:column;
+        }
+
+        /* ── 手機：導覽列不再依賴外框的 flex 計算，直接釘在「視窗」底邊 ──
+           先前三個版本都是想辦法讓外框高度正確、再讓 flex 把 nav 推到底。
+           只要外框高度有一點誤差，nav 就會懸空。改成 fixed 之後，
+           不論外框算成多高，nav 永遠貼在螢幕最底。 */
+        @media (max-width:767px) {
+            #appNav   { position:fixed; left:0; right:0; bottom:0; }
+            #appMain  { padding-bottom:var(--navH, 92px); }
+            #toast    { position:fixed; left:0; right:0; bottom:calc(var(--navH, 92px) + 14px); }
         }
         /* 桌機恢復置中的手機外框 */
         @media (min-width:768px) {
@@ -170,7 +180,7 @@
     <div class="text-xs text-pastel-muted leading-relaxed">家庭記帳為直向設計。<br>若轉回後仍是橫的，請從控制中心開啟「直向鎖定」。</div>
 </div>
 
-<div id="appFrame" class="w-full max-w-md bg-pastel-bg h-full md:h-[880px] md:rounded-[44px] shadow-2xl flex flex-col overflow-hidden relative border-0 md:border-[10px] border-stone-800">
+<div id="appFrame" class="w-full max-w-md bg-pastel-bg md:h-[880px] md:rounded-[44px] shadow-2xl flex flex-col overflow-hidden relative border-0 md:border-[10px] border-stone-800">
 
     <div id="fakeStatusBar" class="pt-3 px-7 pb-1 flex justify-between items-center text-xs text-stone-500 font-medium select-none bg-pastel-bg z-20 shrink-0">
         <span class="font-bold text-stone-700 tracking-wider" id="clock">09:41</span>
@@ -226,7 +236,7 @@
         <button id="titleChip" onclick="openProfileModal()" class="flex-shrink-0 max-w-[92px] text-[10px] font-bold px-2.5 py-1.5 rounded-full bg-white border border-pastel-border text-pastel-muted shadow-sm truncate"></button>
     </header>
 
-    <main id="appMain" class="flex-1 min-h-0 flex-shrink overflow-y-auto px-5 py-4 hide-scrollbar pb-6 js-hide bg-[#FBF2E6]">
+    <main id="appMain" class="flex-1 min-h-0 flex-shrink overflow-y-auto px-5 py-4 hide-scrollbar js-hide bg-[#FBF2E6]">
         <div id="dashboardView" class="space-y-4"></div>
         <div id="transactionsView" class="space-y-4 hidden"></div>
         <div id="addView" class="space-y-4 hidden"></div>
@@ -275,7 +285,7 @@
        ========================================================== */
 
     const CONFIG = {
-        VERSION: 'v4.4.4',
+        VERSION: 'v4.4.5',
         // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
         API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         DEMO: false
@@ -621,6 +631,7 @@ function hexA(hex, a) {
         document.getElementById('appMain').classList.remove('js-hide');
         document.getElementById('appNav').classList.remove('js-hide');
         renderAll(); updateLevelDisplays();
+        requestAnimationFrame(() => { syncFrameHeight(); requestAnimationFrame(syncFrameHeight); });
     }
 
     function renderAll() { renderDashboard(); renderTransactions(); initAddForm(); renderStats(); renderSettings(); }
@@ -2033,8 +2044,12 @@ function hexA(hex, a) {
                 <div class="font-bold text-sm text-stone-800 flex items-center gap-2"><i class="fa-solid fa-circle-info text-pastel-muted"></i> 關於</div>
                 <div class="flex justify-between text-xs text-pastel-muted"><span>版本</span><span class="font-mono">${esc(CONFIG.VERSION)}</span></div>
                 <div class="flex justify-between text-xs text-pastel-muted"><span>家庭</span><span>${esc(STATE.familyName)}</span></div>
-                <div class="flex justify-between text-xs text-pastel-muted"><span>版面診斷</span>
-                    <span class="font-mono text-[10px]">${LAYOUT.used || '?'} / in${LAYOUT.innerH || '?'} / vv${LAYOUT.visualH ?? '-'} / sab${(LAYOUT.safeBottom || '?')} / ${LAYOUT.standalone ? 'PWA' : 'WEB'}</span></div>
+                <div class="text-xs text-pastel-muted"><div class="mb-1">版面診斷</div>
+                    <div class="font-mono text-[10px] leading-relaxed bg-pastel-bg rounded-lg p-2 break-all">
+                        appH=${LAYOUT.used ?? '?'} in=${LAYOUT.innerH ?? '?'} vv=${LAYOUT.visualH ?? '-'} scr=${LAYOUT.screenH ?? '-'}<br>
+                        frameBtm=${LAYOUT.frameBottom ?? '-'} navBtm=${LAYOUT.navBottom ?? '-'} navH=${LAYOUT.navH ?? '-'}<br>
+                        sab=${LAYOUT.safeBottom || '?'} ${LAYOUT.standalone ? 'PWA' : 'WEB'} dpr=${window.devicePixelRatio}
+                    </div></div>
                 <button onclick="exportCSV()" class="w-full py-2.5 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border tactile"><i class="fa-solid fa-file-csv mr-1.5"></i>匯出目前檢視的明細（CSV）</button>
                 <button onclick="refreshData()" class="w-full py-2.5 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border tactile">立即同步資料</button>
                 <button onclick="location.reload()" class="w-full py-2.5 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border">強制重新載入（更新版本）</button>
@@ -2223,10 +2238,20 @@ function hexA(hex, a) {
         const kbOpen = vv && (window.innerHeight - vv.height) > 120;
         const h = Math.round(kbOpen ? window.innerHeight : (vv ? vv.height : window.innerHeight));
         document.documentElement.style.setProperty('--appH', h + 'px');
+        // 導覽列是 fixed，主內容區必須自己讓出等高的底部空間
+        const nav = document.getElementById('appNav');
+        const navH = nav && !nav.classList.contains('js-hide') ? Math.round(nav.getBoundingClientRect().height) : 0;
+        if (navH > 0) document.documentElement.style.setProperty('--navH', navH + 'px');
+
+        const frame = document.getElementById('appFrame');
         LAYOUT = {
             innerH: window.innerHeight,
             visualH: vv ? Math.round(vv.height) : null,
             used: h,
+            screenH: window.screen ? Math.round(window.screen.height) : null,
+            frameBottom: frame ? Math.round(frame.getBoundingClientRect().bottom) : null,
+            navBottom: nav ? Math.round(nav.getBoundingClientRect().bottom) : null,
+            navH: navH,
             standalone: !!(window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches),
             safeBottom: getComputedStyle(document.documentElement).getPropertyValue('--sab').trim() || '?'
         };
