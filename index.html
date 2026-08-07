@@ -55,7 +55,7 @@
            iOS 的 position:fixed + height:100% 在工具列伸縮時解析出的值不等於實際可視高度，
            底部會差一截；直接把外框釘在視窗四邊（inset:0）才會真正貼底。 */
         html, body {
-            background-color:#FBF2E6; height:100%; margin:0; padding:0;
+            background-color:#FFFFFF; height:100%; margin:0; padding:0;
             overflow:hidden; overscroll-behavior:none; touch-action:manipulation;
         }
         body { font-family:'Inter','Noto Sans TC',sans-serif; color:#3A3330; -webkit-tap-highlight-color:transparent; }
@@ -65,6 +65,7 @@
            不見得等於使用者實際看到的高度。改由 JS 量測 visualViewport 寫入 --appH，
            這是唯一保證與螢幕所見一致的來源。 */
         #appFrame {
+            background-color:#FBF2E6;
             position:fixed; inset:0;
             width:100%; max-width:none;
             /* iOS PWA 三個高度來源（innerHeight / visualViewport / 100dvh）
