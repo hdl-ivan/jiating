@@ -241,7 +241,7 @@
             <img src="./av5.png" alt="" class="w-24 h-24 mx-auto mb-2 float">
             <div class="relative inline-block max-w-[280px]">
                 <div class="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rotate-45 bg-white border-l border-t border-pastel-border"></div>
-                <p id="gateSpeech" class="bg-white border border-pastel-border rounded-2xl px-4 py-2.5 text-sm font-bold text-stone-700 shadow-card">
+                <p id="gateSpeech" class="bg-white border border-pastel-border rounded-tile px-4 py-2.5 text-sm font-bold text-stone-700 shadow-card">
                     請輸入 8 位家庭代碼，跟家人連線吧！</p>
             </div>
         </div>
@@ -342,7 +342,7 @@
        ========================================================== */
 
     const CONFIG = {
-        VERSION: 'v4.7.0',
+        VERSION: 'v4.8.0',
         // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
         API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         DEMO: false
@@ -384,9 +384,6 @@
         if (group === 'INCOME_CATEGORY') return 'fa-sack-dollar';
         if (group === 'PAYMENT_TAG') return 'fa-credit-card';
         return 'fa-tag';
-    }
-    function iconEl(v, cls, group) {
-        return `<i class="fa-solid ${esc(normIcon(v, group))} ${cls || ''}"></i>`;
     }
 
     /* 新增分類時可選的圖示（精選 54 個，涵蓋常見記帳情境） */
@@ -435,7 +432,7 @@
         }
     };
 
-    let STATE = { familyName: '', members: [], categories: [], tags: [], transactions: [], rules: [], budgets: [], intents: [], me: null, poolInitial: 0 };
+    let STATE = { familyName: '', members: [], categories: [], tags: [], transactions: [], rules: [], budgets: [], intents: [], goals: [], me: null, poolInitial: 0 };
 
 /* 記住上次選擇：零記帳習慣的人，每次重選帳戶與歸屬是最容易讓人放棄的摩擦 */
 const PREF = {
@@ -605,7 +602,7 @@ function hexA(hex, a) {
     /* ---------- 「僅提醒」的重複性收支：到期待確認清單 ---------- */
     function dueReminders() {
         const t = todayISO(), meId = STATE.me?.member_id;
-        return STATE.rules.filter(r => r.status === '啟用' && r.auto_mode === '僅提醒' &&
+        return (STATE.rules || []).filter(r => r.status === '啟用' && r.auto_mode === '僅提醒' &&
             r.next_run && String(r.next_run) <= t &&
             (r.scope === 'family' ? currentMode === 'family' : r.member_id === meId) &&
             (!r.end_date || String(r.next_run) <= String(r.end_date)));
@@ -675,7 +672,7 @@ function hexA(hex, a) {
         const i = getLevelInfo(STATE.me.streak_days);
         el.className = (isModal
             ? 'w-24 h-24 rounded-full border-[4px] flex items-center justify-center text-5xl overflow-hidden shadow-md transition-all duration-500'
-            : 'w-12 h-12 rounded-full border-[3px] flex items-center justify-center text-[22px] overflow-hidden shadow-sm transition-all duration-500') + ` ${i.border} ${i.bg}`;
+            : 'w-12 h-12 rounded-full border-[3px] flex items-center justify-center text-xl overflow-hidden shadow-sm transition-all duration-500') + ` ${i.border} ${i.bg}`;
         el.innerHTML = avatarInner(STATE.me.avatar_emoji);
         if (badge) {
             badge.className = (isModal
@@ -709,7 +706,7 @@ function hexA(hex, a) {
        計算層
        ========================================================== */
     const FAMILY_NATURES = ['家庭公帳', '家庭代墊', '公帳注資'];
-    function activeTxns() { return STATE.transactions.filter(t => t.status !== '作廢' && t.status !== '已修訂' && !t.is_rollup); }
+    function activeTxns() { return (STATE.transactions || []).filter(t => t.status !== '作廢' && t.status !== '已修訂' && !t.is_rollup); }
     function inMonth(d, ym) { return String(d).slice(0, 7) === ym; }
     function nameOf(id) { const m = STATE.members.find(x => x.member_id === id); return m ? m.nickname : id; }
     function catIcon(name) {
@@ -746,7 +743,7 @@ function hexA(hex, a) {
                 if (!mine) return;
                 const remaining = mine.amount - paidFor(src.txn_id, meId);
                 if (remaining <= 0.01) return;
-                const intent = STATE.intents.find(i => i.parent_txn_id === src.txn_id && i.member_id === meId);
+                const intent = (STATE.intents || []).find(i => i.parent_txn_id === src.txn_id && i.member_id === meId);
                 out.push({
                     itemType: src.nature === '家庭代墊' ? 'pool' : 'private',
                     srcId: src.txn_id, payerId: src.payer_id, payerName: nameOf(src.payer_id),
@@ -770,6 +767,61 @@ function hexA(hex, a) {
                 });
             }));
         return out.sort((a, b) => b.date.localeCompare(a.date));
+    }
+
+    /* ==========================================================
+       Saving Jar
+       劃撥儲蓄不是支出，錢沒有離開，只是被標記為「保留」。
+       因此它不進損益與現金流，只用來推算保留額度。
+       ========================================================== */
+    const NON_PL_TYPES = ['轉帳', '劃撥儲蓄'];      // 一律不進收支統計
+    function activeGoals(scope) {
+        // 後端若尚未部署新版就不會回傳 goals，這裡必須容錯，否則整個首頁會崩潰
+        return (STATE.goals || []).filter(g => g.status === '進行中' &&
+            (scope ? g.scope === scope : true) &&
+            (g.scope === 'family' || g.owner_id === STATE.me?.member_id));
+    }
+    function goalById(id) { return (STATE.goals || []).find(g => g.goal_id === id); }
+
+    /** 這個目標所有劃撥紀錄（正數＝存入，負數＝提取／結案釋出） */
+    function goalDeposits(goalId) {
+        return activeTxns().filter(t => t.entry_type === '劃撥儲蓄' && t.related_id === goalId);
+    }
+    function goalSaved(goalId) {
+        return goalDeposits(goalId).reduce((a, t) =>
+            a + (t.settle_member_id === 'RELEASE' ? -Number(t.amount) : Number(t.amount)), 0);
+    }
+    /** 貼了這個目標標籤的實際花費 */
+    function goalSpent(goalId) {
+        const g = goalById(goalId); if (!g) return 0;
+        return activeTxns().filter(t => t.entry_type === '支出' && t.tag === g.project_tag)
+            .reduce((a, t) => a + Number(t.amount), 0);
+    }
+    /** 有效保留額：隨著貼標籤的花費同步遞減，永遠不會是負數。
+        這樣旅程進行中「可支配現金」就不會出現嚇人的負值，也不必靠提醒補救。 */
+    function goalReserved(goalId) {
+        return Math.max(0, goalSaved(goalId) - goalSpent(goalId));
+    }
+    function totalReserved() {
+        return activeGoals().reduce((a, g) => a + goalReserved(g.goal_id), 0);
+    }
+
+    /* 籌碼：同一天同一目標只產生一枚，避免拆成多筆刷數量。
+       單次金額 ≥ 目標的 10% 是金幣，其餘是銀幣（同日多筆取當日最大單筆判定）。 */
+    function goalCoins(goalId) {
+        const g = goalById(goalId); if (!g) return [];
+        const byDay = {};
+        goalDeposits(goalId).filter(t => t.settle_member_id !== 'RELEASE').forEach(t => {
+            const k = `${t.date}|${t.payer_id}`;
+            const amt = Number(t.amount) || 0;
+            if (!byDay[k]) byDay[k] = { date: t.date, member_id: t.payer_id, total: 0, max: 0 };
+            byDay[k].total += amt;
+            byDay[k].max = Math.max(byDay[k].max, amt);
+        });
+        const gold = g.target_amount * 0.1;
+        return Object.values(byDay)
+            .sort((a, b) => a.date.localeCompare(b.date))
+            .map(c => ({ ...c, kind: c.max >= gold ? 'gold' : 'silver' }));
     }
 
     function computeSummary(mode, ym) {
@@ -796,6 +848,8 @@ function hexA(hex, a) {
                 }
             });
             s.cashBalance += Number(STATE.me?.initial_balance) || 0;
+            s.reserved = totalReserved();
+            s.available = s.cashBalance - s.reserved;     // 可支配 = 現金 − 尚未用掉的保留額
             // 還款扣減：公帳撥款與成員直接還款都算（舊資料只有前者，行為不變）
             rows.filter(t => t.entry_type === '還款' && t.related_id === meId)
                 .forEach(t => s.poolOwesMe -= Number(t.amount) || 0);
@@ -894,6 +948,7 @@ function hexA(hex, a) {
             AUTH.familyCode = code;
             const d = await api.call('listMembers');
             STATE.members = d.members; STATE.familyName = d.familyName;
+            normalizeState();
             renderMemberPicker();
             document.getElementById('gateStep1').classList.add('hidden');
             document.getElementById('gateStep2').classList.remove('hidden');
@@ -929,12 +984,22 @@ function hexA(hex, a) {
         }
     }
 
+    /* 統一正規化：只要有任何一個陣列欄位是 undefined（例如後端尚未部署新版），
+       整個 App 就會在渲染時崩潰。與其在 17 個取用點各加防護，
+       不如在資料進入的唯一入口一次補齊。 */
+    const STATE_ARRAYS = ['members', 'categories', 'tags', 'transactions', 'rules', 'budgets', 'intents', 'goals'];
+    function normalizeState() {
+        STATE_ARRAYS.forEach(k => { if (!Array.isArray(STATE[k])) STATE[k] = []; });
+        STATE.poolInitial = Number(STATE.poolInitial) || 0;
+    }
+
     async function loadAll() {
         const d = await api.call('bootstrap');
         Object.assign(STATE, {
             familyName: d.familyName, members: d.members, categories: d.categories,
-            tags: d.tags, transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], poolInitial: d.poolInitial
+            tags: d.tags, transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], goals: d.goals || [], poolInitial: d.poolInitial
         });
+        normalizeState();
         STATE.me = STATE.members.find(m => m.member_id === AUTH.memberId);
         if (!STATE.me) throw new Error('找不到此成員，請重新選擇');
         if (d.generated > 0) setTimeout(() => toast(`已自動補記 ${d.generated} 筆重複性收支`), 800);
@@ -1026,7 +1091,8 @@ function hexA(hex, a) {
     async function refreshData() {
         try {
             const d = await api.call('bootstrap');
-            Object.assign(STATE, { transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], categories: d.categories, tags: d.tags, members: d.members });
+            Object.assign(STATE, { transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], goals: d.goals || [], categories: d.categories, tags: d.tags, members: d.members });
+            normalizeState();
             STATE.me = STATE.members.find(m => m.member_id === AUTH.memberId) || STATE.me;
             renderDataViews(); renderSettings(); toast('已同步');
         } catch (e) { toast('同步失敗：' + e.message, true); }
@@ -1103,8 +1169,6 @@ function hexA(hex, a) {
     /* ==========================================================
        Dashboard
        ========================================================== */
-    const PIE_BG = ['bg-pastel-accent', 'bg-pastel-blue', 'bg-pastel-green', 'bg-pastel-pink', 'bg-pastel-yellow'];
-    const PIE_HEX = ['#F8A048', '#3090F8', '#40B868', '#F0A8B0', '#F8C850'];
 
     function pieHtml(byCategory, total) {
         if (!total) return `<div class="flex flex-col items-center py-6 gap-2"><img src="./av46.png" alt="" class="w-14 h-14 opacity-70"><span class="text-xs text-pastel-muted">本月尚無支出紀錄</span></div>`;
@@ -1120,7 +1184,7 @@ function hexA(hex, a) {
             const a = `<path pathLength="100" stroke-dasharray="${p.toFixed(2)} ${(100 - p).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" stroke-width="5" stroke-linecap="butt" stroke="${col}" fill="none" d="${FULL}" />`;
             off += p; return a;
         }).join('');
-        return `<div class="flex items-center gap-5">
+        return `<div class="flex items-center gap-4">
             <div class="relative w-24 h-24 flex-shrink-0 flex items-center justify-center">
                 <svg class="w-full h-full transform -rotate-90" viewBox="-1.6 -1.6 39.2 39.2">
                     <path pathLength="100" stroke-width="5" stroke="#F3E7D8" fill="none" d="${FULL}" />${arcs}
@@ -1165,8 +1229,9 @@ function hexA(hex, a) {
                     <div class="flex justify-between items-center text-xs mb-3 pb-2 border-b border-pastel-border">
                         <span class="font-bold text-stone-600"><i class="fa-solid fa-wallet text-pastel-accent mr-1"></i> 現金與公帳代墊</span></div>
                     <div class="grid grid-cols-2 gap-3 text-center">
-                        <div class="bg-pastel-bg p-3 rounded-tile min-w-0"><div class="text-xs text-pastel-muted mb-1">口袋現金</div>
-                            <div class="font-bold text-stone-800 text-lg font-rounded truncate">${fmt(s.cashBalance)}</div></div>
+                        <div class="bg-pastel-bg p-3 rounded-tile min-w-0"><div class="text-xs text-pastel-muted mb-1">${s.reserved > 0 ? '可支配現金' : '口袋現金'}</div>
+                            <div class="font-bold text-stone-800 text-lg font-rounded truncate">${fmt(s.reserved > 0 ? s.available : s.cashBalance)}</div>
+                            ${s.reserved > 0 ? `<div class="text-[10px] text-pastel-muted mt-0.5 truncate">現金 ${fmt(s.cashBalance)}・保留 ${fmt(s.reserved)}</div>` : ''}</div>
                         <div class="bg-pastel-greenLight border border-pastel-green/20 p-3 rounded-tile min-w-0"><div class="text-xs text-pastel-green mb-1">公帳欠我</div>
                             <div class="font-bold text-pastel-green text-lg font-rounded truncate">+${fmt(s.poolOwesMe)}</div></div>
                     </div>
@@ -1181,6 +1246,7 @@ function hexA(hex, a) {
                 <div class="flex justify-between items-center px-5 py-3.5 bg-stone-800 text-white rounded-tile shadow-md">
                     <span class="text-sm font-medium">實際淨資產</span>
                     <span class="text-lg font-bold font-rounded tracking-wide">${fmt(net)}</span></div>
+                ${jarSection()}
                 <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card">
                     <div class="flex justify-between items-center mb-4"><span class="text-sm font-bold text-stone-800">開銷占比</span>
                         <span class="text-xs text-pastel-muted bg-pastel-bg px-2.5 py-1 rounded-full">本月</span></div>
@@ -1203,6 +1269,7 @@ function hexA(hex, a) {
                     <div><div class="text-xs text-stone-400 mb-1">公帳資金餘額</div>
                         <div class="text-3xl font-bold text-white font-rounded tracking-wide">${fmt(s.poolBalance)}</div></div>
                 </div>
+                ${jarSection()}
                 <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card">
                     <div class="flex justify-between items-center mb-4"><span class="text-sm font-bold text-stone-800">公帳開銷占比</span>
                         <span class="text-xs text-pastel-muted bg-pastel-bg px-2.5 py-1 rounded-full">本月</span></div>
@@ -1242,7 +1309,7 @@ function hexA(hex, a) {
         return [scope === 'family' ? 'family' : STATE.me?.member_id, scope, 'DEFAULT', category || ''].join('|');
     }
     function budgetFor(scope, category) {
-        const b = STATE.budgets.find(x => x.budget_id === budgetKey(scope, category));
+        const b = (STATE.budgets || []).find(x => x.budget_id === budgetKey(scope, category));
         return b ? Number(b.amount) || 0 : 0;
     }
     /* 角色情緒狀態機。動畫只給「真的需要注意」的狀態，
@@ -1298,11 +1365,11 @@ function hexA(hex, a) {
     }
 
     function categoryBudgets(s) {
-        const set = STATE.budgets.filter(b => b.scope === currentMode && b.category &&
+        const set = (STATE.budgets || []).filter(b => b.scope === currentMode && b.category &&
             b.budget_id === budgetKey(currentMode, b.category));
         if (!set.length) return '';
         const spent = Object.fromEntries(s.byCategory);
-        return `<div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-3.5">
+        return `<div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-4">
             <div class="flex justify-between items-center">
                 <span class="text-sm font-bold text-stone-800">分類預算</span>
                 <button onclick="openBudgetSheet()" class="text-xs font-bold text-pastel-accent">調整</button></div>
@@ -1522,11 +1589,11 @@ function hexA(hex, a) {
 
     /* 家庭模式：公帳待沖銷（路徑 B 的核銷區） */
     function intentCard() {
-        if (!STATE.intents.length) return '';
+        if (!(STATE.intents || []).length) return '';
         return `<div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-3">
             <div class="text-sm font-bold text-stone-800"><i class="fa-solid fa-building-columns text-pastel-blue mr-1.5"></i>待公帳撥款沖銷</div>
             <p class="text-[11px] text-pastel-muted">成員已標記「由公帳月結」的分攤，確認撥款後才會寫入實際交易。</p>
-            ${STATE.intents.map(i => {
+            ${(STATE.intents || []).map(i => {
                 const src = STATE.transactions.find(t => t.txn_id === i.parent_txn_id);
                 return `<div class="bg-pastel-bg rounded-tile p-3 border border-pastel-border flex justify-between items-center gap-2">
                     <div class="min-w-0">
@@ -1540,7 +1607,7 @@ function hexA(hex, a) {
         </div>`;
     }
     async function settleIntent(id) {
-        const it = STATE.intents.find(i => i.intent_id === id); if (!it) return;
+        const it = (STATE.intents || []).find(i => i.intent_id === id); if (!it) return;
         if (!confirm(`確認由公帳撥款 ${fmt(it.amount)} 給 ${nameOf(it.payer_id)}？`)) return;
         try {
             const res = await api.call('settleIntent', { intent_id: id });
@@ -1549,6 +1616,243 @@ function hexA(hex, a) {
             else STATE.intents = STATE.intents.filter(i => i.intent_id !== id);
             renderDataViews(); toast('已撥款結清');
         } catch (e) { toast(e.message, true); }
+    }
+
+    /* ---------- 存錢罐 UI ---------- */
+    function coinSvg(c, i) {
+        const m = STATE.members.find(x => x.member_id === c.member_id);
+        const av = m?.avatar_emoji || 'av5';
+        const isGold = c.kind === 'gold';
+        const ring = isGold ? '#E0A81E' : '#9AA4AD';
+        const face = isGold ? 'radial-gradient(circle at 32% 28%,#FFE9A8,#F8C850 62%,#DFA71C)'
+                            : 'radial-gradient(circle at 32% 28%,#F4F7F9,#CBD3DA 62%,#9AA4AD)';
+        const inner = String(av).startsWith('av')
+            ? `<img src="./${esc(av)}.png" alt="" class="w-full h-full object-cover rounded-full">`
+            : `<i class="fa-solid ${esc(isFA(av) ? av : 'fa-user')} text-[9px]" style="color:${ring}"></i>`;
+        return `<div class="relative w-7 h-7 rounded-full flex items-center justify-center shadow-sm flex-shrink-0"
+             style="background:${face};border:1.5px solid ${ring}" title="${esc(c.date)} ${fmt(c.total)}">
+            <div class="w-4 h-4 rounded-full overflow-hidden flex items-center justify-center bg-white/70">${inner}</div></div>`;
+    }
+
+    function jarCard(g) {
+        const saved = goalSaved(g.goal_id), spent = goalSpent(g.goal_id), reserved = goalReserved(g.goal_id);
+        const pct = g.target_amount ? Math.min(saved / g.target_amount * 100, 100) : 0;
+        const coins = goalCoins(g.goal_id);
+        const gold = coins.filter(c => c.kind === 'gold').length;
+        const done = saved >= g.target_amount;
+        const shown = coins.slice(-14);
+        return `<div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-4">
+            <div class="flex items-start gap-4">
+                <!-- 罐子：填滿高度＝已存比例 -->
+                <div class="relative w-16 h-20 flex-shrink-0">
+                    <svg viewBox="0 0 60 76" class="w-full h-full">
+                        <rect x="18" y="2" width="24" height="7" rx="2.5" fill="#E7D9C6"/>
+                        <path d="M10 12 h40 a6 6 0 0 1 6 6 v46 a8 8 0 0 1 -8 8 h-36 a8 8 0 0 1 -8 -8 v-46 a6 6 0 0 1 6 -6 z" fill="#F3E7D8" opacity=".55"/>
+                        <clipPath id="jc${esc(g.goal_id)}">
+                            <path d="M10 12 h40 a6 6 0 0 1 6 6 v46 a8 8 0 0 1 -8 8 h-36 a8 8 0 0 1 -8 -8 v-46 a6 6 0 0 1 6 -6 z"/></clipPath>
+                        <rect clip-path="url(#jc${esc(g.goal_id)})" x="4" y="${(70 - 58 * pct / 100).toFixed(1)}" width="52" height="70" fill="${done ? '#F8C850' : '#F8A048'}" opacity=".85"/>
+                        <path d="M10 12 h40 a6 6 0 0 1 6 6 v46 a8 8 0 0 1 -8 8 h-36 a8 8 0 0 1 -8 -8 v-46 a6 6 0 0 1 6 -6 z" fill="none" stroke="#E7D9C6" stroke-width="2.5"/>
+                    </svg>
+                    ${done ? '<i class="fa-solid fa-crown fa-beat absolute -top-1 -right-1 text-pastel-yellow"></i>' : ''}
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                            <div class="font-bold text-stone-800 text-sm truncate"><i class="fa-solid ${esc(g.icon || 'fa-piggy-bank')} mr-1.5 text-pastel-accent"></i>${esc(g.name)}</div>
+                            <div class="text-[11px] text-pastel-muted mt-0.5">${esc(g.scope === 'family' ? '家庭共同目標' : '個人目標')} ・ 建立者 ${esc(nameOf(g.owner_id))}</div>
+                        </div>
+                        <button onclick="openGoalSheet('${esc(g.goal_id)}')" class="text-pastel-muted text-xs px-1 flex-shrink-0"><i class="fa-solid fa-ellipsis"></i></button>
+                    </div>
+                    <div class="mt-2 text-2xl font-bold font-rounded text-stone-800"><span class="num-sym text-base">$</span>${Number(saved).toLocaleString('en-US')}</div>
+                    <div class="text-[11px] text-pastel-muted">目標 ${fmt(g.target_amount)}${spent > 0 ? ` ・ 已花用 ${fmt(spent)}` : ''}</div>
+                    <div class="w-full bg-pastel-bg rounded-full h-2 mt-2 overflow-hidden border border-pastel-border">
+                        <div class="h-2 rounded-full transition-all duration-700" style="width:${pct}%;background:${done ? '#F8C850' : '#F8A048'}"></div></div>
+                </div>
+            </div>
+
+            <div>
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-[11px] font-bold text-stone-600">投入籌碼 ${coins.length} 枚${gold ? ` ・ 金幣 ${gold}` : ''}</span>
+                    <span class="text-[10px] text-pastel-muted">每天每罐一枚，不比金額</span></div>
+                <div id="coins-${esc(g.goal_id)}" class="flex flex-wrap gap-1.5 min-h-[28px]">
+                    ${coins.length ? shown.map(coinSvg).join('') + (coins.length > shown.length ? `<span class="text-[10px] text-pastel-muted self-center ml-1">+${coins.length - shown.length}</span>` : '')
+                : '<span class="text-[11px] text-pastel-muted">還沒有籌碼，投第一枚吧</span>'}
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+                <button onclick="openDeposit('${esc(g.goal_id)}')" class="py-3 bg-pastel-accent text-white font-bold rounded-tile text-sm tactile"><i class="fa-solid fa-coins mr-1.5"></i>存入劃撥</button>
+                <button onclick="openCloseGoal('${esc(g.goal_id)}')" class="py-3 bg-pastel-bg border border-pastel-border text-stone-600 font-bold rounded-tile text-sm tactile">${done ? '達成結案' : '歸銷結案'}</button>
+            </div>
+            ${reserved > 0 && spent > 0 ? `<p class="text-[10px] text-pastel-muted">保留額 ${fmt(reserved)}（已隨貼標花費自動遞減）</p>` : ''}
+        </div>`;
+    }
+
+    function jarSection() {
+        const list = activeGoals();
+        const head = `<div class="flex justify-between items-center">
+            <h3 class="text-sm font-bold text-stone-800 ml-1"><i class="fa-solid fa-piggy-bank text-pastel-accent mr-1.5"></i>存錢罐</h3>
+            <button onclick="openGoalSheet()" class="text-xs font-bold text-pastel-accent">新增目標</button></div>`;
+        if (!list.length) return `${head}
+            <button onclick="openGoalSheet()" class="w-full text-left bg-white border border-dashed border-pastel-accent/50 rounded-card p-5 shadow-card flex items-center gap-4 tactile">
+                <img src="./av2.png" alt="" class="w-12 h-12 flex-shrink-0">
+                <div class="min-w-0"><div class="font-bold text-sm text-stone-800">建立第一個存錢目標</div>
+                <div class="text-xs text-pastel-muted mt-0.5">每次存入都會投一枚印著你頭像的籌碼</div></div>
+                <i class="fa-solid fa-chevron-right text-pastel-accent ml-auto"></i></button>`;
+        return head + list.map(jarCard).join('');
+    }
+
+    const GOAL_ICONS = ['fa-piggy-bank', 'fa-plane', 'fa-house', 'fa-car', 'fa-mobile-screen', 'fa-graduation-cap',
+        'fa-heart', 'fa-camera', 'fa-laptop', 'fa-ring', 'fa-gift', 'fa-umbrella-beach'];
+    let _goalDraft = {};
+    function openGoalSheet(id) {
+        const g = id ? goalById(id) : null;
+        const mine = !g || !g.owner_id || g.owner_id === STATE.me?.member_id;
+        _goalDraft = g ? { ...g } : { name: '', icon: 'fa-piggy-bank', target_amount: '', scope: currentMode === 'family' ? 'family' : 'personal', note: '' };
+        openSheet(`
+            <h3 class="text-lg font-bold text-stone-800 mb-1">${g ? '編輯目標' : '新增存錢目標'}</h3>
+            <p class="text-xs text-pastel-muted mb-5">${g ? (mine ? '' : '只有建立者可以修改') : '例如「日本旅遊 $60,000」「換手機 $20,000」'}</p>
+            <div class="space-y-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-14 h-14 rounded-tile flex items-center justify-center text-2xl flex-shrink-0"
+                         style="background:${hexA('#F8A048', .16)};color:#F8A048"><i class="fa-solid ${esc(_goalDraft.icon)}"></i></div>
+                    <input id="glName" value="${esc(_goalDraft.name)}" ${mine ? '' : 'disabled'} placeholder="目標名稱"
+                        class="field flex-1 w-full p-3.5 rounded-tile bg-pastel-bg border border-pastel-border text-stone-800"></div>
+                <div class="grid grid-cols-6 gap-2">
+                    ${GOAL_ICONS.map(ic => `<button onclick="pickGoalIcon('${ic}')" ${mine ? '' : 'disabled'}
+                        class="aspect-square rounded-xl flex items-center justify-center border tactile ${_goalDraft.icon === ic ? 'bg-pastel-accent text-white border-pastel-accent' : 'bg-pastel-bg text-stone-600 border-pastel-border'}">
+                        <i class="fa-solid ${ic}"></i></button>`).join('')}
+                </div>
+                <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">目標金額</label>
+                    <input id="glAmt" type="number" inputmode="numeric" ${mine ? '' : 'disabled'} value="${esc(_goalDraft.target_amount)}"
+                        class="w-full p-3.5 rounded-tile bg-pastel-accentLight border-2 border-pastel-accent/40 text-stone-800 font-bold text-lg font-rounded"></div>
+                ${g ? '' : `<div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">誰看得到</label>
+                    <select id="glScope" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
+                        <option value="personal" ${_goalDraft.scope === 'personal' ? 'selected' : ''}>只有我</option>
+                        <option value="family" ${_goalDraft.scope === 'family' ? 'selected' : ''}>全家共同目標</option></select></div>`}
+                ${g ? `<div class="text-[11px] text-pastel-muted bg-pastel-bg rounded-tile p-3">
+                    記帳時選擇標籤「${esc(g.project_tag)}」的支出，會自動從這個罐子的保留額扣抵。</div>` : ''}
+                ${mine ? `<button onclick="saveGoal('${esc(id || '')}')" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile">${g ? '儲存變更' : '建立目標'}</button>` : ''}
+                ${g && mine ? `<button onclick="deleteGoal('${esc(id)}')" class="w-full py-3 bg-white border border-pastel-red/30 text-pastel-red font-bold rounded-tile text-xs tactile">刪除這個目標</button>` : ''}
+            </div>`);
+    }
+    function pickGoalIcon(ic) {
+        _goalDraft.icon = ic;
+        _goalDraft.name = document.getElementById('glName')?.value || _goalDraft.name;
+        _goalDraft.target_amount = document.getElementById('glAmt')?.value || _goalDraft.target_amount;
+        openGoalSheet(_goalDraft.goal_id);
+    }
+    async function saveGoal(id) {
+        const goal = {
+            goal_id: id || '', name: (document.getElementById('glName').value || '').trim(),
+            icon: _goalDraft.icon, target_amount: Number(document.getElementById('glAmt').value),
+            scope: document.getElementById('glScope')?.value || _goalDraft.scope
+        };
+        if (!goal.name) { buzz(30); return toast('請輸入名稱', true); }
+        if (!goal.target_amount || goal.target_amount <= 0) { buzz(30); return toast('請輸入目標金額', true); }
+        closeSheet();
+        try {
+            const r2 = await api.call('saveGoal', { goal });
+            const i = STATE.goals.findIndex(x => x.goal_id === r2.goal.goal_id);
+            if (i >= 0) STATE.goals[i] = r2.goal; else STATE.goals.push(r2.goal);
+            renderDashboard(); initAddForm(true); toast(id ? '已儲存' : '目標已建立');
+        } catch (e) { toast(e.message, true); }
+    }
+    async function deleteGoal(id) {
+        if (!confirm('確定刪除這個目標？已投入的劃撥紀錄會保留，但保留額會釋放。')) return;
+        const bak = [...STATE.goals];
+        STATE.goals = STATE.goals.filter(g => g.goal_id !== id);
+        closeSheet(); renderDashboard(); toast('已刪除');
+        try { await api.call('deleteGoal', { goal_id: id }); }
+        catch (e) { STATE.goals = bak; renderDashboard(); toast(e.message, true); }
+    }
+
+    /* ---------- 存入劃撥 ---------- */
+    function openDeposit(id) {
+        const g = goalById(id); if (!g) return;
+        const saved = goalSaved(id), left = Math.max(g.target_amount - saved, 0);
+        const gold = Math.round(g.target_amount * 0.1);
+        openSheet(`
+            <h3 class="text-lg font-bold text-stone-800 mb-1">存入「${esc(g.name)}」</h3>
+            <p class="text-xs text-pastel-muted mb-5">還差 ${fmt(left)} ・ 單次滿 ${fmt(gold)} 會得到金幣</p>
+            <div class="space-y-4">
+                <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">劃撥金額</label>
+                    <input id="dpAmt" type="number" inputmode="decimal" value="" placeholder="0"
+                        oninput="paintCoinPreview('${esc(id)}')"
+                        class="w-full p-3.5 rounded-tile bg-pastel-accentLight border-2 border-pastel-accent/40 text-stone-800 font-bold text-2xl font-rounded"></div>
+                <div class="flex gap-2">
+                    ${[500, 1000, gold, left].filter((v, i, a) => v > 0 && a.indexOf(v) === i).slice(0, 4)
+                .map(v => `<button onclick="document.getElementById('dpAmt').value=${v};paintCoinPreview('${esc(id)}')" class="flex-1 py-2 rounded-xl bg-pastel-bg border border-pastel-border text-xs font-bold text-stone-600 tactile">${fmt(v)}</button>`).join('')}
+                </div>
+                <div id="coinPreview" class="flex items-center gap-3 p-3 rounded-tile bg-pastel-bg border border-pastel-border"></div>
+                <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">從哪個帳戶劃撥</label>
+                    <select id="dpTag" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
+                        ${STATE.tags.map(t => `<option ${PREF.get('tag', '') === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
+                <p class="text-[11px] text-pastel-muted leading-relaxed">劃撥不是支出，錢沒有離開你的口袋，只是被標記為「保留」，不會計入收支統計。</p>
+                <button onclick="doDeposit('${esc(id)}')" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile"><i class="fa-solid fa-coins mr-1.5"></i>投入籌碼</button>
+            </div>`);
+        paintCoinPreview(id);
+    }
+    function paintCoinPreview(id) {
+        const g = goalById(id), el = document.getElementById('coinPreview'); if (!g || !el) return;
+        const amt = Number(document.getElementById('dpAmt')?.value) || 0;
+        const gold = g.target_amount * 0.1;
+        const today = todayISO();
+        const already = goalCoins(id).some(c => c.date === today && c.member_id === STATE.me?.member_id);
+        if (!amt) { el.innerHTML = `<span class="text-[11px] text-pastel-muted">輸入金額後會顯示你將獲得的籌碼</span>`; return; }
+        const kind = amt >= gold ? 'gold' : 'silver';
+        el.innerHTML = `${coinSvg({ kind, member_id: STATE.me?.member_id, date: today, total: amt }, 0)}
+            <div class="text-[11px] leading-relaxed">
+                <div class="font-bold ${kind === 'gold' ? 'text-[#D9A216]' : 'text-stone-600'}">${kind === 'gold' ? '金幣' : '銀幣'}（單次 ${amt >= gold ? '≥' : '<'} 目標的 10%）</div>
+                <div class="text-pastel-muted">${already ? '今天已投過，金額會累加但不再多一枚' : '將投入 1 枚'}</div></div>`;
+    }
+    async function doDeposit(id) {
+        const g = goalById(id); if (!g) return;
+        const amt = Number(document.getElementById('dpAmt').value);
+        if (!amt || amt <= 0) { buzz(30); return toast('請輸入金額', true); }
+        const tag = document.getElementById('dpTag').value;
+        closeSheet();
+        await optimisticAdd({
+            date: todayISO(), entry_type: '劃撥儲蓄', category: '', tag, amount: amt,
+            note: `劃撥：${g.name}`, nature: g.scope === 'family' ? '家庭公帳' : '純個人',
+            related_id: id, member_id: STATE.me.member_id, payer_id: STATE.me.member_id
+        }, null, '已投入籌碼');
+        coinFly();
+    }
+
+    /* ---------- 結案 ---------- */
+    function openCloseGoal(id) {
+        const g = goalById(id); if (!g) return;
+        const saved = goalSaved(id), spent = goalSpent(id), remain = goalReserved(id);
+        const mine = !g.owner_id || g.owner_id === STATE.me?.member_id;
+        openSheet(`
+            <h3 class="text-lg font-bold text-stone-800 mb-1">結案「${esc(g.name)}」</h3>
+            <p class="text-xs text-pastel-muted mb-5">結案後這個罐子的保留額會釋放，紀錄仍然保留</p>
+            <div class="space-y-2 mb-5 text-sm">
+                <div class="flex justify-between"><span class="text-pastel-muted">累計劃撥</span><span class="font-bold font-rounded">${fmt(saved)}</span></div>
+                <div class="flex justify-between"><span class="text-pastel-muted">已貼標花用</span><span class="font-bold font-rounded text-pastel-red">-${fmt(spent)}</span></div>
+                <div class="flex justify-between pt-2 border-t border-dashed border-pastel-border"><span class="font-bold">剩餘保留額</span><span class="font-bold font-rounded text-pastel-green">${fmt(remain)}</span></div>
+            </div>
+            ${!mine ? `<div class="p-3 rounded-tile bg-pastel-redLight text-pastel-red text-xs font-bold mb-4">只有建立者 ${esc(nameOf(g.owner_id))} 可以結案</div>` : `
+            ${remain > 0.01 ? `<div class="field mb-4"><label class="block text-xs font-bold text-stone-600 mb-1.5">剩餘的 ${fmt(remain)} 要怎麼處理</label>
+                <select id="clDest" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
+                    <option value="personal">退回個人可支配現金</option>
+                    <option value="pool">轉入家庭公帳</option></select></div>` : ''}
+            <button onclick="doCloseGoal('${esc(id)}', ${remain})" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile">確認結案</button>`}`);
+    }
+    async function doCloseGoal(id, remaining) {
+        const dest = document.getElementById('clDest')?.value || 'personal';
+        closeSheet();
+        const g = goalById(id); const bak = g ? { ...g } : null;
+        if (g) g.status = '已結案';
+        renderDashboard(); toast('已結案');
+        try {
+            await api.call('closeGoal', { goal_id: id, remaining, destination: dest, tag: PREF.get('tag', '') });
+            await refreshData();
+        } catch (e) {
+            if (bak) { const i = STATE.goals.findIndex(x => x.goal_id === id); if (i >= 0) STATE.goals[i] = bak; }
+            renderDashboard(); toast(e.message, true);
+        }
     }
 
     function settleRow(r, dir) {
@@ -1982,7 +2286,7 @@ function hexA(hex, a) {
             <div class="flex justify-between items-center mb-5">
                 <h3 class="text-lg font-bold text-stone-800">進階篩選</h3>
                 <button onclick="resetFilters()" class="text-xs font-bold text-pastel-accent">重設</button></div>
-            <div class="space-y-5">
+            <div class="space-y-4">
                 <div><label class="block text-xs font-bold text-stone-500 mb-2">收支類型</label>
                     <div class="flex gap-2">${['all', 'expense', 'income'].map((v, i) => `<button onclick="setFilterType('${v}')" class="flex-1 py-2 rounded-xl text-sm font-bold ${filters.type === v ? 'bg-stone-800 text-white' : 'bg-pastel-bg text-stone-600 border border-pastel-border'}">${['全部', '支出', '收入'][i]}</button>`).join('')}</div></div>
                 <div><label class="block text-xs font-bold text-stone-500 mb-2">費用歸屬（可複選）</label>
@@ -2181,10 +2485,30 @@ function hexA(hex, a) {
         if (m !== 'transfer') setTimeout(openCatDrawer, 180);
     }
     function pickTag(n) { buzz(); addState.tag = n; paintTagRow(); }
-    function toggleMore() { addState.more = !addState.more; document.getElementById('moreBox').classList.toggle('hidden', !addState.more); document.getElementById('moreCaret').className = `fa-solid fa-chevron-${addState.more ? 'up' : 'down'} text-xs`; }
 
     /* 修正：原本只更新 className、從未寫入文字，所以按鈕是一顆顆空色塊。
        改為整列重繪，並帶上標籤名稱與識別色點。 */
+    /* 目標標籤做成正式欄位而不是提示 chip —— 提示容易被忽略，
+       欄位才會被當成流程的一部分，貼錯／漏貼的機率低很多。 */
+    function paintGoalRow() {
+        const r2 = document.getElementById('goalRow'); if (!r2) return;
+        const gs = activeGoals();
+        r2.innerHTML = gs.map(g => {
+            const on = addState.tag === g.project_tag;
+            return `<button onclick="pickGoal('${esc(g.goal_id)}')"
+                class="flex-shrink-0 flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-bold border transition-all tactile ${on ? 'bg-pastel-accent text-white border-transparent shadow-sm' : 'bg-white text-stone-700 border-pastel-border'}">
+                <i class="fa-solid ${esc(g.icon || 'fa-piggy-bank')}"></i>
+                <span class="whitespace-nowrap">${esc(g.name)}</span>
+                ${on ? '<i class="fa-solid fa-check text-[10px]"></i>' : ''}</button>`;
+        }).join('') + `<button onclick="pickGoal('')" class="flex-shrink-0 px-3.5 py-2 rounded-full text-xs font-bold border tactile ${gs.every(g => addState.tag !== g.project_tag) ? 'bg-stone-800 text-white border-stone-800' : 'bg-white text-stone-600 border-pastel-border'}">不算</button>`;
+    }
+    function pickGoal(id) {
+        buzz();
+        const g = id ? goalById(id) : null;
+        addState.tag = g ? g.project_tag : (PREF.get('tag', '') || STATE.tags[0]?.item_name || '');
+        paintGoalRow(); paintTagRow();
+    }
+
     function paintTagRow() {
         const r = document.getElementById('tagRow'); if (!r) return;
         if (!STATE.tags.length) {
@@ -2236,7 +2560,7 @@ function hexA(hex, a) {
 
     /* ---------- 分攤設定：家庭代墊與私人拆帳共用同一組 UI 與 split_detail 結構 ---------- */
     function splitMembers() {
-        return STATE.members.filter(m => m.member_id !== 'family_pool' &&
+        return (STATE.members || []).filter(m => m.member_id !== 'family_pool' &&
             m.member_id !== STATE.me?.member_id && m.status !== '停用');
     }
     function splitSum() {
@@ -2383,6 +2707,13 @@ function hexA(hex, a) {
                     <input id="inpNote" type="text" value="${esc(addState.note)}" oninput="addState.note=this.value" placeholder="寫點什麼…"
                         class="field flex-1 py-2 px-3 rounded-xl bg-pastel-bg border border-pastel-border text-sm text-right text-stone-800"></div>
 
+                ${(!isTr && isExp && activeGoals().length) ? `
+                <div class="px-4 py-3">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-sm text-stone-600">算進哪個目標？</span>
+                        <span class="text-[10px] text-pastel-muted">選填</span></div>
+                    <div id="goalRow" class="flex gap-2 overflow-x-auto hide-scrollbar pb-1"></div>
+                </div>` : ''}
                 <div class="px-4 py-3">
                     <div class="flex justify-between items-center mb-2">
                         <span class="text-sm text-stone-600">標籤 / 帳戶</span>
@@ -2420,7 +2751,7 @@ function hexA(hex, a) {
             <div id="advancedLogicContainer"></div>
             <button id="saveBtn" onclick="saveTransaction()" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-soft text-base tactile">${editingTxnId ? '更新紀錄' : '儲存紀錄'}</button>`;
 
-        if (!isTr) paintTagRow();
+        if (!isTr) { paintTagRow(); paintGoalRow(); }
         renderAddFormLogic();
     }
 
@@ -2464,7 +2795,7 @@ function hexA(hex, a) {
         const col = isTr ? '#3090F8' : isExp ? '#F05838' : '#40B868';
         const key = (k, label, cls) => `<button onclick="kp('${k}')" class="${cls || 'bg-white text-stone-800'} rounded-tile py-4 text-xl font-bold shadow-sm border border-pastel-border/70 tactile">${label}</button>`;
         openSheet(`
-            <div class="rounded-card p-4 mb-4 text-white" style="background:linear-gradient(135deg,${isTr ? '#3090F8,#2B7BD6' : isExp ? '#F8A048,#F0863A' : '#40B868,#35A25A'})">
+            <div class="rounded-card p-5 mb-4 text-white" style="background:linear-gradient(135deg,${isTr ? '#3090F8,#2B7BD6' : isExp ? '#F8A048,#F0863A' : '#40B868,#35A25A'})">
                 <div class="flex justify-between items-center mb-1">
                     <span class="text-[11px] font-bold opacity-85">${isTr ? '轉帳' : isExp ? '支出' : '收入'}${addState.cat ? ' · ' + esc(addState.cat) : ''}</span>
                     ${addState.cat ? `<button onclick="closeSheet();setTimeout(openCatDrawer,240)" class="text-[10px] font-bold bg-white/25 px-2 py-1 rounded-md">換分類</button>` : ''}</div>
@@ -2803,7 +3134,7 @@ function hexA(hex, a) {
             </div>`).join('') : `<div class="col-span-2 text-xs text-pastel-muted">尚無項目</div>`;
 
         // 個人規則只有本人看得到；家庭規則全家可見
-        const rules = STATE.rules.filter(r => r.status !== '刪除' &&
+        const rules = (STATE.rules || []).filter(r => r.status !== '刪除' &&
             (r.scope === 'family' || r.member_id === STATE.me?.member_id));
         const fam = STATE.members.filter(m => m.member_id !== 'family_pool' && m.status !== '停用');
 
@@ -2831,11 +3162,11 @@ function hexA(hex, a) {
             return `<div class="flex flex-col items-center gap-1.5 min-w-0">
                         <div class="relative">
                             <div class="w-14 h-14 rounded-full border-[3px] ${i.border} ${i.bg} overflow-hidden flex items-center justify-center text-2xl">${avatarInner(m.avatar_emoji)}</div>
-                            <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 ${i.badge} text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full border-2 border-white whitespace-nowrap">LV.${i.level}</div>
+                            <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 ${i.badge} text-white text-[10px] font-bold px-2 py-0.5 rounded-full border-2 border-white whitespace-nowrap">LV.${i.level}</div>
                         </div>
                         <div class="text-[11px] font-bold text-stone-700 truncate w-full text-center mt-1">${esc(m.nickname)}${isMe ? ' ·我' : ''}</div>
-                        <div class="text-[9px] ${i.color} font-bold truncate w-full text-center leading-tight">${esc(i.name)}</div>
-                        <div class="text-[9px] text-pastel-muted"><i class="fa-solid fa-fire"></i> ${Number(m.streak_days) || 0}</div>
+                        <div class="text-[10px] ${i.color} font-bold truncate w-full text-center leading-tight">${esc(i.name)}</div>
+                        <div class="text-[10px] text-pastel-muted"><i class="fa-solid fa-fire"></i> ${Number(m.streak_days) || 0}</div>
                     </div>`;
         }).join('')}
                 </div>
@@ -2862,7 +3193,7 @@ function hexA(hex, a) {
                         <div class="flex items-center gap-3 min-w-0">
                             <div class="w-10 h-10 rounded-tile bg-white border border-pastel-border flex items-center justify-center flex-shrink-0" style="color:${catColor(r.category)}"><i class="fa-solid ${esc(r.category ? catIcon(r.category) : (r.entry_type === '收入' ? 'fa-sack-dollar' : 'fa-repeat'))}"></i></div>
                             <div class="min-w-0">
-                                <div class="font-bold text-stone-800 text-sm truncate">${esc(r.name)}${r.status === '停用' ? ' <span class="text-[9px] bg-stone-200 text-stone-500 px-1.5 py-0.5 rounded">已停用</span>' : ''}</div>
+                                <div class="font-bold text-stone-800 text-sm truncate">${esc(r.name)}${r.status === '停用' ? ' <span class="text-[10px] bg-stone-200 text-stone-500 px-1.5 py-0.5 rounded">已停用</span>' : ''}</div>
                                 <div class="text-[10px] text-pastel-muted mt-0.5 truncate">
                                     <span class="px-1.5 py-0.5 rounded ${r.scope === 'family' ? 'bg-pastel-blueLight text-pastel-blue' : 'bg-pastel-bg text-pastel-muted'} font-bold">${r.scope === 'family' ? '家庭' : '個人'}</span>
                                     ${esc(r.freq)} · ${esc(r.auto_mode)} · 下次 ${esc(r.next_run || '—')}</div></div></div>
