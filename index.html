@@ -285,7 +285,7 @@
        ========================================================== */
 
     const CONFIG = {
-        VERSION: 'v4.4.5',
+        VERSION: 'v4.4.6',
         // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
         API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         DEMO: false
@@ -632,6 +632,8 @@ function hexA(hex, a) {
         document.getElementById('appNav').classList.remove('js-hide');
         renderAll(); updateLevelDisplays();
         requestAnimationFrame(() => { syncFrameHeight(); requestAnimationFrame(syncFrameHeight); });
+        setTimeout(syncFrameHeight, 80);
+        setTimeout(syncFrameHeight, 400);
     }
 
     function renderAll() { renderDashboard(); renderTransactions(); initAddForm(); renderStats(); renderSettings(); }
@@ -2044,18 +2046,17 @@ function hexA(hex, a) {
                 <div class="font-bold text-sm text-stone-800 flex items-center gap-2"><i class="fa-solid fa-circle-info text-pastel-muted"></i> 關於</div>
                 <div class="flex justify-between text-xs text-pastel-muted"><span>版本</span><span class="font-mono">${esc(CONFIG.VERSION)}</span></div>
                 <div class="flex justify-between text-xs text-pastel-muted"><span>家庭</span><span>${esc(STATE.familyName)}</span></div>
-                <div class="text-xs text-pastel-muted"><div class="mb-1">版面診斷</div>
-                    <div class="font-mono text-[10px] leading-relaxed bg-pastel-bg rounded-lg p-2 break-all">
-                        appH=${LAYOUT.used ?? '?'} in=${LAYOUT.innerH ?? '?'} vv=${LAYOUT.visualH ?? '-'} scr=${LAYOUT.screenH ?? '-'}<br>
-                        frameBtm=${LAYOUT.frameBottom ?? '-'} navBtm=${LAYOUT.navBottom ?? '-'} navH=${LAYOUT.navH ?? '-'}<br>
-                        sab=${LAYOUT.safeBottom || '?'} ${LAYOUT.standalone ? 'PWA' : 'WEB'} dpr=${window.devicePixelRatio}
-                    </div></div>
+                <div class="text-xs text-pastel-muted">
+                    <div class="flex justify-between items-center mb-1"><span>版面診斷</span>
+                        <button onclick="syncFrameHeight()" class="text-[10px] font-bold text-pastel-accent">重新量測</button></div>
+                    <pre id="diagBox" class="font-mono text-[10px] leading-relaxed bg-pastel-bg rounded-lg p-2 whitespace-pre-wrap break-all"></pre></div>
                 <button onclick="exportCSV()" class="w-full py-2.5 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border tactile"><i class="fa-solid fa-file-csv mr-1.5"></i>匯出目前檢視的明細（CSV）</button>
                 <button onclick="refreshData()" class="w-full py-2.5 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border tactile">立即同步資料</button>
                 <button onclick="location.reload()" class="w-full py-2.5 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border">強制重新載入（更新版本）</button>
                 <button onclick="logout()" class="w-full py-2.5 bg-white text-pastel-red font-bold rounded-tile text-xs border border-pastel-red/30">登出</button>
             </div>`;
         updateLevelDisplays();
+        syncFrameHeight();
     }
 
     /* --- 重複性收支 --- */
@@ -2253,14 +2254,35 @@ function hexA(hex, a) {
             navBottom: nav ? Math.round(nav.getBoundingClientRect().bottom) : null,
             navH: navH,
             standalone: !!(window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches),
-            safeBottom: getComputedStyle(document.documentElement).getPropertyValue('--sab').trim() || '?'
+            safeBottom: getComputedStyle(document.documentElement).getPropertyValue('--sab').trim() || '?',
+            safeTop: getComputedStyle(document.documentElement).getPropertyValue('--sat').trim() || '?'
         };
+        paintDiag();          // 量完立刻更新讀數，避免顯示的是開機當下的舊值
+    }
+
+    function diagText() {
+        const L = LAYOUT;
+        const gap = (L.screenH != null && L.navBottom != null) ? (L.screenH - L.navBottom) : null;
+        return `appH=${L.used ?? '?'} in=${L.innerH ?? '?'} vv=${L.visualH ?? '-'} scr=${L.screenH ?? '-'}
+frameBtm=${L.frameBottom ?? '-'} navBtm=${L.navBottom ?? '-'} navH=${L.navH ?? '-'}
+底部落差=${gap ?? '-'}  sat=${L.safeTop || '?'}  sab=${L.safeBottom || '?'}
+${L.standalone ? 'PWA' : 'WEB(Safari)'}  dpr=${window.devicePixelRatio}  statusBar=${(L.screenH != null && L.innerH != null) ? (L.screenH - L.innerH) : '-'}`;
+    }
+    function paintDiag() {
+        const el = document.getElementById('diagBox');
+        if (el) el.textContent = diagText();
     }
     function bindLayout() {
         // 讀出安全區數值供診斷用
         const probe = document.createElement('div');
         probe.style.cssText = 'position:fixed;bottom:0;height:env(safe-area-inset-bottom,0px);width:0';
         document.body.appendChild(probe);
+        const probeT = document.createElement('div');
+        probeT.style.cssText = 'position:fixed;top:0;height:env(safe-area-inset-top,0px);width:0';
+        document.body.appendChild(probeT);
+        const sat = Math.round(probeT.getBoundingClientRect().height);
+        probeT.remove();
+        document.documentElement.style.setProperty('--sat', sat + 'px');
         let sab = Math.round(probe.getBoundingClientRect().height);
         probe.remove();
         // iOS 偶爾在 standalone 下把 env(safe-area-inset-bottom) 回報成 0，
@@ -2270,6 +2292,10 @@ function hexA(hex, a) {
         document.documentElement.style.setProperty('--sab', sab + 'px');
 
         syncFrameHeight();
+        // 導覽列一開始帶著 js-hide（display:none），量到的高度必然是 0。
+        // 用 ResizeObserver 追蹤，它一顯示或高度變動就自動重量。
+        const nav = document.getElementById('appNav');
+        if (nav && window.ResizeObserver) new ResizeObserver(() => syncFrameHeight()).observe(nav);
         window.addEventListener('resize', syncFrameHeight);
         window.addEventListener('orientationchange', () => setTimeout(syncFrameHeight, 260));
         if (window.visualViewport) {
