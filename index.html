@@ -51,47 +51,57 @@
         }
     </script>
     <style>
-        /* 1. 全域底色改為純白，防止 Safari 底部工具列透出奶油底色造成懸空錯覺 */
+        /* 版面錨定：不使用任何百分比高度。
+           iOS 的 position:fixed + height:100% 在工具列伸縮時解析出的值不等於實際可視高度，
+           底部會差一截；直接把外框釘在視窗四邊（inset:0）才會真正貼底。 */
         html, body {
-            background-color: #FFFFFF; 
-            height: 100%; margin: 0; padding: 0;
-            overflow: hidden; overscroll-behavior: none; touch-action: manipulation;
+            background-color:#FBF2E6; height:100%; margin:0; padding:0;
+            overflow:hidden; overscroll-behavior:none; touch-action:manipulation;
         }
-        body { font-family: 'Inter', 'Noto Sans TC', sans-serif; color: #3A3330; -webkit-tap-highlight-color: transparent; }
-        
-        /* 2. 手機版主外框：拿掉 inset:0 和複雜的 calc，乾淨俐落依靠 100dvh 撐滿 */
+        body { font-family:'Inter','Noto Sans TC',sans-serif; color:#3A3330; -webkit-tap-highlight-color:transparent; }
+
+        /* ID 選擇器優先權高於 Tailwind class，直接覆寫外框定位。
+           高度不用 inset:0 也不用 dvh —— iOS 對這兩者的解析在標準列／安全區存在時
+           不見得等於使用者實際看到的高度。改由 JS 量測 visualViewport 寫入 --appH，
+           這是唯一保證與螢幕所見一致的來源。 */
         #appFrame {
-            position: fixed; top: 0; left: 0; right: 0; /* 取代 inset:0，解除 bottom 的綁定 */
-            width: 100%; max-width: none;
-            height: 100dvh; /* 唯一真理，不管 JS 怎麼算，就是 100dvh */
-            border-radius: 0; border: 0;
-            display: flex; flex-direction: column;
+            position:fixed; inset:0;
+            width:100%; max-width:none;
+            /* iOS PWA 三個高度來源（innerHeight / visualViewport / 100dvh）
+               都會少報一個「上方安全區」的量，但畫面其實是從 y=0 開始畫的，
+               因此真正的可畫高度 = 100dvh + safe-area-inset-top。 */
+            height:calc(100dvh + env(safe-area-inset-top, 0px));
+            height:var(--appH, calc(100dvh + env(safe-area-inset-top, 0px)));
+            border-radius:0; border:0;
+            display:flex; flex-direction:column;
         }
-        
-        /* 3. 手機版佈局：導覽列與提示框使用 absolute，精準貼齊 874px 的外框底邊 */
+
+        /* ── 手機：導覽列不再依賴外框的 flex 計算，直接釘在「視窗」底邊 ──
+           先前三個版本都是想辦法讓外框高度正確、再讓 flex 把 nav 推到底。
+           只要外框高度有一點誤差，nav 就會懸空。改成 fixed 之後，
+           不論外框算成多高，nav 永遠貼在螢幕最底。 */
         @media (max-width:767px) {
-            #appFrame { height: 100dvh !important; }
-            #appNav   { position: absolute; left: 0; right: 0; bottom: 0; } /* 避免 PWA 62px 懸空地雷 */
-            #appMain  { padding-bottom: var(--navH, 92px); }
-            #toast    { position: absolute; left: 0; right: 0; bottom: calc(var(--navH, 92px) + 14px); }
+            /* 必須是 absolute 不能是 fixed：
+               fixed 錨定的是「視窗」（iOS 少報 62px），absolute 才錨定「外框」（實際 874）。
+               這是導覽列一直懸空 62px 的最後一個原因。 */
+            #appNav   { position:absolute; left:0; right:0; bottom:0; }
+            #appMain  { padding-bottom:var(--navH, 92px); }
+            #toast    { position:absolute; left:0; right:0; bottom:calc(var(--navH, 92px) + 14px); }
         }
-        
-        /* 桌機恢復置中的手機外框 (這段沒問題，維持原樣) */
+        /* 桌機恢復置中的手機外框 */
         @media (min-width:768px) {
-            html, body { height: auto; overflow: auto; background-color: #FBF2E6; } /* 桌機才把底色改回奶油色 */
+            html, body { height:auto; overflow:auto; }
             #appFrame {
-                position: relative; top: auto; left: auto; right: auto; bottom: auto; margin: 0 auto;
-                width: 100%; max-width: 28rem; height: 880px;
-                border-radius: 44px; border-width: 10px;
-                display: flex; flex-direction: column;
+                position:relative; top:auto; left:auto; right:auto; bottom:auto; margin:0 auto;
+                width:100%; max-width:28rem; height:880px;
+                border-radius:44px; border-width:10px;
+                display:flex; flex-direction:column;
             }
         }
-        
-        #appMain { -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
-        
-        /* 導覽列背景延伸到 Home Indicator 底下，完美貼合 */
-        #appNav { background-color: #FFFFFF; padding-bottom: calc(0.35rem + var(--sab, env(safe-area-inset-bottom, 0px))); }
-        html.dark #appNav { background-color: #221F1D !important; }
+        #appMain { -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
+        /* 導覽列背景延伸到 Home Indicator 底下，padding 只負責把內容推上來 */
+        #appNav { background-color:#FFFFFF; padding-bottom:calc(0.35rem + var(--sab, env(safe-area-inset-bottom, 0px))); }
+        html.dark #appNav { background-color:#221F1D !important; }
         /* 已加入主畫面時，整個底色改成 App 奶油色，狀態列區域才不會露出不同色 */
         @media (display-mode: standalone) { html, body { background-color:#FFF8F0; } }
         .hide-scrollbar::-webkit-scrollbar { display:none; }
@@ -139,6 +149,13 @@
         html.dark .shadow-card, html.dark .shadow-sm, html.dark .shadow-md { box-shadow:0 4px 18px rgba(0,0,0,.35) !important; }
         html.dark #appFrame { border-color:#000 !important; }
         html.dark img[src*="av"] { filter:brightness(.94); }
+        /* 深色下未選取的選項底色若跟背景太接近會看不見，這裡拉高對比並補上邊框 */
+        html.dark .bg-pastel-bg { background-color:#33302C !important; }
+        html.dark .border-pastel-border { border-color:#4A443E !important; }
+        html.dark [style*="background:rgba"] { outline:1px solid rgba(255,255,255,.10); outline-offset:-1px; }
+        html.dark .text-stone-600 { color:#CFC5B8 !important; }
+        html.dark input, html.dark select, html.dark textarea { color:#EFE7DC !important; }
+        html.dark input::placeholder { color:#8F857A !important; }
 
         /* 橫向時擋住主畫面（排除桌機大螢幕） */
         #rotateGate { display:none; }
@@ -325,7 +342,7 @@
        ========================================================== */
 
     const CONFIG = {
-        VERSION: 'v4.6.0',
+        VERSION: 'v4.6.1',
         // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
         API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         DEMO: false
@@ -1105,7 +1122,7 @@ function hexA(hex, a) {
         }).join('');
         return `<div class="flex items-center gap-5">
             <div class="relative w-24 h-24 flex-shrink-0 flex items-center justify-center">
-                <svg class="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                <svg class="w-full h-full transform -rotate-90" viewBox="-1.6 -1.6 39.2 39.2">
                     <path pathLength="100" stroke-width="5" stroke="#F3E7D8" fill="none" d="${FULL}" />${arcs}
                 </svg>
                 <div class="absolute text-center">
@@ -1583,8 +1600,14 @@ function hexA(hex, a) {
             filters.tags.length + (filters.min !== '' ? 1 : 0) + (filters.max !== '' ? 1 : 0);
     }
 
-    function trendChartHtml(ym) {
+    /* ---------- 合併分析圖 ----------
+       上半：收支累計 + 預算應有進度（判斷「是否超前花費」）
+       下半：每日支出柱（判斷「哪幾天爆掉」）
+       兩者共用同一條時間軸，且只畫到今天為止——未來還沒發生的日子不該有線。 */
+    function comboChartHtml(ym) {
         const rows = scopedTxns(ym), n = daysInYM(ym);
+        const isCur = ym === currentYM();
+        const last = isCur ? Number(todayISO().slice(8, 10)) : n;   // 只畫到今天
         const inc = Array(n).fill(0), exp = Array(n).fill(0);
         rows.forEach(t => {
             const d = Number(String(t.date).slice(8, 10)) - 1;
@@ -1593,26 +1616,51 @@ function hexA(hex, a) {
             if (t.entry_type === '支出') exp[d] += Number(t.amount);
         });
         let ci = 0, ce = 0;
-        const cumI = inc.map(v => (ci += v)), cumE = exp.map(v => (ce += v));
-        const max = Math.max(ci, ce, 1);
-        const W = 320, H = 132, L = 6, R = 6, T = 10, B = 24, pw = W - L - R, ph = H - T - B;
-        const pts = a => a.map((v, i) => `${(L + (n === 1 ? pw / 2 : (i / (n - 1)) * pw)).toFixed(1)},${(T + ph - (v / max) * ph).toFixed(1)}`).join(' ');
-        if (!ci && !ce) return `<div class="flex flex-col items-center py-6 gap-2"><img src="./av14.png" alt="" class="w-14 h-14 opacity-70"><span class="text-xs text-pastel-muted">這個月還沒有資料</span></div>`;
+        const cumI = inc.map(v => (ci += v)).slice(0, last);
+        const cumE = exp.map(v => (ce += v)).slice(0, last);
+        const dayExp = exp.slice(0, last);
+        const totalI = cumI.length ? cumI[cumI.length - 1] : 0;
+        const totalE = cumE.length ? cumE[cumE.length - 1] : 0;
+        if (!totalI && !totalE) return `<div class="flex flex-col items-center py-8 gap-2"><img src="./av14.png" alt="" class="w-14 h-14 opacity-70"><span class="text-xs text-pastel-muted">這個月還沒有資料</span></div>`;
+
+        const budget = budgetFor(currentMode, '');
+        const W = 320, H = 176, L = 8, R = 8, pw = W - L - R;
+        const T1 = 10, B1 = 104, T2 = 116, B2 = 152;          // 上下兩個繪圖帶
+        const maxLine = Math.max(totalI, totalE, budget, 1);
+        const maxBar = Math.max(...dayExp, 1);
+        const x = i => L + (n === 1 ? pw / 2 : (i / (n - 1)) * pw);
+        const yL = v => B1 - (v / maxLine) * (B1 - T1);
+        const pts = a => a.map((v, i) => `${x(i).toFixed(1)},${yL(v).toFixed(1)}`).join(' ');
+        const bw = Math.max(pw / n - 1, 1.2);
+        const bars = dayExp.map((v, i) => v > 0
+            ? `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${(B2 - (v / maxBar) * (B2 - T2)).toFixed(1)}" width="${bw.toFixed(1)}" height="${((v / maxBar) * (B2 - T2)).toFixed(1)}" rx="${Math.min(bw / 2, 1.5).toFixed(1)}" fill="#F8A048"/>` : '').join('');
+        // 預算應有進度：整月均speed的斜直線，用來對照實際累計快或慢
+        const pace = budget ? `<line x1="${x(0)}" y1="${yL(budget / n)}" x2="${x(n - 1)}" y2="${yL(budget)}" stroke="#9A918A" stroke-width="1.5" stroke-dasharray="4 4"/>` : '';
+        const ideal = budget ? budget / n * last : 0;
+        const diff = ideal ? totalE - ideal : 0;
+
         return `
-        <svg viewBox="0 0 ${W} ${H}" class="w-full" style="height:132px" preserveAspectRatio="none">
-            <defs><linearGradient id="gExp" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#F8A048" stop-opacity=".3"/><stop offset="100%" stop-color="#F8A048" stop-opacity="0"/></linearGradient></defs>
-            <line x1="${L}" y1="${T + ph}" x2="${W - R}" y2="${T + ph}" stroke="#F3E7D8" stroke-width="1"/>
-            <line x1="${L}" y1="${T + ph / 2}" x2="${W - R}" y2="${T + ph / 2}" stroke="#F3E7D8" stroke-width="1" stroke-dasharray="3 4"/>
-            <polygon points="${L},${T + ph} ${pts(cumE)} ${W - R},${T + ph}" fill="url(#gExp)"/>
+        <svg viewBox="0 0 ${W} ${H}" class="w-full" style="height:176px" preserveAspectRatio="none">
+            <line x1="${L}" y1="${B1}" x2="${W - R}" y2="${B1}" stroke="#F3E7D8" stroke-width="1"/>
+            <line x1="${L}" y1="${(T1 + B1) / 2}" x2="${W - R}" y2="${(T1 + B1) / 2}" stroke="#F3E7D8" stroke-width="1" stroke-dasharray="3 4"/>
+            ${pace}
             <polyline points="${pts(cumI)}" fill="none" stroke="#40B868" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-            <polyline points="${pts(cumE)}" fill="none" stroke="#F8A048" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+            <polyline points="${pts(cumE)}" fill="none" stroke="#F05838" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+            <line x1="${L}" y1="${B2}" x2="${W - R}" y2="${B2}" stroke="#F3E7D8" stroke-width="1"/>
+            ${bars}
         </svg>
-        <div class="flex justify-between text-[10px] text-pastel-muted px-1 mt-1"><span>1日</span><span>${Math.ceil(n / 2)}日</span><span>${n}日</span></div>
-        <div class="flex justify-between items-center mt-3 pt-3 border-t border-pastel-border text-xs">
-            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-pastel-green"></span>收入累計 <b class="font-rounded">${fmt(ci)}</b></span>
-            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-pastel-accent"></span>支出累計 <b class="font-rounded">${fmt(ce)}</b></span>
-        </div>`;
+        <div class="flex justify-between text-[10px] text-pastel-muted px-1 mt-1"><span>1日</span><span>${Math.ceil(n / 2)}日</span><span>${n}日${isCur ? `（今天 ${last} 日）` : ''}</span></div>
+        <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 mt-3 pt-3 border-t border-pastel-border text-[11px]">
+            <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 rounded bg-pastel-green"></span>收入累計 <b class="font-rounded">${fmt(totalI)}</b></span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 rounded bg-pastel-red"></span>支出累計 <b class="font-rounded">${fmt(totalE)}</b></span>
+            <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-sm bg-pastel-accent"></span>每日支出（下半）</span>
+            ${budget ? `<span class="flex items-center gap-1.5"><span class="w-3 h-0.5 rounded" style="background:repeating-linear-gradient(90deg,#9A918A 0 3px,transparent 3px 6px)"></span>預算應有進度</span>` : '<span></span>'}
+        </div>
+        ${budget ? `<div class="mt-2.5 px-3 py-2 rounded-tile text-[11px] font-bold ${diff > 0 ? 'bg-pastel-redLight text-pastel-red' : 'bg-pastel-greenLight text-pastel-green'}">
+            <i class="fa-solid ${diff > 0 ? 'fa-gauge-high' : 'fa-gauge-simple'} mr-1.5"></i>
+            到第 ${last} 天應花 ${fmt(ideal)}，實際花了 ${fmt(totalE)}
+            ${diff > 0 ? `，<u>超前 ${fmt(diff)}</u>，剩下 ${n - last} 天要收斂` : `，<u>省下 ${fmt(-diff)}</u>，保持這個節奏`}
+        </div>` : `<button onclick="openBudgetSheet()" class="w-full mt-2.5 py-2 rounded-tile bg-pastel-accentLight text-pastel-accent text-[11px] font-bold tactile">設定預算後，這裡會顯示花費是否超前</button>`}`;
     }
 
     function monthNav() {
@@ -1644,12 +1692,7 @@ function hexA(hex, a) {
             ${filters.allTime ? `<div class="flex items-center justify-between bg-pastel-accentLight border border-pastel-accent/40 rounded-tile px-4 py-2.5 text-xs font-bold text-pastel-accent">
                 <span><i class="fa-solid fa-infinity mr-1.5"></i>正在搜尋全部期間</span>
                 <button onclick="toggleAllTime()" class="underline">回到單月</button></div>` : monthNav()}
-            <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card">
-                <div class="flex justify-between items-center mb-2">
-                    <span class="text-xs font-bold text-stone-500">收支趨勢（月累計）</span>
-                    <span class="text-[10px] text-pastel-muted">${esc(viewYM)}</span></div>
-                ${trendChartHtml(viewYM)}
-            </div>
+            ${summaryStrip()}
             <div class="flex gap-2">
                 <div class="relative flex-1 field">
                     <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-pastel-muted text-xs"></i>
@@ -1684,6 +1727,22 @@ function hexA(hex, a) {
             <p class="text-[10px] text-pastel-muted text-center bg-white/70 rounded-full py-1.5 border border-pastel-border"><i class="fa-solid fa-arrow-left mr-1"></i>左滑作廢　·　右滑編輯<i class="fa-solid fa-arrow-right ml-1"></i>　·　點一下看詳情</p>
             ${list}`;
         bindSwipe();
+    }
+
+    /* 明細頁不再放圖（跟圖表頁重複），改用三個能直接判讀的數字 */
+    function summaryStrip() {
+        const rows = filters.allTime ? scopedTxns(null) : scopedTxns(viewYM);
+        const i = rows.filter(t => t.entry_type === '收入' || t.entry_type === '注資').reduce((a, b) => a + Number(b.amount), 0);
+        const e = rows.filter(t => t.entry_type === '支出').reduce((a, b) => a + Number(b.amount), 0);
+        const net = i - e;
+        const cell = (label, val, cls, sign) => `<div class="flex-1 text-center min-w-0">
+            <div class="text-[10px] text-pastel-muted mb-0.5">${label}</div>
+            <div class="text-sm font-bold font-rounded truncate ${cls}">${sign}${fmt(Math.abs(val))}</div></div>`;
+        return `<div class="bg-white border border-pastel-border/60 rounded-card px-3 py-3.5 shadow-card flex items-center divide-x divide-pastel-border">
+            ${cell('收入', i, 'text-pastel-green', '+')}
+            ${cell('支出', e, 'text-pastel-red', '-')}
+            ${cell('結餘', net, net >= 0 ? 'text-stone-800' : 'text-pastel-red', net >= 0 ? '' : '-')}
+        </div>`;
     }
 
     function txnRow(t) {
@@ -2361,24 +2420,18 @@ function hexA(hex, a) {
        ========================================================== */
     function renderStats() {
         const s = computeSummary(currentMode, viewYM);
-        const rows = scopedTxns(viewYM), n = daysInYM(viewYM);
-        const daily = Array(n).fill(0);
-        rows.filter(t => t.entry_type === '支出').forEach(t => {
-            const d = Number(String(t.date).slice(8, 10)); if (d >= 1 && d <= n) daily[d - 1] += Number(t.amount);
-        });
-        const maxD = Math.max(...daily, 1);
-        /* 修正：外層必須 h-full，否則內層 height:% 找不到參考高度，長條全部算成 0 而看不見 */
-        const bars = daily.map((v, i) => `<div class="flex-1 h-full flex items-end" title="${i + 1}日 ${fmt(v)}"><div class="w-full rounded-t-[3px] ${v ? 'bg-pastel-accent' : 'bg-pastel-border'}" style="height:${v ? Math.max((v / maxD) * 100, 4) : 3}%"></div></div>`).join('');
         const net = s.monthlyIncome - s.monthlyExpense;
         const top = s.byCategory.slice(0, 6), maxC = top.length ? top[0][1] : 1;
 
         document.getElementById('statsView').innerHTML = `
             ${monthNav()}
-            <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-4">
-                <div><h3 class="font-bold text-stone-800 text-sm">每日支出分佈</h3>
-                    <div class="text-[11px] text-pastel-muted mt-0.5">最高單日 ${fmt(maxD)}</div></div>
-                <div class="w-full h-32 flex items-end gap-[2px]">${bars}</div>
-                <div class="flex justify-between text-[10px] text-pastel-muted"><span>1日</span><span>${Math.ceil(n / 2)}日</span><span>${n}日</span></div></div>
+            <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-2">
+                <div class="flex justify-between items-center">
+                    <h3 class="font-bold text-stone-800 text-sm">收支節奏分析</h3>
+                    <span class="text-[10px] text-pastel-muted">${esc(viewYM)}</span></div>
+                <p class="text-[11px] text-pastel-muted -mt-1">上半是累計走勢與預算節奏，下半是每天的支出量</p>
+                ${comboChartHtml(viewYM)}
+            </div>
 
             <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-4">
                 <h3 class="font-bold text-stone-800 text-sm">分類排行</h3>
@@ -2666,10 +2719,10 @@ function hexA(hex, a) {
                     <div class="flex justify-between items-center mb-1"><span>版面診斷</span>
                         <button onclick="syncFrameHeight()" class="text-[10px] font-bold text-pastel-accent">重新量測</button></div>
                     <pre id="diagBox" class="font-mono text-[10px] leading-relaxed bg-pastel-bg rounded-lg p-2 whitespace-pre-wrap break-all"></pre></div>
-                <button onclick="exportCSV()" class="w-full py-2.5 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border tactile"><i class="fa-solid fa-file-csv mr-1.5"></i>匯出目前檢視的明細（CSV）</button>
-                <button onclick="refreshData()" class="w-full py-2.5 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border tactile">立即同步資料</button>
-                <button onclick="location.reload()" class="w-full py-2.5 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border">強制重新載入（更新版本）</button>
-                <button onclick="logout()" class="w-full py-2.5 bg-white text-pastel-red font-bold rounded-tile text-xs border border-pastel-red/30">登出</button>
+                <button id="btnExport" onclick="actExport()" class="w-full py-3 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border tactile active:bg-pastel-accentLight"><i class="fa-solid fa-file-csv mr-1.5"></i>匯出目前檢視的明細（CSV）</button>
+                <button id="btnSync" onclick="actSync()" class="w-full py-3 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border tactile active:bg-pastel-accentLight">立即同步資料</button>
+                <button id="btnReload" onclick="actReload()" class="w-full py-3 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border tactile active:bg-pastel-accentLight">強制重新載入（更新版本）</button>
+                <button onclick="logout()" class="w-full py-3 bg-white text-pastel-red font-bold rounded-tile text-xs border border-pastel-red/30 tactile active:bg-pastel-redLight">登出</button>
             </div>`;
         updateLevelDisplays();
         syncFrameHeight();
@@ -2816,6 +2869,17 @@ function hexA(hex, a) {
         try { await api.call('archiveItem', { item_name: name, item_group: group }); toast('已停用'); }
         catch (e) { STATE.categories = bc; STATE.tags = bt; renderSettings(); initAddForm(); toast(e.message, true); }
     }
+
+    /* ---------- 設定頁動作：每一顆都要有可見回饋 ---------- */
+    function btnBusy(id, text) {
+        const b = document.getElementById(id); if (!b) return () => { };
+        const old = b.innerHTML; b.disabled = true;
+        b.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin mr-1.5"></i>${esc(text)}`;
+        return () => { b.disabled = false; b.innerHTML = old; };
+    }
+    function actExport() { buzz(); const done = btnBusy('btnExport', '匯出中…'); try { exportCSV(); } finally { setTimeout(done, 700); } }
+    async function actSync() { buzz(); const done = btnBusy('btnSync', '同步中…'); await refreshData(); done(); }
+    function actReload() { buzz(); btnBusy('btnReload', '重新載入中…'); toast('正在載入最新版本…'); setTimeout(() => location.reload(), 500); }
 
     /* ---------- CSV 匯出 ---------- */
     function exportCSV() {
