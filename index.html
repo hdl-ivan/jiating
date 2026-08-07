@@ -65,18 +65,20 @@
            不見得等於使用者實際看到的高度。改由 JS 量測 visualViewport 寫入 --appH，
            這是唯一保證與螢幕所見一致的來源。 */
         #appFrame {
-            position:fixed; top:0; left:0; right:0; bottom:auto;
+            position:fixed; top:0; left:0; right:0; bottom:0;
             width:auto; max-width:none;
             height:var(--appH, 100dvh);
             border-radius:0; border:0;
+            display:flex; flex-direction:column;
         }
         /* 桌機恢復置中的手機外框 */
         @media (min-width:768px) {
             html, body { height:auto; overflow:auto; }
             #appFrame {
-                position:relative; top:auto; left:auto; right:auto; margin:0 auto;
+                position:relative; top:auto; left:auto; right:auto; bottom:auto; margin:0 auto;
                 width:100%; max-width:28rem; height:880px;
                 border-radius:44px; border-width:10px;
+                display:flex; flex-direction:column;
             }
         }
         #appMain { -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
@@ -224,7 +226,7 @@
         <button id="titleChip" onclick="openProfileModal()" class="flex-shrink-0 max-w-[92px] text-[10px] font-bold px-2.5 py-1.5 rounded-full bg-white border border-pastel-border text-pastel-muted shadow-sm truncate"></button>
     </header>
 
-    <main id="appMain" class="flex-1 min-h-0 overflow-y-auto px-5 py-4 hide-scrollbar pb-16 js-hide bg-[#FBF2E6]">
+    <main id="appMain" class="flex-1 min-h-0 flex-shrink overflow-y-auto px-5 py-4 hide-scrollbar pb-6 js-hide bg-[#FBF2E6]">
         <div id="dashboardView" class="space-y-4"></div>
         <div id="transactionsView" class="space-y-4 hidden"></div>
         <div id="addView" class="space-y-4 hidden"></div>
@@ -240,7 +242,7 @@
 
     <div id="toast" class="absolute left-0 right-0 bottom-24 z-[95] flex justify-center opacity-0 pointer-events-none transition-opacity duration-300"></div>
 
-    <nav id="appNav" class="shrink-0 relative bg-white border-t border-pastel-border px-6 pt-2.5 flex justify-between items-center z-30 shadow-[0_-10px_40px_rgba(160,130,100,0.06)] js-hide">
+    <nav id="appNav" class="mt-auto shrink-0 bg-white border-t border-pastel-border px-6 pt-2.5 flex justify-between items-center z-30 shadow-[0_-10px_40px_rgba(160,130,100,0.06)] js-hide">
         <button onclick="switchTab('dashboard')" id="navDashboard" class="flex flex-col items-center text-pastel-accent w-12 nav-btn"><i class="fa-solid fa-house-chimney text-lg mb-1"></i><span class="text-[10px] font-bold">首頁</span></button>
         <button onclick="switchTab('transactions')" id="navTransactions" class="flex flex-col items-center text-pastel-muted w-12 nav-btn"><i class="fa-solid fa-list-ul text-lg mb-1"></i><span class="text-[10px] font-bold">明細</span></button>
         <button onclick="switchTab('add')" id="navAdd" aria-label="新增" class="relative -mt-10 nav-btn tactile">
@@ -273,9 +275,9 @@
        ========================================================== */
 
     const CONFIG = {
-        VERSION: 'v4.4.3',
+        VERSION: 'v4.4.4',
         // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
-        API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
+        API_URL: 'PASTE_GAS_WEB_APP_URL_HERE',
         DEMO: false
     };
 
