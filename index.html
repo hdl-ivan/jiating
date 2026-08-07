@@ -82,7 +82,7 @@
            不論外框算成多高，nav 永遠貼在螢幕最底。 */
         @media (max-width:767px) {
             #appFrame { height: 100dvh !important; }
-            #appNav   { position:absolute; left:0; right:0; bottom:0; }
+            #appNav   { position:fixed; left:0; right:0; bottom:0; }
             #appMain  { padding-bottom:var(--navH, 92px); }
             #toast    { position:absolute; left:0; right:0; bottom:calc(var(--navH, 92px) + 14px); }
         }
