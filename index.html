@@ -98,7 +98,7 @@
         }
         #appMain { -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
         /* 導覽列背景延伸到 Home Indicator 底下，padding 只負責把內容推上來 */
-        #appNav { background-color:#FFFFFF; padding-bottom:calc(0.35rem + var(--sab, env(safe-area-inset-bottom, 0px))); }
+        #appNav { background-color:#FFFFFF; padding-bottom:0.35rem; }
         html.dark #appNav { background-color:#221F1D !important; }
         /* 已加入主畫面時，整個底色改成 App 奶油色，狀態列區域才不會露出不同色 */
         @media (display-mode: standalone) { html, body { background-color:#FFF8F0; } }
