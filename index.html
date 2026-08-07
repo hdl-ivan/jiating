@@ -67,8 +67,11 @@
         #appFrame {
             position:fixed; inset:0;
             width:100%; max-width:none;
-            height:100dvh;                 /* iOS PWA 的 innerHeight 會少報安全區，只有 dvh 正確 */
-            height:var(--appH, 100dvh);    /* --appH 僅在鍵盤彈出時由 JS 設定 */
+            /* iOS PWA 三個高度來源（innerHeight / visualViewport / 100dvh）
+               都會少報一個「上方安全區」的量，但畫面其實是從 y=0 開始畫的，
+               因此真正的可畫高度 = 100dvh + safe-area-inset-top。 */
+            height:calc(100dvh + env(safe-area-inset-top, 0px));
+            height:var(--appH, calc(100dvh + env(safe-area-inset-top, 0px)));
             border-radius:0; border:0;
             display:flex; flex-direction:column;
         }
@@ -94,7 +97,8 @@
         }
         #appMain { -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
         /* 導覽列背景延伸到 Home Indicator 底下，padding 只負責把內容推上來 */
-        #appNav { padding-bottom:calc(0.625rem + var(--sab, env(safe-area-inset-bottom, 0px))); }
+        #appNav { background-color:#FFFFFF; padding-bottom:calc(0.35rem + var(--sab, env(safe-area-inset-bottom, 0px))); }
+        html.dark #appNav { background-color:#221F1D !important; }
         /* 已加入主畫面時，整個底色改成 App 奶油色，狀態列區域才不會露出不同色 */
         @media (display-mode: standalone) { html, body { background-color:#FFF8F0; } }
         .hide-scrollbar::-webkit-scrollbar { display:none; }
@@ -224,9 +228,12 @@
 
     <div id="gateScreen" class="absolute inset-0 bg-pastel-bg z-[70] flex flex-col justify-center px-6 py-8 overflow-y-auto hide-scrollbar js-hide">
         <div class="text-center space-y-2 mb-8">
-            <img src="./av5.png" alt="" class="w-24 h-24 mx-auto mb-3 float">
-            <h1 class="text-2xl font-bold text-pastel-text">歡迎回家</h1>
-            <p class="text-pastel-muted text-sm">輸入 8 碼家庭代碼就能加入</p>
+            <img src="./av5.png" alt="" class="w-24 h-24 mx-auto mb-2 float">
+            <div class="relative inline-block max-w-[280px]">
+                <div class="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rotate-45 bg-white border-l border-t border-pastel-border"></div>
+                <p id="gateSpeech" class="bg-white border border-pastel-border rounded-2xl px-4 py-2.5 text-sm font-bold text-stone-700 shadow-card">
+                    請輸入 8 位家庭代碼，跟家人連線吧！</p>
+            </div>
         </div>
         <div id="gateError" class="hidden mb-4 p-3 rounded-tile bg-pastel-redLight border border-pastel-red/30 text-pastel-red text-xs font-bold"></div>
         <div id="gateStep1" class="bg-white p-6 rounded-sheet shadow-card border border-pastel-border space-y-4">
@@ -234,12 +241,19 @@
                 <label class="block text-sm font-bold text-stone-700 mb-2.5 text-center">家庭代碼</label>
                 <div class="relative" onclick="document.getElementById('gateCode').focus()">
                     <!-- 真正的輸入框透明疊在方格上：可貼上、可用系統自動填入，也不必處理逐格跳焦點 -->
+                    <!-- 不能用 opacity-0：iOS 對不可見元素不會跳出「貼上」選單。
+                         改為元素可見、但文字與游標透明，長按即可貼上。 -->
                     <input type="text" id="gateCode" maxlength="8" inputmode="latin" autocomplete="one-time-code"
-                           autocapitalize="characters" autocorrect="off" spellcheck="false" oninput="paintOtp()"
-                           class="absolute inset-0 w-full h-full opacity-0 z-10 tracking-[2.4em]">
+                           autocapitalize="characters" autocorrect="off" spellcheck="false"
+                           oninput="paintOtp()" onpaste="setTimeout(paintOtp,0)"
+                           style="color:transparent;caret-color:transparent;background:transparent;border:0;-webkit-text-fill-color:transparent"
+                           class="absolute inset-0 w-full h-full z-10 outline-none">
                     <div id="otpBoxes" class="flex gap-1.5 justify-center"></div>
                 </div>
-                <p class="text-[11px] text-pastel-muted text-center mt-2.5">向家人索取，英數共 8 碼</p>
+                <div class="flex items-center justify-center gap-3 mt-3">
+                    <button type="button" onclick="pasteCode()" class="px-3 py-1.5 rounded-full bg-pastel-bg border border-pastel-border text-[11px] font-bold text-stone-600 tactile"><i class="fa-solid fa-paste mr-1"></i>貼上</button>
+                    <button type="button" onclick="clearCode()" class="px-3 py-1.5 rounded-full bg-pastel-bg border border-pastel-border text-[11px] font-bold text-stone-600 tactile"><i class="fa-solid fa-eraser mr-1"></i>清除</button>
+                </div>
             </div>
             <button id="gateCodeBtn" onclick="gateSubmitCode()" class="w-full py-3.5 bg-pastel-accent text-white font-bold rounded-tile shadow-md">下一步</button>
         </div>
@@ -318,7 +332,7 @@
        ========================================================== */
 
     const CONFIG = {
-        VERSION: 'v4.5.1',
+        VERSION: 'v4.6.0',
         // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
         API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         DEMO: false
@@ -411,7 +425,7 @@
         }
     };
 
-    let STATE = { familyName: '', members: [], categories: [], tags: [], transactions: [], rules: [], budgets: [], me: null, poolInitial: 0 };
+    let STATE = { familyName: '', members: [], categories: [], tags: [], transactions: [], rules: [], budgets: [], intents: [], me: null, poolInitial: 0 };
 
 /* 記住上次選擇：零記帳習慣的人，每次重選帳戶與歸屬是最容易讓人放棄的摩擦 */
 const PREF = {
@@ -693,6 +707,61 @@ function hexA(hex, a) {
         return normIcon(c ? c.icon_emoji : '', c ? c.item_group : '');
     }
 
+    /* ---------- 分攤（split_detail）解析 ----------
+       家庭代墊與私人拆帳共用同一結構；舊資料（單一 related_id）視為長度 1 的陣列，
+       讀取端只有一套邏輯，不需要資料遷移。 */
+    function parseSplit(t) {
+        if (t.split_detail) {
+            try {
+                const a = JSON.parse(t.split_detail);
+                if (Array.isArray(a)) return a.filter(x => x && x.member_id && Number(x.amount) > 0)
+                    .map(x => ({ member_id: x.member_id, amount: Number(x.amount) }));
+            } catch (e) { }
+        }
+        if (t.nature === '私人拆帳' && t.related_id) return [{ member_id: t.related_id, amount: Number(t.amount) || 0 }];
+        return [];
+    }
+    /** 這筆代墊／拆帳中，某成員已還了多少 */
+    function paidFor(srcId, memberId) {
+        return activeTxns().filter(t => t.entry_type === '還款' && t.parent_txn_id === srcId &&
+            t.settle_member_id === memberId).reduce((a, b) => a + (Number(b.amount) || 0), 0);
+    }
+    /** 我被指定、還沒還完的所有項目（公帳代墊分攤 ＋ 私人拆帳，統一視圖） */
+    function myPendingSettlements() {
+        const meId = STATE.me?.member_id;
+        const out = [];
+        activeTxns().filter(t => (t.nature === '家庭代墊' || t.nature === '私人拆帳') && t.payer_id !== meId)
+            .forEach(src => {
+                const mine = parseSplit(src).find(x => x.member_id === meId);
+                if (!mine) return;
+                const remaining = mine.amount - paidFor(src.txn_id, meId);
+                if (remaining <= 0.01) return;
+                const intent = STATE.intents.find(i => i.parent_txn_id === src.txn_id && i.member_id === meId);
+                out.push({
+                    itemType: src.nature === '家庭代墊' ? 'pool' : 'private',
+                    srcId: src.txn_id, payerId: src.payer_id, payerName: nameOf(src.payer_id),
+                    category: src.category, note: src.note, date: src.date,
+                    expected: mine.amount, remaining, marked: !!intent
+                });
+            });
+        return out.sort((a, b) => b.date.localeCompare(a.date));
+    }
+    /** 別人欠我、還沒還完的（付款人視角） */
+    function othersOweMe() {
+        const meId = STATE.me?.member_id;
+        const out = [];
+        activeTxns().filter(t => (t.nature === '家庭代墊' || t.nature === '私人拆帳') && t.payer_id === meId)
+            .forEach(src => parseSplit(src).forEach(x => {
+                const remaining = x.amount - paidFor(src.txn_id, x.member_id);
+                if (remaining > 0.01) out.push({
+                    srcId: src.txn_id, memberId: x.member_id, memberName: nameOf(x.member_id),
+                    category: src.category, note: src.note, date: src.date, expected: x.amount, remaining,
+                    itemType: src.nature === '家庭代墊' ? 'pool' : 'private'
+                });
+            }));
+        return out.sort((a, b) => b.date.localeCompare(a.date));
+    }
+
     function computeSummary(mode, ym) {
         ym = ym || currentYM();
         const meId = STATE.me?.member_id, rows = activeTxns();
@@ -709,13 +778,18 @@ function hexA(hex, a) {
                 if (t.entry_type === '收入') s.cashBalance += a;
                 else if (t.entry_type === '支出' || t.entry_type === '注資') s.cashBalance -= a;
                 else if (t.entry_type === '還款') s.cashBalance += (t.related_id === meId ? a : -a);
-                if (t.nature === '家庭代墊' && t.entry_type === '支出') s.poolOwesMe += a;
+                if (t.nature === '家庭代墊' && t.entry_type === '支出') {
+                    // 有分攤明細時，只有「其他人該還我」的部分算應收；
+                    // 自己吸收的那一份不是任何人的債務。這是本次最重要的金額修正。
+                    const sp = parseSplit(t);
+                    s.poolOwesMe += t.split_detail && sp.length ? sp.reduce((x, y) => x + y.amount, 0) : a;
+                }
             });
             s.cashBalance += Number(STATE.me?.initial_balance) || 0;
-            rows.filter(t => t.entry_type === '還款' && t.related_id === meId && t.member_id === 'family_pool')
+            // 還款扣減：公帳撥款與成員直接還款都算（舊資料只有前者，行為不變）
+            rows.filter(t => t.entry_type === '還款' && t.related_id === meId)
                 .forEach(t => s.poolOwesMe -= Number(t.amount) || 0);
-            rows.filter(t => t.nature === '私人拆帳' && t.related_id === meId && t.payer_id !== meId)
-                .forEach(t => s.iOweOthers += Number(t.amount) || 0);
+            s.iOweOthers = myPendingSettlements().reduce((x, y) => x + y.remaining, 0);
             const cm = {};
             mine.filter(t => t.entry_type === '支出' && inMonth(t.date, ym))
                 .forEach(t => { const k = t.category || '未分類'; cm[k] = (cm[k] || 0) + Number(t.amount); });
@@ -734,8 +808,12 @@ function hexA(hex, a) {
             });
             s.poolBalance += Number(STATE.poolInitial) || 0;
             const owe = {};
-            rows.filter(t => t.nature === '家庭代墊' && t.entry_type === '支出').forEach(t => { owe[t.payer_id] = (owe[t.payer_id] || 0) + Number(t.amount); });
-            rows.filter(t => t.entry_type === '還款' && t.member_id === 'family_pool').forEach(t => { owe[t.related_id] = (owe[t.related_id] || 0) - Number(t.amount); });
+            // 已指定分攤的代墊是「成員之間」的債務，不是公帳整筆欠款，
+            // 因此不列入此區塊（改由待沖銷區處理），維持舊資料行為不變。
+            rows.filter(t => t.nature === '家庭代墊' && t.entry_type === '支出' && !t.split_detail)
+                .forEach(t => { owe[t.payer_id] = (owe[t.payer_id] || 0) + Number(t.amount); });
+            rows.filter(t => t.entry_type === '還款' && t.member_id === 'family_pool' && !t.parent_txn_id)
+                .forEach(t => { owe[t.related_id] = (owe[t.related_id] || 0) - Number(t.amount); });
             s.poolOwesMembers = Object.entries(owe).filter(([, v]) => v > 0.01).map(([id, v]) => ({ member: nameOf(id), amount: v }));
             const back = {};
             rows.filter(t => t.nature === '公帳注資' && t.entry_type === '支出').forEach(t => { back[t.payer_id] = (back[t.payer_id] || 0) + Number(t.amount); });
@@ -773,6 +851,24 @@ function hexA(hex, a) {
         if (v.length < 8) _otpAuto = false;
     }
     let _otpAuto = false;
+    async function pasteCode() {
+        const el = document.getElementById('gateCode');
+        try {
+            const txt = await navigator.clipboard.readText();
+            el.value = String(txt || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+            paintOtp(); buzz();
+        } catch (e) { el.focus(); toast('請長按方格選擇「貼上」', true); }
+    }
+    function clearCode() {
+        const el = document.getElementById('gateCode');
+        el.value = ''; _otpAuto = false; paintOtp(); el.focus(); buzz();
+    }
+    function gateSay(text) {
+        const el = document.getElementById('gateSpeech');
+        if (!el) return;
+        el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop');
+        el.innerHTML = esc(text);
+    }
 
     function showGate() {
         paintOtp();
@@ -792,7 +888,8 @@ function hexA(hex, a) {
             document.getElementById('gateStep1').classList.add('hidden');
             document.getElementById('gateStep2').classList.remove('hidden');
             document.getElementById('gateError').classList.add('hidden');
-        } catch (e) { AUTH.clear(); showGateError(e.message); }
+            gateSay('太好了，你是哪一位呢？');
+        } catch (e) { AUTH.clear(); _otpAuto = false; gateSay('這組代碼好像不對，再確認一次？'); showGateError(e.message); }
         finally { b.disabled = false; b.innerText = '下一步'; }
     }
 
@@ -809,7 +906,10 @@ function hexA(hex, a) {
 
     async function pickMember(id) {
         AUTH.memberId = id;
+        const picked = STATE.members.find(m => m.member_id === id);
+        gateSay(`哈囉，${picked ? picked.nickname : ''}，歡迎回來！`);
         document.getElementById('gateStep2').classList.add('hidden');
+        await new Promise(z => setTimeout(z, 700));      // 讓歡迎語有時間被看到
         document.getElementById('splash').classList.remove('js-hide');
         try { await loadAll(); enterApp(); }
         catch (e) {
@@ -823,7 +923,7 @@ function hexA(hex, a) {
         const d = await api.call('bootstrap');
         Object.assign(STATE, {
             familyName: d.familyName, members: d.members, categories: d.categories,
-            tags: d.tags, transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], poolInitial: d.poolInitial
+            tags: d.tags, transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], poolInitial: d.poolInitial
         });
         STATE.me = STATE.members.find(m => m.member_id === AUTH.memberId);
         if (!STATE.me) throw new Error('找不到此成員，請重新選擇');
@@ -916,7 +1016,7 @@ function hexA(hex, a) {
     async function refreshData() {
         try {
             const d = await api.call('bootstrap');
-            Object.assign(STATE, { transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], categories: d.categories, tags: d.tags, members: d.members });
+            Object.assign(STATE, { transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], categories: d.categories, tags: d.tags, members: d.members });
             STATE.me = STATE.members.find(m => m.member_id === AUTH.memberId) || STATE.me;
             renderDataViews(); renderSettings(); toast('已同步');
         } catch (e) { toast('同步失敗：' + e.message, true); }
@@ -1042,6 +1142,7 @@ function hexA(hex, a) {
             const net = s.cashBalance + s.poolOwesMe - s.iOweOthers;
             c.innerHTML = `
                 ${reminderCard()}
+                ${pendingCard()}
                 ${budgetHero(s)}
                 ${categoryBudgets(s)}
                 <div class="grid grid-cols-2 gap-4">
@@ -1096,6 +1197,7 @@ function hexA(hex, a) {
                         <span class="text-xs text-pastel-muted bg-pastel-bg px-2.5 py-1 rounded-full">本月</span></div>
                     ${pieHtml(s.byCategory, s.monthlyExpense)}
                 </div>
+                ${intentCard()}
                 <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-4">
                     <h3 class="text-sm font-bold text-stone-800"><i class="fa-solid fa-hand-holding-dollar text-pastel-accent mr-1.5"></i> 公帳待結算核銷</h3>
                     <div class="space-y-3">
@@ -1247,6 +1349,146 @@ function hexA(hex, a) {
         try {
             for (const it of items) await api.call('saveBudget', { budget: { scope, ym: 'DEFAULT', category: it.category, amount: it.amount } });
         } catch (e) { toast('部分預算同步失敗：' + e.message, true); }
+    }
+
+    /* ---------- 統一待清償中心 ---------- */
+    function pendingCard() {
+        const list = myPendingSettlements();
+        if (!list.length) return '';
+        const total = list.reduce((a, b) => a + b.remaining, 0);
+        const priv = list.filter(x => x.itemType === 'private');
+        const grp = (type, label, icon) => {
+            const items = list.filter(x => x.itemType === type);
+            if (!items.length) return '';
+            return `<div class="space-y-2">
+                <div class="text-xs font-bold text-pastel-muted border-b border-pastel-border pb-1"><i class="fa-solid ${icon} mr-1.5"></i>${label}</div>
+                ${items.map((x, i) => `
+                    <div class="bg-pastel-bg rounded-tile p-3 border border-pastel-border">
+                        <div class="flex justify-between items-start gap-2 mb-2">
+                            <div class="min-w-0">
+                                <div class="font-bold text-sm text-stone-800 truncate">${esc(x.payerName)}代墊：${esc(x.note || x.category || '—')}</div>
+                                <div class="text-[10px] text-pastel-muted">${esc(x.date)} ・ 你的分攤 ${fmt(x.expected)}${x.marked ? ' ・ <span class="text-pastel-blue font-bold">已選公帳月結</span>' : ''}</div>
+                            </div>
+                            <div class="font-bold font-rounded text-pastel-red flex-shrink-0">${fmt(x.remaining)}</div>
+                        </div>
+                        <div class="grid ${type === 'pool' ? 'grid-cols-2' : 'grid-cols-1'} gap-2">
+                            <button onclick="openRepay('${esc(x.srcId)}')" class="py-2 bg-pastel-accent text-white rounded-lg text-xs font-bold tactile"><i class="fa-solid fa-hand-holding-dollar mr-1"></i>直接還款</button>
+                            ${type === 'pool' ? `<button onclick="${x.marked ? `unmarkPool('${esc(x.srcId)}')` : `markPool('${esc(x.srcId)}')`}" class="py-2 rounded-lg text-xs font-bold tactile ${x.marked ? 'bg-pastel-blueLight text-pastel-blue border border-pastel-blue/30' : 'bg-white border border-pastel-border text-stone-600'}"><i class="fa-solid fa-building-columns mr-1"></i>${x.marked ? '取消公帳月結' : '記為公帳扣抵'}</button>` : ''}
+                        </div>
+                    </div>`).join('')}
+            </div>`;
+        };
+        return `<div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-4">
+            <div class="flex justify-between items-center">
+                <span class="text-sm font-bold text-stone-800"><i class="fa-solid fa-file-invoice-dollar text-pastel-red mr-1.5"></i>待清償</span>
+                <span class="text-xs text-pastel-muted">共 ${list.length} 筆 ・ <b class="text-pastel-red font-rounded">${fmt(total)}</b></span></div>
+            ${grp('pool', '公帳代墊分攤', 'fa-users')}
+            ${grp('private', '私人拆帳', 'fa-user-group')}
+            ${priv.length > 1 ? `<button onclick="repayAllPrivate()" class="w-full py-3 bg-stone-800 text-white font-bold rounded-tile text-sm tactile">一鍵歸還全部私人拆帳（${fmt(priv.reduce((a, b) => a + b.remaining, 0))}）</button>` : ''}
+        </div>`;
+    }
+
+    /* 快速歸還：金額預帶剩餘、備註自動生成，parent_txn_id 與 settle_member_id 自動寫入 */
+    function openRepay(srcId) {
+        const x = myPendingSettlements().find(i => i.srcId === srcId); if (!x) return;
+        openSheet(`
+            <h3 class="text-lg font-bold text-stone-800 mb-1">歸還給 ${esc(x.payerName)}</h3>
+            <p class="text-xs text-pastel-muted mb-5">${esc(x.note || x.category || '')} ・ 應付 ${fmt(x.expected)}</p>
+            <div class="space-y-4">
+                <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">歸還金額（可部分歸還）</label>
+                    <input id="rpAmt" type="number" inputmode="decimal" value="${x.remaining}" class="w-full p-3.5 rounded-tile bg-pastel-accentLight border-2 border-pastel-accent/40 text-stone-800 font-bold text-xl font-rounded"></div>
+                <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">日期</label>
+                    <input id="rpDate" type="date" value="${todayISO()}" class="w-full py-3 px-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm"></div>
+                <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">備註</label>
+                    <input id="rpNote" value="${esc(`${x.payerName}代墊：${x.category || x.note || ''}`)}" class="w-full p-3.5 rounded-tile bg-pastel-bg border border-pastel-border text-sm"></div>
+                <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">從哪個帳戶付</label>
+                    <select id="rpTag" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
+                        ${STATE.tags.map(t => `<option ${PREF.get('tag', '') === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
+                <button onclick="doRepay('${esc(srcId)}')" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile">確認歸還</button>
+            </div>`);
+    }
+
+    function buildRepayTxn(x, amount, date, note, tag) {
+        return {
+            date: date || todayISO(), entry_type: '還款', category: '', tag: tag || '結算',
+            amount, note: note || `${x.payerName}代墊：${x.category || x.note || ''}`,
+            nature: x.itemType === 'pool' ? '家庭代墊' : '私人拆帳',
+            member_id: STATE.me.member_id, payer_id: STATE.me.member_id,
+            related_id: x.payerId, parent_txn_id: x.srcId, settle_member_id: STATE.me.member_id
+        };
+    }
+
+    async function doRepay(srcId) {
+        const x = myPendingSettlements().find(i => i.srcId === srcId); if (!x) return;
+        const amt = Number(document.getElementById('rpAmt').value);
+        if (!amt || amt <= 0) { buzz(30); return toast('請輸入金額', true); }
+        if (amt > x.remaining + 0.01) { buzz(30); return toast(`不能超過應付的 ${fmt(x.remaining)}`, true); }
+        const txn = buildRepayTxn(x, amt, document.getElementById('rpDate').value,
+            document.getElementById('rpNote').value, document.getElementById('rpTag').value);
+        closeSheet();
+        if (x.marked) { try { await api.call('deleteIntent', { intent_id: `${x.srcId}|${STATE.me.member_id}` }); STATE.intents = STATE.intents.filter(i => i.parent_txn_id !== x.srcId || i.member_id !== STATE.me.member_id); } catch (e) { } }
+        await optimisticAdd(txn, null, '已歸還');
+    }
+
+    async function repayAllPrivate() {
+        const list = myPendingSettlements().filter(x => x.itemType === 'private');
+        if (!list.length) return;
+        const total = list.reduce((a, b) => a + b.remaining, 0);
+        const detail = list.map(x => `・${x.payerName}：${fmt(x.remaining)}`).join('\n');
+        if (!confirm(`將產生 ${list.length} 筆還款交易，合計 ${fmt(total)}：\n\n${detail}\n\n確定嗎？`)) return;
+        let okN = 0, failN = 0;
+        for (const x of list) {
+            try { await api.call('addTransaction', { txn: buildRepayTxn(x, x.remaining) }); okN++; }
+            catch (e) { failN++; }
+        }
+        await refreshData();
+        toast(failN ? `成功 ${okN} 筆、失敗 ${failN} 筆` : `已歸還 ${okN} 筆`, !!failN);
+    }
+
+    async function markPool(srcId) {
+        const x = myPendingSettlements().find(i => i.srcId === srcId); if (!x) return;
+        STATE.intents.push({ intent_id: `${srcId}|${STATE.me.member_id}`, parent_txn_id: srcId, member_id: STATE.me.member_id, payer_id: x.payerId, amount: x.remaining, status: '待沖銷' });
+        renderDashboard(); toast('已標記為公帳月結');
+        try { await api.call('saveIntent', { parent_txn_id: srcId, payer_id: x.payerId, amount: x.remaining }); }
+        catch (e) { STATE.intents = STATE.intents.filter(i => i.parent_txn_id !== srcId || i.member_id !== STATE.me.member_id); renderDashboard(); toast(e.message, true); }
+    }
+    async function unmarkPool(srcId) {
+        const bak = [...STATE.intents];
+        STATE.intents = STATE.intents.filter(i => i.parent_txn_id !== srcId || i.member_id !== STATE.me.member_id);
+        renderDashboard(); toast('已取消');
+        try { await api.call('deleteIntent', { intent_id: `${srcId}|${STATE.me.member_id}` }); }
+        catch (e) { STATE.intents = bak; renderDashboard(); toast(e.message, true); }
+    }
+
+    /* 家庭模式：公帳待沖銷（路徑 B 的核銷區） */
+    function intentCard() {
+        if (!STATE.intents.length) return '';
+        return `<div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-3">
+            <div class="text-sm font-bold text-stone-800"><i class="fa-solid fa-building-columns text-pastel-blue mr-1.5"></i>待公帳撥款沖銷</div>
+            <p class="text-[11px] text-pastel-muted">成員已標記「由公帳月結」的分攤，確認撥款後才會寫入實際交易。</p>
+            ${STATE.intents.map(i => {
+                const src = STATE.transactions.find(t => t.txn_id === i.parent_txn_id);
+                return `<div class="bg-pastel-bg rounded-tile p-3 border border-pastel-border flex justify-between items-center gap-2">
+                    <div class="min-w-0">
+                        <div class="font-bold text-sm text-stone-800 truncate">${esc(nameOf(i.member_id))} → ${esc(nameOf(i.payer_id))}</div>
+                        <div class="text-[10px] text-pastel-muted truncate">${esc(src ? (src.note || src.category) : '—')}</div></div>
+                    <div class="text-right flex-shrink-0">
+                        <div class="font-bold font-rounded text-sm mb-1">${fmt(i.amount)}</div>
+                        <button onclick="settleIntent('${esc(i.intent_id)}')" class="px-3 py-1.5 bg-pastel-accent text-white rounded-lg text-[10px] font-bold tactile">確認撥款</button></div>
+                </div>`;
+            }).join('')}
+        </div>`;
+    }
+    async function settleIntent(id) {
+        const it = STATE.intents.find(i => i.intent_id === id); if (!it) return;
+        if (!confirm(`確認由公帳撥款 ${fmt(it.amount)} 給 ${nameOf(it.payer_id)}？`)) return;
+        try {
+            const res = await api.call('settleIntent', { intent_id: id });
+            STATE.transactions.push(res.txn);
+            if (res.remaining > 0.01) it.amount = res.remaining;
+            else STATE.intents = STATE.intents.filter(i => i.intent_id !== id);
+            renderDataViews(); toast('已撥款結清');
+        } catch (e) { toast(e.message, true); }
     }
 
     function settleRow(r, dir) {
@@ -1678,6 +1920,7 @@ function hexA(hex, a) {
         }
         addState.expr = e;
         paintAmount();
+        paintSplitSummary();
     }
 
     function paintAmount() {
@@ -1738,11 +1981,7 @@ function hexA(hex, a) {
                     <option value="家庭代墊">我先代墊，公帳要還我</option>
                     <option value="家庭公帳">我贊助家用（不需歸還）</option>
                     <option value="私人拆帳">與指定成員拆帳</option></select>
-                <div id="splitDetailBox" class="hidden p-3 bg-white rounded-xl border border-pastel-accent/25 space-y-2">
-                    <div class="font-bold text-stone-700 text-xs">對方是誰？（記錄成對方欠我）</div>
-                    <select id="inpRelated" class="w-full p-2.5 rounded-lg bg-pastel-bg border border-pastel-border text-sm">
-                        ${STATE.members.filter(m => m.member_id !== 'family_pool' && m.member_id !== STATE.me?.member_id).map(m => `<option value="${esc(m.member_id)}">${esc(m.nickname)}</option>`).join('')}
-                    </select></div></div>`;
+                <div id="splitDetailBox" class="hidden"></div></div>`;
         } else {
             c.innerHTML = `<div class="p-4 bg-pastel-greenLight border border-pastel-green/20 rounded-tile">
                 <div class="font-bold text-pastel-green text-xs mb-1">家庭公帳直接支出</div>
@@ -1754,9 +1993,82 @@ function hexA(hex, a) {
         addState.nature = el ? el.value : '純個人';
         toggleSplitConfig();
     }
+
+    /* ---------- 分攤設定：家庭代墊與私人拆帳共用同一組 UI 與 split_detail 結構 ---------- */
+    function splitMembers() {
+        return STATE.members.filter(m => m.member_id !== 'family_pool' &&
+            m.member_id !== STATE.me?.member_id && m.status !== '停用');
+    }
+    function splitSum() {
+        return Object.values(addState.splits || {}).reduce((a, b) => a + (Number(b) || 0), 0);
+    }
     function toggleSplitConfig() {
         const v = document.getElementById('inpNature')?.value, b = document.getElementById('splitDetailBox');
-        if (b) b.classList.toggle('hidden', v !== '私人拆帳');
+        if (!b) return;
+        const on = (v === '私人拆帳' || v === '家庭代墊');
+        b.classList.toggle('hidden', !on);
+        if (on) renderSplitBox(v);
+        else addState.splits = {};
+    }
+    function renderSplitBox(mode) {
+        const b = document.getElementById('splitDetailBox'); if (!b) return;
+        const isPool = mode === '家庭代墊';
+        addState.splits = addState.splits || {};
+        b.innerHTML = `
+            <div class="p-3 bg-white rounded-xl border border-pastel-accent/25 space-y-3">
+                <div class="flex justify-between items-center">
+                    <div class="font-bold text-stone-700 text-xs">${isPool ? '要分攤給誰？（可複選）' : '與誰拆帳？（可複選）'}</div>
+                    ${isPool ? `<button type="button" onclick="splitEven()" class="text-[11px] font-bold text-pastel-accent">平均分攤</button>` : ''}
+                </div>
+                <div class="space-y-2">
+                    ${splitMembers().map(m => {
+            const on = addState.splits[m.member_id] !== undefined;
+            return `<div class="flex items-center gap-2">
+                            <button type="button" onclick="toggleSplitMember('${esc(m.member_id)}')"
+                                class="w-6 h-6 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${on ? 'bg-pastel-accent border-pastel-accent text-white' : 'border-pastel-border bg-pastel-bg text-transparent'}">
+                                <i class="fa-solid fa-check text-[10px]"></i></button>
+                            <span class="flex-1 text-sm text-stone-700 truncate">${esc(m.nickname)}</span>
+                            <div class="relative w-28 flex-shrink-0">
+                                <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-pastel-muted">$</span>
+                                <input type="number" inputmode="decimal" ${on ? '' : 'disabled'}
+                                    value="${on ? esc(addState.splits[m.member_id]) : ''}"
+                                    oninput="setSplitAmount('${esc(m.member_id)}', this.value)"
+                                    class="w-full py-2 pl-6 pr-2 rounded-lg border text-sm text-right font-rounded ${on ? 'bg-pastel-bg border-pastel-border text-stone-800' : 'bg-stone-100/60 border-transparent text-stone-300'}">
+                            </div></div>`;
+        }).join('')}
+                </div>
+                <div id="splitSummary" class="text-[11px] pt-2 border-t border-pastel-border"></div>
+            </div>`;
+        paintSplitSummary();
+    }
+    function paintSplitSummary() {
+        const el = document.getElementById('splitSummary'); if (!el) return;
+        const total = evalExpr(addState.expr), sum = splitSum(), rest = total - sum;
+        const over = sum > total + 0.01;
+        el.innerHTML = `<div class="flex justify-between ${over ? 'text-pastel-red font-bold' : 'text-pastel-muted'}">
+                <span>已分攤 ${fmt(sum)} / 總額 ${fmt(total)}</span>
+                <span>${over ? '超過總額！' : rest > 0.01 ? `你自己吸收 ${fmt(rest)}` : '無人吸收剩餘'}</span></div>`;
+    }
+    function toggleSplitMember(id) {
+        buzz();
+        addState.splits = addState.splits || {};
+        if (addState.splits[id] !== undefined) delete addState.splits[id];
+        else addState.splits[id] = 0;
+        renderSplitBox(document.getElementById('inpNature')?.value);
+    }
+    function setSplitAmount(id, v) { addState.splits[id] = Number(v) || 0; paintSplitSummary(); }
+    function splitEven() {
+        const ids = Object.keys(addState.splits || {});
+        if (!ids.length) return toast('請先勾選要分攤的成員', true);
+        const total = evalExpr(addState.expr);
+        const each = Math.round(total / (ids.length + 1));    // ＋1＝付款人自己也算一份
+        ids.forEach(i => addState.splits[i] = each);
+        renderSplitBox(document.getElementById('inpNature')?.value);
+    }
+    function splitList() {
+        return Object.entries(addState.splits || {})
+            .filter(([, v]) => Number(v) > 0)
+            .map(([member_id, amount]) => ({ member_id, amount: Number(amount) }));
     }
     function toggleRecurringBox() { document.getElementById('recurringBox').classList.toggle('hidden', !document.getElementById('isRecurring').checked); }
 
@@ -1772,7 +2084,7 @@ function hexA(hex, a) {
                 tag: PREF.get('tag', '') || (STATE.tags[0]?.item_name || ''),
                 nature: PREF.get('nature', '純個人'),
                 from: PREF.get('tag', '') || (STATE.tags[0]?.item_name || ''),
-                to: STATE.tags[1]?.item_name || ''
+                to: STATE.tags[1]?.item_name || '', splits: {}
             };
             editingTxnId = null; pendingReceipt = null;
         }
@@ -1937,6 +2249,7 @@ function hexA(hex, a) {
         addState.expr = String(evalExpr(addState.expr));
         closeSheet(); buzz();
         initAddForm(true);
+        paintSplitSummary();
     }
 
     function handleReceipt(e) {
@@ -1988,12 +2301,17 @@ function hexA(hex, a) {
 
         const nature = document.getElementById('inpNature')?.value || '純個人';
         const isExp = addState.mode === 'expense';
+        const sl = (nature === '家庭代墊' || nature === '私人拆帳') ? splitList() : [];
+        if (sl.reduce((a, b) => a + b.amount, 0) > amount + 0.01) {
+            buzz(30); return toast('分攤金額加總超過總額，請調整', true);
+        }
         const txn = {
             date: addState.date || todayISO(),
             entry_type: isExp ? '支出' : '收入',
             category: addState.cat, tag: addState.tag, amount,
             note: addState.note, nature,
-            related_id: nature === '私人拆帳' ? (document.getElementById('inpRelated')?.value || '') : '',
+            split_detail: sl.length ? JSON.stringify(sl) : '',
+            related_id: sl.length === 1 ? sl[0].member_id : '',
             member_id: STATE.me.member_id,
             payer_id: (currentMode === 'family' && isExp && nature === '家庭公帳') ? 'family_pool' : STATE.me.member_id
         };
@@ -2566,6 +2884,14 @@ function hexA(hex, a) {
        版面高度：唯一可靠的來源是 visualViewport / innerHeight
        ========================================================== */
     let LAYOUT = {};
+    function measureDvh() {
+        const dp = document.createElement('div');
+        dp.style.cssText = 'position:fixed;top:0;left:0;width:0;height:100dvh;pointer-events:none;visibility:hidden';
+        document.body.appendChild(dp);
+        const px = Math.round(dp.getBoundingClientRect().height);
+        dp.remove();
+        return px;
+    }
     function syncFrameHeight() {
         if (window.innerWidth >= 768) {                 // 桌機交回 CSS 處理
             document.documentElement.style.removeProperty('--appH');
@@ -2583,19 +2909,21 @@ function hexA(hex, a) {
             document.documentElement.style.setProperty('--appH', h + 'px');
             window.scrollTo(0, 0); document.body.scrollTop = 0;
         } else {
-            document.documentElement.style.removeProperty('--appH');
-            const fr = document.getElementById('appFrame');
-            h = fr ? Math.round(fr.getBoundingClientRect().height) : window.innerHeight;
+            // iOS PWA 的 dvh / innerHeight / visualViewport 都少報一個上方安全區，
+            // 但畫面是從 y=0 開始畫的，真正可畫高度 = dvh + sat。
+            // 再以 screen.height 為上限，避免其他平台重複相加而溢出。
+            const satPx = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sat')) || 0;
+            const base = measureDvh();
+            const scr = (window.screen && window.screen.height) ? window.screen.height : Infinity;
+            h = Math.round(Math.min(base + satPx, scr));
+            document.documentElement.style.setProperty('--appH', h + 'px');
         }
         // 導覽列是 fixed，主內容區必須自己讓出等高的底部空間
         const nav = document.getElementById('appNav');
         const navH = nav && !nav.classList.contains('js-hide') ? (nav.offsetHeight || Math.round(nav.getBoundingClientRect().height)) : 0;
         if (navH > 0) document.documentElement.style.setProperty('--navH', navH + 'px');
         // 實測 100dvh 換算出的像素，用來確認它是否等於實體螢幕高度
-        const dp = document.createElement('div');
-        dp.style.cssText = 'position:fixed;top:0;left:0;width:0;height:100dvh;pointer-events:none;visibility:hidden';
-        document.body.appendChild(dp);
-        const dvhPx = Math.round(dp.getBoundingClientRect().height); dp.remove();
+        const dvhPx = measureDvh();
 
         const frame = document.getElementById('appFrame');
         LAYOUT = {
