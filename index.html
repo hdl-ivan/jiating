@@ -55,7 +55,7 @@
            iOS 的 position:fixed + height:100% 在工具列伸縮時解析出的值不等於實際可視高度，
            底部會差一截；直接把外框釘在視窗四邊（inset:0）才會真正貼底。 */
         html, body {
-            background-color:#FFFFFF; height:100%; margin:0; padding:0;
+            background-color:#FBF2E6; height:100%; margin:0; padding:0;
             overflow:hidden; overscroll-behavior:none; touch-action:manipulation;
         }
         body { font-family:'Inter','Noto Sans TC',sans-serif; color:#3A3330; -webkit-tap-highlight-color:transparent; }
@@ -65,7 +65,6 @@
            不見得等於使用者實際看到的高度。改由 JS 量測 visualViewport 寫入 --appH，
            這是唯一保證與螢幕所見一致的來源。 */
         #appFrame {
-            background-color:#FBF2E6;
             position:fixed; inset:0;
             width:100%; max-width:none;
             /* iOS PWA 三個高度來源（innerHeight / visualViewport / 100dvh）
@@ -343,7 +342,7 @@
        ========================================================== */
 
     const CONFIG = {
-        VERSION: 'v4.6.1',
+        VERSION: 'v4.7.0',
         // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
         API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         DEMO: false
@@ -1154,6 +1153,7 @@ function hexA(hex, a) {
             c.innerHTML = `
                 ${reminderCard()}
                 ${pendingCard()}
+                ${receivableCard()}
                 ${budgetHero(s)}
                 ${categoryBudgets(s)}
                 <div class="grid grid-cols-2 gap-4">
@@ -1395,7 +1395,47 @@ function hexA(hex, a) {
                 <span class="text-xs text-pastel-muted">共 ${list.length} 筆 ・ <b class="text-pastel-red font-rounded">${fmt(total)}</b></span></div>
             ${grp('pool', '公帳代墊分攤', 'fa-users')}
             ${grp('private', '私人拆帳', 'fa-user-group')}
-            ${priv.length > 1 ? `<button onclick="repayAllPrivate()" class="w-full py-3 bg-stone-800 text-white font-bold rounded-tile text-sm tactile">一鍵歸還全部私人拆帳（${fmt(priv.reduce((a, b) => a + b.remaining, 0))}）</button>` : ''}
+            ${priv.length > 1 ? `<button onclick="repayAll('private')" class="w-full py-3 bg-stone-800 text-white font-bold rounded-tile text-sm tactile">一鍵歸還全部私人拆帳（${fmt(priv.reduce((a, b) => a + b.remaining, 0))}）</button>` : ''}
+            ${list.length > 1 ? `<button onclick="repayAll('all')" class="w-full py-3 bg-white border-2 border-stone-800 text-stone-800 font-bold rounded-tile text-sm tactile">一鍵歸還全部（含公帳代墊，${fmt(total)}）</button>` : ''}
+        </div>`;
+    }
+
+    /* ---------- 代墊人視角：誰還欠我、還了多少 ---------- */
+    function receivableCard() {
+        const list = othersOweMe();
+        if (!list.length) return '';
+        const byMember = {};
+        list.forEach(x => {
+            byMember[x.memberId] = byMember[x.memberId] || { name: x.memberName, items: [], remaining: 0, expected: 0 };
+            byMember[x.memberId].items.push(x);
+            byMember[x.memberId].remaining += x.remaining;
+            byMember[x.memberId].expected += x.expected;
+        });
+        const total = list.reduce((a, b) => a + b.remaining, 0);
+        return `<div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-3">
+            <div class="flex justify-between items-center">
+                <span class="text-sm font-bold text-stone-800"><i class="fa-solid fa-hand-holding-dollar text-pastel-green mr-1.5"></i>別人欠我</span>
+                <span class="text-xs text-pastel-muted">共 ${list.length} 筆 ・ <b class="text-pastel-green font-rounded">${fmt(total)}</b></span></div>
+            ${Object.entries(byMember).map(([id, g]) => {
+                const paid = g.expected - g.remaining, pct = g.expected ? paid / g.expected * 100 : 0;
+                const m = STATE.members.find(x => x.member_id === id);
+                const lv = getLevelInfo(m?.streak_days);
+                return `<div class="bg-pastel-bg rounded-tile p-3 border border-pastel-border">
+                    <div class="flex items-center gap-3 mb-2">
+                        <div class="w-9 h-9 rounded-full border-2 ${lv.border} ${lv.bg} overflow-hidden flex items-center justify-center text-sm flex-shrink-0">${avatarInner(m?.avatar_emoji)}</div>
+                        <div class="flex-1 min-w-0">
+                            <div class="font-bold text-sm text-stone-800 truncate">${esc(g.name)}</div>
+                            <div class="text-[10px] text-pastel-muted">${g.items.length} 筆 ・ 已還 ${fmt(paid)} / ${fmt(g.expected)}</div></div>
+                        <div class="font-bold font-rounded text-pastel-green flex-shrink-0">${fmt(g.remaining)}</div></div>
+                    <div class="w-full bg-white rounded-full h-2 overflow-hidden border border-pastel-border">
+                        <div class="bg-pastel-green h-2 rounded-full transition-all duration-700" style="width:${pct.toFixed(0)}%"></div></div>
+                    <div class="mt-2 space-y-1">
+                        ${g.items.map(x => `<div class="flex justify-between text-[10px] text-pastel-muted">
+                            <span class="truncate">${esc(x.date)} ${esc(x.note || x.category || '')}</span>
+                            <span class="flex-shrink-0 ml-2">${fmt(x.remaining)} / ${fmt(x.expected)}</span></div>`).join('')}
+                    </div></div>`;
+            }).join('')}
+            <p class="text-[10px] text-pastel-muted">對方在自己的首頁會看到「待清償」，可直接還款或標記由公帳月結。</p>
         </div>`;
     }
 
@@ -1441,16 +1481,25 @@ function hexA(hex, a) {
         await optimisticAdd(txn, null, '已歸還');
     }
 
-    async function repayAllPrivate() {
-        const list = myPendingSettlements().filter(x => x.itemType === 'private');
+    /** scope: 'private' 只還私人拆帳；'all' 連公帳代墊一起（一律走路徑 A 直接還款） */
+    async function repayAll(scope) {
+        const all = myPendingSettlements();
+        const list = scope === 'private' ? all.filter(x => x.itemType === 'private') : all;
         if (!list.length) return;
         const total = list.reduce((a, b) => a + b.remaining, 0);
-        const detail = list.map(x => `・${x.payerName}：${fmt(x.remaining)}`).join('\n');
-        if (!confirm(`將產生 ${list.length} 筆還款交易，合計 ${fmt(total)}：\n\n${detail}\n\n確定嗎？`)) return;
+        const pool = list.filter(x => x.itemType === 'pool');
+        const detail = list.map(x => `・${x.payerName}（${x.itemType === 'pool' ? '公帳代墊' : '私人拆帳'}）：${fmt(x.remaining)}`).join('\n');
+        const warn = pool.length
+            ? `\n\n注意：其中 ${pool.length} 筆是公帳代墊，將以「直接還款」處理；\n若你原本想讓公帳月結，請改用逐筆的「記為公帳扣抵」。`
+            : '';
+        if (!confirm(`將產生 ${list.length} 筆還款交易，合計 ${fmt(total)}：\n\n${detail}${warn}\n\n確定嗎？`)) return;
         let okN = 0, failN = 0;
         for (const x of list) {
-            try { await api.call('addTransaction', { txn: buildRepayTxn(x, x.remaining) }); okN++; }
-            catch (e) { failN++; }
+            try {
+                await api.call('addTransaction', { txn: buildRepayTxn(x, x.remaining) });
+                if (x.marked) { try { await api.call('deleteIntent', { intent_id: `${x.srcId}|${STATE.me.member_id}` }); } catch (e2) { } }
+                okN++;
+            } catch (e) { failN++; }
         }
         await refreshData();
         toast(failN ? `成功 ${okN} 筆、失敗 ${failN} 筆` : `已歸還 ${okN} 筆`, !!failN);
@@ -1601,14 +1650,17 @@ function hexA(hex, a) {
             filters.tags.length + (filters.min !== '' ? 1 : 0) + (filters.max !== '' ? 1 : 0);
     }
 
-    /* ---------- 合併分析圖 ----------
-       上半：收支累計 + 預算應有進度（判斷「是否超前花費」）
-       下半：每日支出柱（判斷「哪幾天爆掉」）
-       兩者共用同一條時間軸，且只畫到今天為止——未來還沒發生的日子不該有線。 */
+    /* ---------- 收支節奏分析圖 ----------
+       三組資料共用「同一條基準線」：
+         · 每日支出：從基準線長出來的小柱（低矮、可愛，用來看哪幾天爆掉）
+         · 收入累計 / 支出累計：兩條上升線
+         · 剩餘預算：從月總預算開始倒扣的下降線
+       只要「剩餘預算線」始終在「支出累計線」上方就代表安全；
+       兩線交叉的那一天，就是花費開始吃掉安全邊際的轉折點。 */
     function comboChartHtml(ym) {
         const rows = scopedTxns(ym), n = daysInYM(ym);
         const isCur = ym === currentYM();
-        const last = isCur ? Number(todayISO().slice(8, 10)) : n;   // 只畫到今天
+        const last = isCur ? Math.min(Number(todayISO().slice(8, 10)), n) : n;
         const inc = Array(n).fill(0), exp = Array(n).fill(0);
         rows.forEach(t => {
             const d = Number(String(t.date).slice(8, 10)) - 1;
@@ -1625,43 +1677,54 @@ function hexA(hex, a) {
         if (!totalI && !totalE) return `<div class="flex flex-col items-center py-8 gap-2"><img src="./av14.png" alt="" class="w-14 h-14 opacity-70"><span class="text-xs text-pastel-muted">這個月還沒有資料</span></div>`;
 
         const budget = budgetFor(currentMode, '');
-        const W = 320, H = 176, L = 8, R = 8, pw = W - L - R;
-        const T1 = 10, B1 = 104, T2 = 116, B2 = 152;          // 上下兩個繪圖帶
-        const maxLine = Math.max(totalI, totalE, budget, 1);
-        const maxBar = Math.max(...dayExp, 1);
+        const remain = budget ? cumE.map(v => budget - v) : [];      // 預算倒扣
+        const W = 320, H = 150, L = 8, R = 8, T = 12, B = 128;       // 單一繪圖區，共用基準線 B
+        const pw = W - L - R, ph = B - T;
+        const maxV = Math.max(totalI, totalE, budget, 1);
         const x = i => L + (n === 1 ? pw / 2 : (i / (n - 1)) * pw);
-        const yL = v => B1 - (v / maxLine) * (B1 - T1);
-        const pts = a => a.map((v, i) => `${x(i).toFixed(1)},${yL(v).toFixed(1)}`).join(' ');
-        const bw = Math.max(pw / n - 1, 1.2);
-        const bars = dayExp.map((v, i) => v > 0
-            ? `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${(B2 - (v / maxBar) * (B2 - T2)).toFixed(1)}" width="${bw.toFixed(1)}" height="${((v / maxBar) * (B2 - T2)).toFixed(1)}" rx="${Math.min(bw / 2, 1.5).toFixed(1)}" fill="#F8A048"/>` : '').join('');
-        // 預算應有進度：整月均speed的斜直線，用來對照實際累計快或慢
-        const pace = budget ? `<line x1="${x(0)}" y1="${yL(budget / n)}" x2="${x(n - 1)}" y2="${yL(budget)}" stroke="#9A918A" stroke-width="1.5" stroke-dasharray="4 4"/>` : '';
-        const ideal = budget ? budget / n * last : 0;
-        const diff = ideal ? totalE - ideal : 0;
+        const y = v => B - (Math.max(v, 0) / maxV) * ph;
+        const pts = a => a.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+
+        // 每日支出小柱：從基準線長出，最高只佔繪圖區 26%，不搶走折線的視覺
+        const maxBar = Math.max(...dayExp, 1);
+        const bw = Math.max(pw / n - 1.2, 1.4);
+        const bars = dayExp.map((v, i) => {
+            const hh = v > 0 ? Math.max((v / maxBar) * ph * 0.26, 2) : 0;
+            return hh ? `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${(B - hh).toFixed(1)}" width="${bw.toFixed(1)}" height="${hh.toFixed(1)}" rx="${Math.min(bw / 2, 1.6).toFixed(1)}" fill="#F8A048" opacity=".55"/>` : '';
+        }).join('');
+
+        // 兩線交叉點（剩餘預算 < 支出累計 的第一天）
+        let crossDay = 0;
+        if (budget) for (let i = 0; i < remain.length; i++) if (remain[i] < cumE[i]) { crossDay = i + 1; break; }
+        const crossMark = crossDay ? `<line x1="${x(crossDay - 1)}" y1="${T}" x2="${x(crossDay - 1)}" y2="${B}" stroke="#F05838" stroke-width="1" stroke-dasharray="2 3" opacity=".6"/>` : '';
+
+        const pace = last ? totalE / last * n : 0;                   // 依目前速度推估月底
+        const over = budget && pace > budget;
 
         return `
-        <svg viewBox="0 0 ${W} ${H}" class="w-full" style="height:176px" preserveAspectRatio="none">
-            <line x1="${L}" y1="${B1}" x2="${W - R}" y2="${B1}" stroke="#F3E7D8" stroke-width="1"/>
-            <line x1="${L}" y1="${(T1 + B1) / 2}" x2="${W - R}" y2="${(T1 + B1) / 2}" stroke="#F3E7D8" stroke-width="1" stroke-dasharray="3 4"/>
-            ${pace}
+        <svg viewBox="0 0 ${W} ${H}" class="w-full" style="height:150px" preserveAspectRatio="none">
+            <line x1="${L}" y1="${B}" x2="${W - R}" y2="${B}" stroke="#E7D9C6" stroke-width="1.2"/>
+            <line x1="${L}" y1="${T + ph / 2}" x2="${W - R}" y2="${T + ph / 2}" stroke="#F3E7D8" stroke-width="1" stroke-dasharray="3 4"/>
+            ${crossMark}
+            ${bars}
+            ${budget ? `<polyline points="${pts(remain)}" fill="none" stroke="#3090F8" stroke-width="2" stroke-dasharray="5 3" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
             <polyline points="${pts(cumI)}" fill="none" stroke="#40B868" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
             <polyline points="${pts(cumE)}" fill="none" stroke="#F05838" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-            <line x1="${L}" y1="${B2}" x2="${W - R}" y2="${B2}" stroke="#F3E7D8" stroke-width="1"/>
-            ${bars}
         </svg>
         <div class="flex justify-between text-[10px] text-pastel-muted px-1 mt-1"><span>1日</span><span>${Math.ceil(n / 2)}日</span><span>${n}日${isCur ? `（今天 ${last} 日）` : ''}</span></div>
         <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 mt-3 pt-3 border-t border-pastel-border text-[11px]">
             <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 rounded bg-pastel-green"></span>收入累計 <b class="font-rounded">${fmt(totalI)}</b></span>
             <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 rounded bg-pastel-red"></span>支出累計 <b class="font-rounded">${fmt(totalE)}</b></span>
-            <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-sm bg-pastel-accent"></span>每日支出（下半）</span>
-            ${budget ? `<span class="flex items-center gap-1.5"><span class="w-3 h-0.5 rounded" style="background:repeating-linear-gradient(90deg,#9A918A 0 3px,transparent 3px 6px)"></span>預算應有進度</span>` : '<span></span>'}
+            <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-sm bg-pastel-accent opacity-60"></span>每日支出</span>
+            ${budget ? `<span class="flex items-center gap-1.5"><span class="w-3 h-0.5 rounded" style="background:repeating-linear-gradient(90deg,#3090F8 0 4px,transparent 4px 7px)"></span>剩餘預算 <b class="font-rounded">${fmt(budget - totalE)}</b></span>` : '<span></span>'}
         </div>
-        ${budget ? `<div class="mt-2.5 px-3 py-2 rounded-tile text-[11px] font-bold ${diff > 0 ? 'bg-pastel-redLight text-pastel-red' : 'bg-pastel-greenLight text-pastel-green'}">
-            <i class="fa-solid ${diff > 0 ? 'fa-gauge-high' : 'fa-gauge-simple'} mr-1.5"></i>
-            到第 ${last} 天應花 ${fmt(ideal)}，實際花了 ${fmt(totalE)}
-            ${diff > 0 ? `，<u>超前 ${fmt(diff)}</u>，剩下 ${n - last} 天要收斂` : `，<u>省下 ${fmt(-diff)}</u>，保持這個節奏`}
-        </div>` : `<button onclick="openBudgetSheet()" class="w-full mt-2.5 py-2 rounded-tile bg-pastel-accentLight text-pastel-accent text-[11px] font-bold tactile">設定預算後，這裡會顯示花費是否超前</button>`}`;
+        ${budget ? `<div class="mt-2.5 px-3 py-2 rounded-tile text-[11px] font-bold leading-relaxed ${crossDay || over ? 'bg-pastel-redLight text-pastel-red' : 'bg-pastel-greenLight text-pastel-green'}">
+            <i class="fa-solid ${crossDay || over ? 'fa-triangle-exclamation' : 'fa-circle-check'} mr-1.5"></i>
+            ${crossDay
+                ? `第 ${crossDay} 天起剩餘預算已低於支出累計，安全邊際正在被吃掉`
+                : '剩餘預算線始終在支出累計線上方，節奏安全'}
+            <br>依目前速度推估月底約 ${fmt(pace)}${over ? `，將超出預算 ${fmt(pace - budget)}` : `，預算內還有 ${fmt(budget - pace)} 空間`}
+        </div>` : `<button onclick="openBudgetSheet()" class="w-full mt-2.5 py-2 rounded-tile bg-pastel-accentLight text-pastel-accent text-[11px] font-bold tactile">設定預算後，這裡會多一條倒扣線可對照</button>`}`;
     }
 
     function monthNav() {
@@ -1774,7 +1837,15 @@ function hexA(hex, a) {
         </div>`;
     }
 
-    /* --- 滑動：方向鎖定 + 阻尼 + 滿版底色 --- */
+    /* --- 滑動：漸進阻力 + 可反悔 + 兩段式 ---
+       輕滑放手 → 停在「展開」狀態並露出按鈕，可再滑回去或點別處取消
+       重滑到底 → 直接執行
+       全程有阻尼，越滑越重，跨過門檻時給一次觸覺提示 --- */
+    function closeAllSwipes(except) {
+        document.querySelectorAll('.swipe-wrap').forEach(w => {
+            if (w !== except && w._close) w._close();
+        });
+    }
     function bindSwipe() {
         document.querySelectorAll('.swipe-wrap').forEach(wrap => {
             if (wrap._bound) return; wrap._bound = true;
@@ -1782,56 +1853,86 @@ function hexA(hex, a) {
             const bg = wrap.querySelector('.swipe-bg');
             const eEdit = wrap.querySelector('.sw-edit'), eVoid = wrap.querySelector('.sw-void');
             const id = wrap.dataset.id;
-            const T = 78, MAX = 132;
-            let x0 = 0, y0 = 0, dx = 0, lock = null, active = false, moved = false;
+            const OPEN = 92, FIRE = 176;        // 展開位置 / 直接執行門檻
+            let x0 = 0, y0 = 0, dx = 0, lock = null, active = false, moved = false, armed = false;
+            let rest = 0;                        // 目前停靠位置（0 或 ±OPEN）
 
             const paint = () => {
-                const a = Math.min(Math.abs(dx) / T, 1);
-                bg.style.opacity = a;
+                const mag = Math.abs(dx);
+                bg.style.opacity = Math.min(mag / OPEN, 1);
                 bg.style.backgroundColor = dx >= 0 ? '#3090F8' : '#F05838';
-                eEdit.style.opacity = dx >= 0 ? 1 : 0;
+                eEdit.style.opacity = dx > 0 ? 1 : 0;
                 eVoid.style.opacity = dx < 0 ? 1 : 0;
+                const sc = mag >= FIRE ? 1.25 : 1;
+                eEdit.style.transform = eVoid.style.transform = `scale(${sc})`;
             };
-            const reset = () => { dx = 0; inner.style.transform = 'translateX(0)'; bg.style.opacity = 0; };
+            const settle = (to) => {
+                rest = to; dx = to;
+                inner.style.transform = `translate3d(${to}px,0,0)`;
+                if (!to) bg.style.opacity = 0; else paint();
+            };
+            wrap._close = () => { if (rest) settle(0); };
 
-            const start = (x, y) => { x0 = x; y0 = y; dx = 0; lock = null; active = true; moved = false; inner.classList.add('dragging'); };
+            const start = (x, y) => {
+                x0 = x - rest; y0 = y; lock = null; active = true; moved = false; armed = false;
+                inner.classList.add('dragging');
+            };
             const move = (x, y, e) => {
                 if (!active) return;
                 const ddx = x - x0, ddy = y - y0;
                 if (lock === null) {
-                    if (Math.abs(ddx) < 8 && Math.abs(ddy) < 8) return;
-                    lock = Math.abs(ddx) > Math.abs(ddy) * 1.2 ? 'h' : 'v';
-                    if (lock === 'v') { active = false; return; }   // 判定為捲動就完全放手
+                    if (Math.abs(ddx - rest) < 8 && Math.abs(ddy) < 8) return;
+                    lock = Math.abs(ddx - rest) > Math.abs(ddy) * 1.2 ? 'h' : 'v';
+                    if (lock === 'v') { active = false; return; }
+                    closeAllSwipes(wrap);
                 }
                 if (lock !== 'h') return;
                 if (e && e.cancelable) e.preventDefault();
                 moved = true;
-                // 超過門檻後加阻尼，手感更穩、不會一路滑到底
-                const raw = ddx, over = Math.max(Math.abs(raw) - T, 0);
-                const mag = Math.min(T + over * 0.35, MAX);
-                dx = raw >= 0 ? mag : -mag;
+                // 漸進阻力：OPEN 之內 1:1，之後阻尼 0.45，越滑越重
+                const raw = ddx, sign = raw >= 0 ? 1 : -1, mag = Math.abs(raw);
+                const damped = mag <= OPEN ? mag : OPEN + (mag - OPEN) * 0.45;
+                dx = sign * Math.min(damped, FIRE + 26);
+                if (!armed && Math.abs(dx) >= FIRE) { armed = true; buzz(14); }
+                if (armed && Math.abs(dx) < FIRE) armed = false;
                 inner.style.transform = `translate3d(${dx}px,0,0)`;
                 paint();
             };
             const end = () => {
                 if (!active) { inner.classList.remove('dragging'); return; }
                 active = false; inner.classList.remove('dragging');
-                if (dx <= -T) { inner.style.transform = 'translateX(-110%)'; bg.style.opacity = 1; setTimeout(() => voidTxn(id), 190); }
-                else if (dx >= T) { reset(); editTxn(id); }
-                else reset();
+                const mag = Math.abs(dx);
+                if (mag >= FIRE) {                       // 重滑到底：直接執行
+                    if (dx < 0) { inner.style.transform = 'translateX(-110%)'; bg.style.opacity = 1; setTimeout(() => voidTxn(id), 190); }
+                    else { settle(0); editTxn(id); }
+                } else if (mag >= OPEN * 0.55) {         // 輕滑：停在展開狀態，可反悔
+                    settle(dx < 0 ? -OPEN : OPEN); buzz(6);
+                } else settle(0);                        // 滑回來：取消
             };
 
             wrap.addEventListener('touchstart', e => start(e.touches[0].clientX, e.touches[0].clientY), { passive: true });
             wrap.addEventListener('touchmove', e => move(e.touches[0].clientX, e.touches[0].clientY, e), { passive: false });
             wrap.addEventListener('touchend', end);
-            wrap.addEventListener('touchcancel', () => { active = false; reset(); });
+            wrap.addEventListener('touchcancel', () => { active = false; settle(rest); });
             wrap.addEventListener('mousedown', e => {
                 start(e.clientX, e.clientY);
                 const mm = ev => move(ev.clientX, ev.clientY, ev);
                 const mu = () => { end(); document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); };
                 document.addEventListener('mousemove', mm); document.addEventListener('mouseup', mu);
             });
-            inner.addEventListener('click', () => { if (!moved) openTxnSheet(id); });
+            // 展開狀態下點露出的按鈕就執行；沒展開時點列開詳情
+            bg.addEventListener('click', ev => {
+                if (!rest) return;
+                ev.stopPropagation();
+                const wasRight = rest > 0;           // 右滑展開＝編輯，左滑展開＝作廢
+                settle(0);
+                setTimeout(() => wasRight ? editTxn(id) : voidTxn(id), 140);
+            });
+            inner.addEventListener('click', () => {
+                if (moved) return;
+                if (rest) { settle(0); return; }          // 展開時點一下＝收回，不誤開詳情
+                openTxnSheet(id);
+            });
         });
     }
 
@@ -1908,10 +2009,96 @@ function hexA(hex, a) {
             <div class="text-3xl font-bold font-rounded mb-4 ${t.entry_type === '支出' ? 'text-pastel-red' : 'text-pastel-green'}">${t.entry_type === '支出' ? '-' : '+'}${fmt(t.amount)}</div>
             ${row('日期', t.date)}${row('類型', t.entry_type)}${row('分類', t.category || '—')}${row('帳戶', t.tag || '—')}
             ${row('費用歸屬', t.nature || '—')}${row('記帳者', nameOf(t.member_id))}${t.recurring_rule_id ? row('來源', '重複性收支自動產生') : ''}
-            <div class="grid grid-cols-2 gap-3 mt-5">
+            ${(t.nature === '家庭代墊' || t.nature === '私人拆帳') && t.payer_id === STATE.me?.member_id
+                ? `<button onclick="closeSheet();openEditSplit('${esc(id)}')" class="w-full mt-4 py-3 bg-pastel-accentLight text-pastel-accent font-bold rounded-tile text-sm tactile"><i class="fa-solid fa-users-between-lines mr-1"></i> 調整分攤設定</button>` : ''}
+            <div class="grid grid-cols-2 gap-3 mt-3">
                 <button onclick="closeSheet();editTxn('${esc(id)}')" class="py-3 bg-pastel-blueLight text-pastel-blue font-bold rounded-tile text-sm"><i class="fa-solid fa-pen mr-1"></i> 編輯</button>
                 <button onclick="closeSheet();voidTxn('${esc(id)}')" class="py-3 bg-pastel-redLight text-pastel-red font-bold rounded-tile text-sm"><i class="fa-solid fa-trash mr-1"></i> 作廢</button></div>
             ${t.receipt_file_id ? `<button onclick="window.open('https://drive.google.com/file/d/${esc(t.receipt_file_id)}/view','_blank')" class="w-full mt-3 py-3 bg-pastel-bg text-stone-700 font-bold rounded-tile text-sm"><i class="fa-solid fa-receipt mr-1"></i> 檢視單據照片</button>` : ''}`);
+    }
+
+    /* ---------- 事後調整分攤 ----------
+       已還款的部分不能改小，否則會出現「還太多」的負數餘額，因此以已還金額為下限。 */
+    let _editSplit = { id: '', map: {} };
+    function openEditSplit(id) {
+        const t = STATE.transactions.find(x => x.txn_id === id); if (!t) return;
+        _editSplit = { id, map: {} };
+        parseSplit(t).forEach(x => _editSplit.map[x.member_id] = x.amount);
+        paintEditSplit();
+    }
+    function paintEditSplit() {
+        const t = STATE.transactions.find(x => x.txn_id === _editSplit.id); if (!t) return;
+        const total = Number(t.amount) || 0;
+        const sum = Object.values(_editSplit.map).reduce((a, b) => a + (Number(b) || 0), 0);
+        const rest = total - sum, over = sum > total + 0.01;
+        openSheet(`
+            <h3 class="text-lg font-bold text-stone-800 mb-1">調整分攤</h3>
+            <p class="text-xs text-pastel-muted mb-5">${esc(t.note || t.category || '')} ・ 總額 ${fmt(total)}</p>
+            <div class="space-y-2 mb-4">
+                ${splitMembers().map(m => {
+                    const on = _editSplit.map[m.member_id] !== undefined;
+                    const paid = paidFor(t.txn_id, m.member_id);
+                    return `<div class="flex items-center gap-2">
+                        <button type="button" onclick="toggleEditSplitMember('${esc(m.member_id)}')"
+                            class="w-6 h-6 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${on ? 'bg-pastel-accent border-pastel-accent text-white' : 'border-pastel-border bg-pastel-bg text-transparent'}">
+                            <i class="fa-solid fa-check text-[10px]"></i></button>
+                        <div class="flex-1 min-w-0">
+                            <div class="text-sm text-stone-700 truncate">${esc(m.nickname)}</div>
+                            ${paid > 0 ? `<div class="text-[10px] text-pastel-green">已還 ${fmt(paid)}（不可低於此數）</div>` : ''}</div>
+                        <div class="relative w-28 flex-shrink-0">
+                            <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-pastel-muted">$</span>
+                            <input type="number" inputmode="decimal" ${on ? '' : 'disabled'} value="${on ? esc(_editSplit.map[m.member_id]) : ''}"
+                                oninput="setEditSplit('${esc(m.member_id)}', this.value)"
+                                class="w-full py-2 pl-6 pr-2 rounded-lg border text-sm text-right font-rounded ${on ? 'bg-pastel-bg border-pastel-border text-stone-800' : 'bg-stone-100/60 border-transparent text-stone-300'}">
+                        </div></div>`;
+                }).join('')}
+            </div>
+            <div class="text-[11px] pt-2 border-t border-pastel-border flex justify-between mb-4 ${over ? 'text-pastel-red font-bold' : 'text-pastel-muted'}">
+                <span>已分攤 ${fmt(sum)} / 總額 ${fmt(total)}</span>
+                <span>${over ? '超過總額！' : rest > 0.01 ? `你自己吸收 ${fmt(rest)}` : '無人吸收剩餘'}</span></div>
+            <button onclick="saveEditSplit()" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile">儲存分攤設定</button>`);
+    }
+    function toggleEditSplitMember(id) {
+        buzz();
+        const t = STATE.transactions.find(x => x.txn_id === _editSplit.id);
+        if (_editSplit.map[id] !== undefined) {
+            if (paidFor(t.txn_id, id) > 0) return toast('對方已還款，不能整筆移除', true);
+            delete _editSplit.map[id];
+        } else _editSplit.map[id] = 0;
+        paintEditSplit();
+    }
+    function setEditSplit(id, v) { _editSplit.map[id] = Number(v) || 0; }
+
+    async function saveEditSplit() {
+        const t = STATE.transactions.find(x => x.txn_id === _editSplit.id); if (!t) return;
+        const total = Number(t.amount) || 0;
+        const list = Object.entries(_editSplit.map).filter(([, v]) => Number(v) > 0)
+            .map(([member_id, amount]) => ({ member_id, amount: Number(amount) }));
+        if (list.reduce((a, b) => a + b.amount, 0) > total + 0.01) { buzz(30); return toast('分攤加總超過總額', true); }
+        for (const x of list) {
+            const paid = paidFor(t.txn_id, x.member_id);
+            if (x.amount < paid - 0.01) { buzz(30); return toast(`${nameOf(x.member_id)} 已還 ${fmt(paid)}，分攤不能低於此數`, true); }
+        }
+        closeSheet();
+        const backup = { ...t };
+        t.split_detail = list.length ? JSON.stringify(list) : '';
+        t.related_id = list.length === 1 ? list[0].member_id : '';
+        t._pending = true;
+        renderDataViews(); toast('分攤已更新');
+        try {
+            // 走 updateTransaction：舊列標「已修訂」、新列以 parent_txn_id 指回，稽核軌跡完整
+            const r2 = await api.call('updateTransaction', {
+                txn_id: backup.txn_id,
+                txn: { ...backup, split_detail: t.split_detail, related_id: t.related_id }
+            });
+            const i = STATE.transactions.findIndex(x => x.txn_id === backup.txn_id);
+            if (i >= 0) STATE.transactions[i] = r2.txn;
+            renderDataViews();
+        } catch (e) {
+            const i = STATE.transactions.findIndex(x => x.txn_id === backup.txn_id);
+            if (i >= 0) STATE.transactions[i] = backup;
+            renderDataViews(); toast('更新失敗：' + e.message, true);
+        }
     }
 
     async function voidTxn(id) {
@@ -2430,7 +2617,7 @@ function hexA(hex, a) {
                 <div class="flex justify-between items-center">
                     <h3 class="font-bold text-stone-800 text-sm">收支節奏分析</h3>
                     <span class="text-[10px] text-pastel-muted">${esc(viewYM)}</span></div>
-                <p class="text-[11px] text-pastel-muted -mt-1">上半是累計走勢與預算節奏，下半是每天的支出量</p>
+                <p class="text-[11px] text-pastel-muted -mt-1">三條線共用同一基準線：收入累計、支出累計、預算倒扣</p>
                 ${comboChartHtml(viewYM)}
             </div>
 
