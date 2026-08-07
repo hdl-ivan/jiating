@@ -67,7 +67,8 @@
         #appFrame {
             position:fixed; inset:0;
             width:100%; max-width:none;
-            height:var(--appH, 100dvh);
+            height:100dvh;                 /* iOS PWA 的 innerHeight 會少報安全區，只有 dvh 正確 */
+            height:var(--appH, 100dvh);    /* --appH 僅在鍵盤彈出時由 JS 設定 */
             border-radius:0; border:0;
             display:flex; flex-direction:column;
         }
@@ -115,6 +116,32 @@
         .swipe-bg { transition:background-color .15s linear; }
 
         .js-hide { display:none !important; }
+
+        /* ───────── 深色模式 ─────────
+           以覆寫實際使用到的 Tailwind 工具類別實作，
+           不必改動任何一處 markup，切換即時生效。 */
+        html.dark { color-scheme:dark; }
+        html.dark, html.dark body { background-color:#171514 !important; color:#E9E2D8; }
+        html.dark .bg-white, html.dark .bg-white\/95, html.dark .bg-white\/70, html.dark .bg-white\/60 { background-color:#221F1D !important; }
+        html.dark .bg-pastel-bg { background-color:#2B2724 !important; }
+        html.dark .bg-\[\#FBF2E6\] { background-color:#171514 !important; }
+        html.dark .bg-stone-800 { background-color:#3A3430 !important; }
+        html.dark .bg-stone-100, html.dark .bg-stone-200\/40, html.dark .bg-stone-200\/50 { background-color:#332F2C !important; }
+        html.dark .text-pastel-text, html.dark .text-stone-800, html.dark .text-stone-700 { color:#EFE7DC !important; }
+        html.dark .text-stone-600, html.dark .text-stone-500 { color:#BDB3A6 !important; }
+        html.dark .text-pastel-muted, html.dark .text-stone-400 { color:#8F857A !important; }
+        html.dark .border-pastel-border, html.dark .border-stone-100, html.dark .border-stone-200 { border-color:#3A3430 !important; }
+        html.dark .border-pastel-border\/60, html.dark .border-pastel-border\/70 { border-color:#332F2C !important; }
+        html.dark .bg-pastel-accentLight { background-color:rgba(248,160,72,.16) !important; }
+        html.dark .bg-pastel-greenLight  { background-color:rgba(64,184,104,.16) !important; }
+        html.dark .bg-pastel-redLight    { background-color:rgba(240,88,56,.16) !important; }
+        html.dark .bg-pastel-blueLight   { background-color:rgba(48,144,248,.16) !important; }
+        html.dark .bg-pastel-yellowLight { background-color:rgba(248,200,80,.16) !important; }
+        html.dark .bg-pastel-skyLight    { background-color:rgba(136,216,248,.16) !important; }
+        html.dark .bg-pastel-pinkLight   { background-color:rgba(240,168,176,.16) !important; }
+        html.dark .shadow-card, html.dark .shadow-sm, html.dark .shadow-md { box-shadow:0 4px 18px rgba(0,0,0,.35) !important; }
+        html.dark #appFrame { border-color:#000 !important; }
+        html.dark img[src*="av"] { filter:brightness(.94); }
 
         /* 橫向時擋住主畫面（排除桌機大螢幕） */
         #rotateGate { display:none; }
@@ -197,16 +224,22 @@
 
     <div id="gateScreen" class="absolute inset-0 bg-pastel-bg z-[70] flex flex-col justify-center px-6 py-8 overflow-y-auto hide-scrollbar js-hide">
         <div class="text-center space-y-2 mb-8">
-            <img src="./av5.png" alt="" class="w-24 h-24 mx-auto mb-3">
-            <h1 class="text-2xl font-bold text-pastel-text">家庭記帳</h1>
-            <p class="text-pastel-muted text-sm">輸入家庭代碼以連線</p>
+            <img src="./av5.png" alt="" class="w-24 h-24 mx-auto mb-3 float">
+            <h1 class="text-2xl font-bold text-pastel-text">歡迎回家</h1>
+            <p class="text-pastel-muted text-sm">輸入 8 碼家庭代碼就能加入</p>
         </div>
         <div id="gateError" class="hidden mb-4 p-3 rounded-tile bg-pastel-redLight border border-pastel-red/30 text-pastel-red text-xs font-bold"></div>
         <div id="gateStep1" class="bg-white p-6 rounded-sheet shadow-card border border-pastel-border space-y-4">
             <div>
-                <label class="block text-sm font-bold text-stone-700 mb-1.5">家庭代碼</label>
-                <input type="text" id="gateCode" autocomplete="off" autocapitalize="characters" placeholder="向家人索取"
-                       class="w-full p-3.5 rounded-tile bg-pastel-bg border border-pastel-border focus:outline-none focus:ring-2 focus:ring-pastel-accent">
+                <label class="block text-sm font-bold text-stone-700 mb-2.5 text-center">家庭代碼</label>
+                <div class="relative" onclick="document.getElementById('gateCode').focus()">
+                    <!-- 真正的輸入框透明疊在方格上：可貼上、可用系統自動填入，也不必處理逐格跳焦點 -->
+                    <input type="text" id="gateCode" maxlength="8" inputmode="latin" autocomplete="one-time-code"
+                           autocapitalize="characters" autocorrect="off" spellcheck="false" oninput="paintOtp()"
+                           class="absolute inset-0 w-full h-full opacity-0 z-10 tracking-[2.4em]">
+                    <div id="otpBoxes" class="flex gap-1.5 justify-center"></div>
+                </div>
+                <p class="text-[11px] text-pastel-muted text-center mt-2.5">向家人索取，英數共 8 碼</p>
             </div>
             <button id="gateCodeBtn" onclick="gateSubmitCode()" class="w-full py-3.5 bg-pastel-accent text-white font-bold rounded-tile shadow-md">下一步</button>
         </div>
@@ -285,7 +318,7 @@
        ========================================================== */
 
     const CONFIG = {
-        VERSION: 'v4.5.0',
+        VERSION: 'v4.5.1',
         // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
         API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         DEMO: false
@@ -478,6 +511,120 @@ function hexA(hex, a) {
         { id: 's365', icon: 'fa-crown', name: '一年不斷', hue: 'accent', desc: '連續記帳 365 天', val: x => x.streak, goal: 365, unit: '天' }
     ];
 
+    /* ---------- 成長軌跡：把「連續記帳」翻譯成看得見的成長 ---------- */
+    const GROWTH = [
+        { id: 0, name: '種子', icon: 'fa-seedling', min: 0, next: 14, color: '#9A918A', word: '剛播下，先連記兩週看看' },
+        { id: 1, name: '新芽', icon: 'fa-leaf', min: 14, next: 45, color: '#40B868', word: '冒出頭了，習慣正在形成' },
+        { id: 2, name: '小樹', icon: 'fa-tree', min: 45, next: 120, color: '#3090F8', word: '站穩了，繼續往上長' },
+        { id: 3, name: '大樹', icon: 'fa-tree-city', min: 120, next: 365, color: '#F8A048', word: '枝葉茂盛，全家都看得到' },
+        { id: 4, name: '森林', icon: 'fa-mountain-sun', min: 365, next: null, color: '#F8C850', word: '你已經是家裡的記帳支柱' }
+    ];
+    function growthStage(days) {
+        days = Number(days) || 0;
+        let g = GROWTH[0];
+        for (const x of GROWTH) if (days >= x.min) g = x;
+        const prog = g.next ? Math.min((days - g.min) / (g.next - g.min) * 100, 100) : 100;
+        return { ...g, days, progress: prog, remain: g.next ? Math.max(g.next - days, 0) : 0 };
+    }
+
+    /* ---------- 任務分級：日常 / 每週 / 長期 ----------
+       日常與每週是「會重置」的短週期任務，跟長期累積成就的計算方式完全不同，
+       因此分開實作，不與 achievementList() 混在一起。 */
+    function weekStartISO() {
+        const d = new Date(todayISO() + 'T00:00:00');
+        d.setDate(d.getDate() - ((d.getDay() + 6) % 7));   // 以週一為起點
+        return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    }
+    function myTxns() {
+        const meId = STATE.me?.member_id;
+        return activeTxns().filter(t => t.payer_id === meId);
+    }
+    function dailyTasks() {
+        const t = todayISO(), mine = myTxns().filter(x => x.date === t);
+        const total = computeSummary('personal').monthlyExpense;
+        const budget = budgetFor('personal', '');
+        const n = daysInYM(currentYM()), day = Number(t.slice(8, 10));
+        const dailyQuota = budget ? budget / n : 0;
+        const todayExp = mine.filter(x => x.entry_type === '支出').reduce((a, b) => a + Number(b.amount), 0);
+        return [
+            { icon: 'fa-pen', name: '今天記一筆', done: mine.length > 0, hint: mine.length ? `已記 ${mine.length} 筆` : '還沒開張' },
+            { icon: 'fa-receipt', name: '今天附一張單據', done: mine.some(x => x.receipt_file_id), hint: '拍發票更好對帳' },
+            { icon: 'fa-gauge-high', name: '今天不超過每日額度', done: !!dailyQuota && todayExp <= dailyQuota,
+              hint: dailyQuota ? `${fmt(todayExp)} / ${fmt(dailyQuota)}` : '尚未設定預算' }
+        ];
+    }
+    function weeklyTasks() {
+        const ws = weekStartISO(), mine = myTxns().filter(x => x.date >= ws);
+        const days = new Set(mine.map(x => x.date)).size;
+        const budget = budgetFor('personal', '');
+        const n = daysInYM(currentYM());
+        const weekQuota = budget ? budget / n * 7 : 0;      // 用「總預算的週配額」而非分類預算，
+        const weekExp = mine.filter(x => x.entry_type === '支出').reduce((a, b) => a + Number(b.amount), 0);
+        return [
+            { icon: 'fa-calendar-check', name: '本週記帳 5 天', done: days >= 5, hint: `${days}/5 天` },
+            { icon: 'fa-wallet', name: '本週不超過週配額', done: !!weekQuota && weekExp <= weekQuota,
+              hint: weekQuota ? `${fmt(weekExp)} / ${fmt(weekQuota)}` : '尚未設定預算' },
+            { icon: 'fa-arrow-trend-down', name: '本週有一天零支出', done: hasZeroSpendDay(ws), hint: '給錢包放個假' }
+        ];
+    }
+    function hasZeroSpendDay(ws) {
+        const spent = new Set(myTxns().filter(x => x.date >= ws && x.entry_type === '支出').map(x => x.date));
+        const t = todayISO();
+        for (let d = new Date(ws + 'T00:00:00'); ; d.setDate(d.getDate() + 1)) {
+            const iso = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+            if (iso > t) break;
+            if (iso < t && !spent.has(iso)) return true;      // 今天還沒過完不算
+        }
+        return false;
+    }
+
+    /* ---------- 「僅提醒」的重複性收支：到期待確認清單 ---------- */
+    function dueReminders() {
+        const t = todayISO(), meId = STATE.me?.member_id;
+        return STATE.rules.filter(r => r.status === '啟用' && r.auto_mode === '僅提醒' &&
+            r.next_run && String(r.next_run) <= t &&
+            (r.scope === 'family' ? currentMode === 'family' : r.member_id === meId) &&
+            (!r.end_date || String(r.next_run) <= String(r.end_date)));
+    }
+    function reminderCard() {
+        const due = dueReminders();
+        if (!due.length) return '';
+        return `<div class="bg-white border-2 border-pastel-yellow/60 rounded-card p-5 shadow-card space-y-3">
+            <div class="flex items-center gap-2 text-sm font-bold text-stone-800">
+                <i class="fa-solid fa-bell fa-shake text-pastel-yellow"></i> 待確認的重複性收支
+                <span class="text-[10px] bg-pastel-yellowLight text-[#D9A216] px-2 py-0.5 rounded-full">${due.length}</span></div>
+            ${due.map(r => `
+                <div class="bg-pastel-bg rounded-tile p-3 border border-pastel-border">
+                    <div class="flex justify-between items-center gap-2 mb-2">
+                        <div class="min-w-0">
+                            <div class="font-bold text-sm text-stone-800 truncate">${esc(r.name)}</div>
+                            <div class="text-[10px] text-pastel-muted">應於 ${esc(r.next_run)} ・ ${esc(r.freq)}</div></div>
+                        <div class="font-bold font-rounded ${r.entry_type === '收入' ? 'text-pastel-green' : 'text-stone-800'} flex-shrink-0">${fmt(r.amount)}</div></div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="confirmReminder('${esc(r.rule_id)}')" class="py-2 bg-pastel-accent text-white rounded-lg text-xs font-bold tactile">記這一筆</button>
+                        <button onclick="skipReminder('${esc(r.rule_id)}')" class="py-2 bg-white border border-pastel-border text-stone-600 rounded-lg text-xs font-bold tactile">這期略過</button>
+                    </div></div>`).join('')}
+        </div>`;
+    }
+    async function confirmReminder(id) {
+        const r = STATE.rules.find(x => x.rule_id === id); if (!r) return;
+        buzz(12);
+        try {
+            const res = await api.call('confirmReminder', { rule_id: id });
+            STATE.transactions.push({ ...res.txn, _new: true });
+            r.next_run = res.next_run;
+            renderDataViews(); renderSettings(); toast('已記錄'); coinFly();
+        } catch (e) { toast('失敗：' + e.message, true); }
+    }
+    async function skipReminder(id) {
+        const r = STATE.rules.find(x => x.rule_id === id); if (!r) return;
+        const backup = r.next_run;
+        try {
+            const res = await api.call('skipReminder', { rule_id: id });
+            r.next_run = res.next_run; renderDataViews(); renderSettings(); toast('已略過本期');
+        } catch (e) { r.next_run = backup; renderDataViews(); toast('失敗：' + e.message, true); }
+    }
+
     const HUE = {
         accent: ['bg-pastel-accentLight', 'text-pastel-accent'], blue: ['bg-pastel-blueLight', 'text-pastel-blue'],
         green: ['bg-pastel-greenLight', 'text-pastel-green'], sky: ['bg-pastel-skyLight', 'text-pastel-blue'],
@@ -610,7 +757,27 @@ function hexA(hex, a) {
         if (AUTH.familyCode && AUTH.memberId) { try { await loadAll(); return enterApp(); } catch (e) { AUTH.clear(); } }
         showGate();
     }
-    function showGate() { document.getElementById('gateScreen').classList.remove('js-hide'); document.getElementById('splash').classList.add('js-hide'); }
+    function paintOtp() {
+        const el = document.getElementById('gateCode'); if (!el) return;
+        const v = el.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+        if (el.value !== v) el.value = v;
+        const focused = document.activeElement === el;
+        document.getElementById('otpBoxes').innerHTML = Array.from({ length: 8 }, (_, i) => {
+            const ch = v[i] || '';
+            const active = focused && i === Math.min(v.length, 7) && v.length < 8;
+            return `<div class="flex-1 aspect-[3/4] max-w-[38px] rounded-xl border-2 flex items-center justify-center font-bold text-lg font-rounded transition-all
+                ${ch ? 'bg-pastel-accentLight border-pastel-accent text-pastel-accent'
+                     : active ? 'bg-white border-pastel-accent' : 'bg-pastel-bg border-pastel-border'}">${esc(ch)}</div>`;
+        }).join('');
+        if (v.length === 8 && !_otpAuto) { _otpAuto = true; setTimeout(gateSubmitCode, 180); }
+        if (v.length < 8) _otpAuto = false;
+    }
+    let _otpAuto = false;
+
+    function showGate() {
+        paintOtp();
+        const el = document.getElementById('gateCode');
+        if (el) { el.addEventListener('focus', paintOtp); el.addEventListener('blur', paintOtp); } document.getElementById('gateScreen').classList.remove('js-hide'); document.getElementById('splash').classList.add('js-hide'); }
     function showGateError(m) { const e = document.getElementById('gateError'); e.innerText = m; e.classList.remove('hidden'); }
 
     async function gateSubmitCode() {
@@ -756,6 +923,18 @@ function hexA(hex, a) {
     }
     function logout() { if (confirm('確定要登出嗎？')) { AUTH.clear(); location.reload(); } }
 
+    /* ---------- 深色模式：跟隨系統 / always on / always off ---------- */
+    const THEMES = [['auto', '跟隨系統', 'fa-circle-half-stroke'], ['light', '淺色', 'fa-sun'], ['dark', '深色', 'fa-moon']];
+    function getTheme() { return PREF.get('theme', 'auto'); }
+    function applyTheme() {
+        const t = getTheme();
+        const dark = t === 'dark' || (t === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.classList.toggle('dark', dark);
+        const m = document.querySelector('meta[name="theme-color"]');
+        if (m) m.setAttribute('content', dark ? '#171514' : '#FFF8F0');
+    }
+    function setTheme(t) { PREF.set('theme', t); applyTheme(); renderSettings(); buzz(); }
+
     /* ==========================================================
        Toast / 面板
        ========================================================== */
@@ -862,6 +1041,7 @@ function hexA(hex, a) {
         if (currentMode === 'personal') {
             const net = s.cashBalance + s.poolOwesMe - s.iOweOthers;
             c.innerHTML = `
+                ${reminderCard()}
                 ${budgetHero(s)}
                 ${categoryBudgets(s)}
                 <div class="grid grid-cols-2 gap-4">
@@ -896,6 +1076,7 @@ function hexA(hex, a) {
                 </div>`;
         } else {
             c.innerHTML = `
+                ${reminderCard()}
                 ${budgetHero(s)}
                 ${categoryBudgets(s)}
                 <div class="grid grid-cols-2 gap-4">
@@ -1957,8 +2138,12 @@ function hexA(hex, a) {
                 <p class="text-[11px] text-pastel-muted text-center">${i.tier === 5 ? '您已達到最高殿堂光環！' : `距離解鎖下一階段光環還差 ${i.next - i.days} 天`}</p>
             </div>
 
-            <div class="flex justify-between items-center mb-3">
-                <h3 class="text-sm font-bold text-stone-800">成就任務</h3>
+            ${growthCard()}
+            ${taskGroup('今日任務', 'fa-sun', dailyTasks())}
+            ${taskGroup('本週任務', 'fa-calendar-week', weeklyTasks())}
+
+            <div class="flex justify-between items-center mb-3 mt-6">
+                <h3 class="text-sm font-bold text-stone-800">長期成就</h3>
                 <span class="text-xs text-pastel-muted">已解鎖 ${got.length} / ${list.length}</span></div>
             <div class="space-y-2.5 mb-4">
                 ${list.map(a => {
@@ -1980,6 +2165,43 @@ function hexA(hex, a) {
         m.classList.remove('opacity-0');
         document.getElementById('profileModalContent').classList.remove('translate-y-full');
     }
+    function growthCard() {
+        const g = growthStage(STATE.me?.streak_days);
+        return `<div class="rounded-tile p-4 mb-5 border" style="background:${hexA(g.color, .1)};border-color:${hexA(g.color, .3)}">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-12 h-12 rounded-full bg-white shadow-sm flex items-center justify-center text-xl" style="color:${g.color}">
+                    <i class="fa-solid ${g.icon}"></i></div>
+                <div class="min-w-0 flex-1">
+                    <div class="font-bold text-sm text-stone-800">成長階段 · ${esc(g.name)}</div>
+                    <div class="text-[11px] text-pastel-muted truncate">${esc(g.word)}</div></div>
+            </div>
+            <div class="flex gap-1.5 mb-2">
+                ${GROWTH.map(x => `<div class="flex-1 h-1.5 rounded-full" style="background:${x.id <= g.id ? g.color : 'rgba(0,0,0,.08)'}"></div>`).join('')}
+            </div>
+            <div class="flex justify-between text-[10px] text-pastel-muted">
+                <span>${GROWTH.map(x => x.id === g.id ? `<b style="color:${g.color}">${x.name}</b>` : '').join('')}</span>
+                <span>${g.next ? `再 ${g.remain} 天成為「${GROWTH[g.id + 1].name}」` : '已達最高階段'}</span></div>
+        </div>`;
+    }
+
+    function taskGroup(title, icon, tasks) {
+        const done = tasks.filter(t => t.done).length;
+        return `<div class="mb-5">
+            <div class="flex justify-between items-center mb-2">
+                <h3 class="text-sm font-bold text-stone-800"><i class="fa-solid ${icon} mr-1.5 text-pastel-accent"></i>${esc(title)}</h3>
+                <span class="text-xs text-pastel-muted">${done}/${tasks.length}</span></div>
+            <div class="space-y-2">
+                ${tasks.map(t => `
+                    <div class="flex items-center gap-3 p-3 rounded-tile border ${t.done ? 'bg-pastel-greenLight border-transparent' : 'bg-white border-pastel-border'}">
+                        <div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${t.done ? 'bg-white/70 text-pastel-green' : 'bg-pastel-bg text-pastel-muted'}">
+                            <i class="fa-solid ${t.done ? 'fa-check' : t.icon} text-xs"></i></div>
+                        <div class="flex-1 min-w-0">
+                            <div class="text-sm font-bold truncate ${t.done ? 'text-pastel-green' : 'text-stone-700'}">${esc(t.name)}</div>
+                            <div class="text-[10px] text-pastel-muted truncate">${esc(t.hint)}</div></div>
+                    </div>`).join('')}
+            </div></div>`;
+    }
+
     function closeProfileModal() {
         const m = document.getElementById('profileModal');
         m.classList.add('opacity-0');
@@ -2117,6 +2339,13 @@ function hexA(hex, a) {
                     <div class="font-bold text-sm text-stone-800 flex items-center gap-2"><i class="fa-solid fa-credit-card text-pastel-purple"></i> 帳戶 / 標籤</div>
                     <button class="text-xs text-pastel-accent font-bold" onclick="addItem('PAYMENT_TAG')">新增</button></div>
                 <div class="grid grid-cols-2 gap-2 text-xs">${itemGrid(STATE.tags, 'PAYMENT_TAG')}</div></div>
+
+            <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-3">
+                <div class="font-bold text-sm text-stone-800 flex items-center gap-2"><i class="fa-solid fa-palette text-pastel-purple"></i> 外觀</div>
+                <div class="flex gap-2">
+                    ${THEMES.map(([v, label, ic]) => `<button onclick="setTheme('${v}')" class="flex-1 py-2.5 rounded-tile text-xs font-bold border tactile ${getTheme() === v ? 'bg-pastel-accent text-white border-pastel-accent' : 'bg-pastel-bg text-stone-600 border-pastel-border'}"><i class="fa-solid ${ic} mr-1"></i>${label}</button>`).join('')}
+                </div>
+            </div>
 
             <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-3">
                 <div class="font-bold text-sm text-stone-800 flex items-center gap-2"><i class="fa-solid fa-circle-info text-pastel-muted"></i> 關於</div>
@@ -2346,13 +2575,27 @@ function hexA(hex, a) {
         // 鍵盤彈出時 iOS 會把整個版面往上捲，導致上方 Header 消失。
         // 對策：讓外框直接縮到「鍵盤上方的可視高度」，並強制把捲動位置歸零。
         const kbOpen = !!(vv && (window.innerHeight - vv.height) > 120);
-        const h = Math.round(vv ? vv.height : window.innerHeight);
-        if (kbOpen) { window.scrollTo(0, 0); document.body.scrollTop = 0; }
-        document.documentElement.style.setProperty('--appH', h + 'px');
+        // 平時不覆寫高度：iOS PWA 的 innerHeight 會比實體可視高度少一個安全區，
+        // 只有 CSS 的 100dvh 是對的。只有鍵盤彈出、需要縮小版面時才由 JS 接手。
+        let h;
+        if (kbOpen) {
+            h = Math.round(vv.height);
+            document.documentElement.style.setProperty('--appH', h + 'px');
+            window.scrollTo(0, 0); document.body.scrollTop = 0;
+        } else {
+            document.documentElement.style.removeProperty('--appH');
+            const fr = document.getElementById('appFrame');
+            h = fr ? Math.round(fr.getBoundingClientRect().height) : window.innerHeight;
+        }
         // 導覽列是 fixed，主內容區必須自己讓出等高的底部空間
         const nav = document.getElementById('appNav');
-        const navH = nav && !nav.classList.contains('js-hide') ? Math.round(nav.getBoundingClientRect().height) : 0;
+        const navH = nav && !nav.classList.contains('js-hide') ? (nav.offsetHeight || Math.round(nav.getBoundingClientRect().height)) : 0;
         if (navH > 0) document.documentElement.style.setProperty('--navH', navH + 'px');
+        // 實測 100dvh 換算出的像素，用來確認它是否等於實體螢幕高度
+        const dp = document.createElement('div');
+        dp.style.cssText = 'position:fixed;top:0;left:0;width:0;height:100dvh;pointer-events:none;visibility:hidden';
+        document.body.appendChild(dp);
+        const dvhPx = Math.round(dp.getBoundingClientRect().height); dp.remove();
 
         const frame = document.getElementById('appFrame');
         LAYOUT = {
@@ -2360,6 +2603,7 @@ function hexA(hex, a) {
             visualH: vv ? Math.round(vv.height) : null,
             used: h,
             screenH: window.screen ? Math.round(window.screen.height) : null,
+            dvh: dvhPx,
             frameBottom: frame ? Math.round(frame.getBoundingClientRect().bottom) : null,
             navBottom: nav ? Math.round(nav.getBoundingClientRect().bottom) : null,
             navH: navH,
@@ -2373,9 +2617,9 @@ function hexA(hex, a) {
     function diagText() {
         const L = LAYOUT;
         const gap = (L.screenH != null && L.navBottom != null) ? (L.screenH - L.navBottom) : null;
-        return `appH=${L.used ?? '?'} in=${L.innerH ?? '?'} vv=${L.visualH ?? '-'} scr=${L.screenH ?? '-'}
+        return `frameH=${L.used ?? '?'} dvh=${L.dvh ?? '-'} in=${L.innerH ?? '?'} vv=${L.visualH ?? '-'} scr=${L.screenH ?? '-'}
 frameBtm=${L.frameBottom ?? '-'} navBtm=${L.navBottom ?? '-'} navH=${L.navH ?? '-'}
-底部落差=${gap ?? '-'}  sat=${L.safeTop || '?'}  sab=${L.safeBottom || '?'}
+底部落差=${(L.dvh != null && L.navBottom != null) ? (L.dvh - L.navBottom) : '-'}  sat=${L.safeTop || '?'}  sab=${L.safeBottom || '?'}
 ${L.standalone ? 'PWA' : 'WEB(Safari)'}  dpr=${window.devicePixelRatio}  statusBar=${(L.screenH != null && L.innerH != null) ? (L.screenH - L.innerH) : '-'}`;
     }
     function paintDiag() {
@@ -2393,10 +2637,9 @@ ${L.standalone ? 'PWA' : 'WEB(Safari)'}  dpr=${window.devicePixelRatio}  statusB
         const sat = Math.round(probeT.getBoundingClientRect().height);
         probeT.remove();
         document.documentElement.style.setProperty('--sat', sat + 'px');
-        // iOS standalone 會自己保留狀態列高度（screen.height − innerHeight），
-        // 但 env(safe-area-inset-top) 仍回報同樣的數值。若直接沿用就會多佔一整條。
-        const reservedTop = Math.max(0, (window.screen ? window.screen.height : 0) - window.innerHeight);
-        document.documentElement.style.setProperty('--topPad', Math.max(0, sat - reservedTop) + 'px');
+        // 修正 v4.5.0 的誤判：iOS PWA 確實從 Y=0 開始繪製（所以這段留白是必要的），
+        // 少報的是 innerHeight 而不是安全區。直接沿用安全區原值。
+        document.documentElement.style.setProperty('--topPad', sat + 'px');
         let sab = Math.round(probe.getBoundingClientRect().height);
         probe.remove();
         // iOS 偶爾在 standalone 下把 env(safe-area-inset-bottom) 回報成 0，
@@ -2465,6 +2708,8 @@ ${L.standalone ? 'PWA' : 'WEB(Safari)'}  dpr=${window.devicePixelRatio}  statusB
     }
     try { screen.orientation && screen.orientation.lock && screen.orientation.lock('portrait').catch(() => { }); } catch (e) { }
     initServiceWorker();
+    applyTheme();
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (getTheme() === 'auto') applyTheme(); });
     window.addEventListener('DOMContentLoaded', () => { bindLayout(); bootstrap(); });
     </script>
 
