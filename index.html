@@ -16,7 +16,7 @@
 
     <title>家庭記帳</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.3.1/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@500;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
         tailwind.config = {
@@ -186,8 +186,8 @@
         <span class="font-bold text-stone-700 tracking-wider" id="clock">09:41</span>
         <div class="flex items-center gap-2"><i class="fa-solid fa-wifi text-stone-600"></i><i class="fa-solid fa-battery-full text-stone-700"></i></div>
     </div>
-    <!-- 瀏海／狀態列安全區，底色與 Header 相同 -->
-    <div class="shrink-0 bg-pastel-bg" style="height:env(safe-area-inset-top)"></div>
+    <!-- 瀏海安全區：只在系統「沒有」自己保留狀態列時才補，避免重複佔掉一整條 -->
+    <div id="topSafe" class="shrink-0 bg-pastel-bg" style="height:var(--topPad, env(safe-area-inset-top, 0px))"></div>
 
     <div id="splash" class="absolute inset-0 bg-pastel-bg z-[80] flex flex-col items-center justify-center gap-4">
         <img src="./av5.png" alt="" class="w-24 h-24 float">
@@ -225,7 +225,7 @@
             </div>
             <div class="min-w-0">
                 <div class="text-xs text-pastel-muted font-medium flex items-center gap-1.5 mb-0.5 truncate">
-                    Hi, <span id="displayUserName" class="font-bold text-pastel-text text-sm">使用者</span>! <span class="text-sm">👋</span>
+                    Hi, <span id="displayUserName" class="font-bold text-pastel-text text-sm">使用者</span>! <i class="fa-solid fa-hand-sparkles text-pastel-accent text-xs"></i>
                 </div>
                 <div class="flex items-center gap-1 bg-stone-200/40 p-1 rounded-full mt-1 w-max">
                     <button id="modePersonalBtn" onclick="switchViewMode('personal')" class="px-3 py-1 rounded-full font-bold text-[11px] transition-all bg-white text-pastel-text shadow-sm"><i class="fa-solid fa-user text-[10px] mr-1.5 text-pastel-accent"></i>個人</button>
@@ -285,7 +285,7 @@
        ========================================================== */
 
     const CONFIG = {
-        VERSION: 'v4.4.6',
+        VERSION: 'v4.5.0',
         // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
         API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         DEMO: false
@@ -307,14 +307,51 @@
     };
 
     const AVATARS = ['av2', 'av4', 'av5', 'av12', 'av14', 'av20', 'av21', 'av37', 'av46', 'av48'];
-    const EMOJI_AVATARS = ['🐱', '🐻', '🐰', '🦊', '🐼', '🐨', '🐸', '🐧', '🦉', '🐢', '🐔', '🦖'];
+    const FA_AVATARS = ['fa-cat', 'fa-dog', 'fa-otter', 'fa-frog', 'fa-fish', 'fa-dove',
+        'fa-hippo', 'fa-crow', 'fa-spider', 'fa-dragon', 'fa-user-astronaut', 'fa-user-ninja'];
+
+    /* ---------- 圖示：全站統一 Font Awesome，不再使用 Emoji ----------
+       舊資料（Sheets 裡還是 Emoji）自動對映，不必先跑 migrateIcons 也能正確顯示。 */
+    const EMOJI_TO_FA = {
+        '🍔': 'fa-utensils', '🥬': 'fa-cart-shopping', '🚗': 'fa-car', '🍿': 'fa-film',
+        '⚡': 'fa-bolt', '💊': 'fa-kit-medical', '🏡': 'fa-house', '🏠': 'fa-house',
+        '📺': 'fa-tv', '📦': 'fa-box', '💰': 'fa-money-bill-wave', '🎁': 'fa-gift',
+        '📈': 'fa-arrow-trend-up', '✨': 'fa-sack-dollar', '💵': 'fa-money-bills',
+        '💳': 'fa-credit-card', '🏦': 'fa-building-columns', '📱': 'fa-mobile-screen',
+        '🏷️': 'fa-tag', '💸': 'fa-money-bill-transfer', '🔁': 'fa-right-left', '🧾': 'fa-receipt'
+    };
+    const isFA = v => typeof v === 'string' && v.indexOf('fa-') === 0;
+    function normIcon(v, group) {
+        if (isFA(v)) return v;
+        if (v && EMOJI_TO_FA[v]) return EMOJI_TO_FA[v];
+        if (group === 'INCOME_CATEGORY') return 'fa-sack-dollar';
+        if (group === 'PAYMENT_TAG') return 'fa-credit-card';
+        return 'fa-tag';
+    }
+    function iconEl(v, cls, group) {
+        return `<i class="fa-solid ${esc(normIcon(v, group))} ${cls || ''}"></i>`;
+    }
+
+    /* 新增分類時可選的圖示（精選 54 個，涵蓋常見記帳情境） */
+    const ICON_PICKER = [
+        ['飲食', ['fa-utensils', 'fa-burger', 'fa-bowl-food', 'fa-mug-saucer', 'fa-wine-glass', 'fa-cake-candles', 'fa-ice-cream']],
+        ['採購', ['fa-cart-shopping', 'fa-basket-shopping', 'fa-bag-shopping', 'fa-shirt', 'fa-gift', 'fa-tag']],
+        ['交通', ['fa-car', 'fa-bus', 'fa-train-subway', 'fa-plane', 'fa-gas-pump', 'fa-taxi', 'fa-bicycle', 'fa-motorcycle']],
+        ['居家', ['fa-house', 'fa-couch', 'fa-bolt', 'fa-droplet', 'fa-fire', 'fa-wifi', 'fa-screwdriver-wrench', 'fa-broom']],
+        ['健康', ['fa-kit-medical', 'fa-hospital', 'fa-pills', 'fa-dumbbell', 'fa-tooth', 'fa-heart-pulse']],
+        ['娛樂', ['fa-film', 'fa-tv', 'fa-gamepad', 'fa-music', 'fa-book', 'fa-camera', 'fa-paw', 'fa-futbol']],
+        ['學習工作', ['fa-graduation-cap', 'fa-briefcase', 'fa-laptop', 'fa-pen-to-square', 'fa-baby']],
+        ['金流', ['fa-money-bill-wave', 'fa-sack-dollar', 'fa-piggy-bank', 'fa-chart-line', 'fa-hand-holding-dollar',
+            'fa-building-columns', 'fa-credit-card', 'fa-money-bills', 'fa-mobile-screen', 'fa-receipt', 'fa-coins', 'fa-wallet']],
+        ['其他', ['fa-box', 'fa-shield-halved', 'fa-ellipsis', 'fa-star']]
+    ];
 
     /** 頭像可能是圖片代號（av20）或 Emoji，兩種都要能畫 */
     function avatarInner(v) {
-        v = v || '🐱';
-        return String(v).startsWith('av')
-            ? `<img src="./${esc(v)}.png" alt="" class="w-full h-full object-cover">`
-            : `<span class="leading-none">${esc(v)}</span>`;
+        v = v || 'av5';
+        if (String(v).startsWith('av')) return `<img src="./${esc(v)}.png" alt="" class="w-full h-full object-cover">`;
+        if (isFA(v)) return `<i class="fa-solid ${esc(v)}"></i>`;
+        return `<span class="leading-none">${esc(v)}</span>`;   // 舊資料相容
     }
 
     const AUTH = {
@@ -426,19 +463,19 @@ function hexA(hex, a) {
     }
 
     const ACHIEVEMENTS = [
-        { id: 's30', icon: '🔥', name: '習慣養成', hue: 'accent', desc: '連續記帳 30 天', val: x => x.streak, goal: 30, unit: '天' },
-        { id: 'c100', icon: '📝', name: '百筆達人', hue: 'blue', desc: '累積記帳 100 筆', val: x => x.count, goal: 100, unit: '筆' },
-        { id: 'sp3', icon: '🌱', name: '存錢新芽', hue: 'green', desc: '連續 3 個月有結餘', val: x => x.surplusStreak, goal: 3, unit: '個月' },
-        { id: 'fun3', icon: '🧘', name: '自律修行者', hue: 'sky', desc: '娛樂支出佔收入 10% 以下，連續 3 個月', val: x => x.funStreak, goal: 3, unit: '個月' },
-        { id: 'sr30', icon: '🏦', name: '三成儲蓄率', hue: 'green', desc: '本月儲蓄率達 30%', val: x => x.savingRate, goal: 30, unit: '%' },
-        { id: 's100', icon: '💎', name: '百日堅持', hue: 'sky', desc: '連續記帳 100 天', val: x => x.streak, goal: 100, unit: '天' },
-        { id: 'adv10', icon: '🤝', name: '家庭支柱', hue: 'pink', desc: '為公帳代墊 10 次', val: x => x.advances, goal: 10, unit: '次' },
-        { id: 'rec20', icon: '🧾', name: '單據魔人', hue: 'yellow', desc: '上傳 20 張單據', val: x => x.receipts, goal: 20, unit: '張' },
-        { id: 'sp6', icon: '🌳', name: '存錢大樹', hue: 'green', desc: '連續 6 個月有結餘', val: x => x.surplusStreak, goal: 6, unit: '個月' },
-        { id: 'sr50', icon: '💰', name: '五成儲蓄率', hue: 'yellow', desc: '本月儲蓄率達 50%', val: x => x.savingRate, goal: 50, unit: '%' },
-        { id: 'fun6', icon: '🕊️', name: '清心寡慾', hue: 'sky', desc: '娛樂支出佔收入 10% 以下，連續 6 個月', val: x => x.funStreak, goal: 6, unit: '個月' },
-        { id: 'c500', icon: '📚', name: '五百筆宗師', hue: 'blue', desc: '累積記帳 500 筆', val: x => x.count, goal: 500, unit: '筆' },
-        { id: 's365', icon: '👑', name: '一年不斷', hue: 'accent', desc: '連續記帳 365 天', val: x => x.streak, goal: 365, unit: '天' }
+        { id: 's30', icon: 'fa-fire', name: '習慣養成', hue: 'accent', desc: '連續記帳 30 天', val: x => x.streak, goal: 30, unit: '天' },
+        { id: 'c100', icon: 'fa-pen-to-square', name: '百筆達人', hue: 'blue', desc: '累積記帳 100 筆', val: x => x.count, goal: 100, unit: '筆' },
+        { id: 'sp3', icon: 'fa-seedling', name: '存錢新芽', hue: 'green', desc: '連續 3 個月有結餘', val: x => x.surplusStreak, goal: 3, unit: '個月' },
+        { id: 'fun3', icon: 'fa-spa', name: '自律修行者', hue: 'sky', desc: '娛樂支出佔收入 10% 以下，連續 3 個月', val: x => x.funStreak, goal: 3, unit: '個月' },
+        { id: 'sr30', icon: 'fa-piggy-bank', name: '三成儲蓄率', hue: 'green', desc: '本月儲蓄率達 30%', val: x => x.savingRate, goal: 30, unit: '%' },
+        { id: 's100', icon: 'fa-gem', name: '百日堅持', hue: 'sky', desc: '連續記帳 100 天', val: x => x.streak, goal: 100, unit: '天' },
+        { id: 'adv10', icon: 'fa-handshake-angle', name: '家庭支柱', hue: 'pink', desc: '為公帳代墊 10 次', val: x => x.advances, goal: 10, unit: '次' },
+        { id: 'rec20', icon: 'fa-receipt', name: '單據魔人', hue: 'yellow', desc: '上傳 20 張單據', val: x => x.receipts, goal: 20, unit: '張' },
+        { id: 'sp6', icon: 'fa-tree', name: '存錢大樹', hue: 'green', desc: '連續 6 個月有結餘', val: x => x.surplusStreak, goal: 6, unit: '個月' },
+        { id: 'sr50', icon: 'fa-sack-dollar', name: '五成儲蓄率', hue: 'yellow', desc: '本月儲蓄率達 50%', val: x => x.savingRate, goal: 50, unit: '%' },
+        { id: 'fun6', icon: 'fa-dove', name: '清心寡慾', hue: 'sky', desc: '娛樂支出佔收入 10% 以下，連續 6 個月', val: x => x.funStreak, goal: 6, unit: '個月' },
+        { id: 'c500', icon: 'fa-book', name: '五百筆宗師', hue: 'blue', desc: '累積記帳 500 筆', val: x => x.count, goal: 500, unit: '筆' },
+        { id: 's365', icon: 'fa-crown', name: '一年不斷', hue: 'accent', desc: '連續記帳 365 天', val: x => x.streak, goal: 365, unit: '天' }
     ];
 
     const HUE = {
@@ -483,7 +520,7 @@ function hexA(hex, a) {
         const t = currentTitle();
         const chip = document.getElementById('titleChip');
         if (chip) {
-            chip.innerHTML = t ? `${t.icon} ${esc(t.name)}` : `🌱 新手上路`;
+            chip.innerHTML = t ? `<i class="fa-solid ${t.icon} mr-1"></i>${esc(t.name)}` : `<i class="fa-solid fa-seedling mr-1"></i>新手上路`;
             chip.className = 'flex-shrink-0 max-w-[92px] text-[10px] font-bold px-2.5 py-1.5 rounded-full border shadow-sm truncate ' +
                 (t ? `${HUE[t.hue][0]} ${HUE[t.hue][1]} border-transparent` : 'bg-white border-pastel-border text-pastel-muted');
         }
@@ -504,7 +541,10 @@ function hexA(hex, a) {
     function activeTxns() { return STATE.transactions.filter(t => t.status !== '作廢' && t.status !== '已修訂' && !t.is_rollup); }
     function inMonth(d, ym) { return String(d).slice(0, 7) === ym; }
     function nameOf(id) { const m = STATE.members.find(x => x.member_id === id); return m ? m.nickname : id; }
-    function catIcon(name) { const c = STATE.categories.find(x => x.item_name === name); return c ? c.icon_emoji : ''; }
+    function catIcon(name) {
+        const c = STATE.categories.find(x => x.item_name === name) || STATE.tags.find(x => x.item_name === name);
+        return normIcon(c ? c.icon_emoji : '', c ? c.item_group : '');
+    }
 
     function computeSummary(mode, ym) {
         ym = ym || currentYM();
@@ -697,7 +737,7 @@ function hexA(hex, a) {
             <div class="pop bg-white rounded-sheet px-8 py-7 shadow-2xl text-center max-w-[280px] border-4 border-pastel-yellow">
                 <img src="./av5.png" alt="" class="w-20 h-20 mx-auto mb-3 float">
                 <div class="text-[11px] font-bold text-pastel-accent mb-1">成就解鎖！</div>
-                <div class="text-2xl mb-1">${a.icon}</div>
+                <div class="text-3xl mb-2 ${HUE[a.hue][1]}"><i class="fa-solid ${a.icon} fa-bounce"></i></div>
                 <div class="text-lg font-bold text-stone-800">${esc(a.name)}</div>
                 <div class="text-xs text-pastel-muted mt-1 leading-relaxed">${esc(a.desc)}</div>
             </div>`;
@@ -879,11 +919,11 @@ function hexA(hex, a) {
                     <h3 class="text-sm font-bold text-stone-800"><i class="fa-solid fa-hand-holding-dollar text-pastel-accent mr-1.5"></i> 公帳待結算核銷</h3>
                     <div class="space-y-3">
                         <div class="text-xs font-bold text-pastel-muted border-b border-pastel-border pb-1">公帳需還款給成員</div>
-                        ${s.poolOwesMembers.length ? s.poolOwesMembers.map(r => settleRow(r, 'pool2member')).join('') : `<div class="text-xs text-pastel-muted py-2">目前沒有待還款項目 🎉</div>`}
+                        ${s.poolOwesMembers.length ? s.poolOwesMembers.map(r => settleRow(r, 'pool2member')).join('') : `<div class="text-xs text-pastel-muted py-2">目前沒有待還款項目 <i class="fa-solid fa-circle-check text-pastel-green ml-1"></i></div>`}
                     </div>
                     <div class="space-y-3 pt-2">
                         <div class="text-xs font-bold text-pastel-muted border-b border-pastel-border pb-1">成員需繳回公帳</div>
-                        ${s.membersOwePool.length ? s.membersOwePool.map(r => settleRow(r, 'member2pool')).join('') : `<div class="text-xs text-pastel-muted py-2">目前沒有待繳回項目 🎉</div>`}
+                        ${s.membersOwePool.length ? s.membersOwePool.map(r => settleRow(r, 'member2pool')).join('') : `<div class="text-xs text-pastel-muted py-2">目前沒有待繳回項目 <i class="fa-solid fa-circle-check text-pastel-green ml-1"></i></div>`}
                     </div>
                 </div>`;
         }
@@ -911,11 +951,20 @@ function hexA(hex, a) {
         const b = STATE.budgets.find(x => x.budget_id === budgetKey(scope, category));
         return b ? Number(b.amount) || 0 : 0;
     }
-    function budgetMood(pct) {
-        if (pct > 100) return { av: 'av4', word: '已超出預算，先煞車一下' };
-        if (pct > 80) return { av: 'av48', word: '快到上限了，留意一下' };
-        if (pct > 50) return { av: 'av21', word: '節奏還可以，繼續保持' };
-        return { av: 'av5', word: '目前非常有餘裕！' };
+    /* 角色情緒狀態機。動畫只給「真的需要注意」的狀態，
+       全部都在動的話，動這件事本身就失去強調的意義。
+       FA 的動畫會自動遵守系統的「減少動態效果」設定，不必額外防護。 */
+    function getMascotState(pct, hasData) {
+        if (!hasData) return { mood: 'FREEZE', av: 'av14', word: '這個月還沒開張，記一筆吧', color: '#88D8F8', badge: { icon: 'fa-moon', anim: 'fa-fade' } };
+        if (pct > 100) return { mood: 'DANGER', av: 'av4', word: '已超出預算，先煞車一下', color: '#F05838', badge: { icon: 'fa-triangle-exclamation', anim: 'fa-beat-fade' } };
+        if (pct > 80) return { mood: 'WARNING', av: 'av48', word: '快到上限了，留意一下', color: '#F8C850', badge: { icon: 'fa-triangle-exclamation', anim: 'fa-shake' } };
+        if (pct > 50) return { mood: 'GOOD', av: 'av21', word: '節奏還可以，繼續保持', color: '#3090F8', badge: null };
+        return { mood: 'GREAT', av: 'av5', word: '目前非常有餘裕！', color: '#40B868', badge: { icon: 'fa-star', anim: 'fa-beat' } };
+    }
+    function mascotBadge(state) {
+        if (!state.badge) return '';
+        return `<span class="absolute -top-1 -right-1 w-7 h-7 rounded-full bg-white shadow-md flex items-center justify-center">
+            <i class="fa-solid ${state.badge.icon} ${state.badge.anim} text-xs" style="color:${state.color}"></i></span>`;
     }
 
     function budgetHero(s) {
@@ -932,11 +981,14 @@ function hexA(hex, a) {
         const n = daysInYM(currentYM()), day = Number(todayISO().slice(8, 10));
         const remainDays = Math.max(n - day + 1, 1);
         const daily = Math.max(left, 0) / remainDays;
-        const mood = budgetMood(used / total * 100);
+        const mood = getMascotState(used / total * 100, s.monthlyExpense > 0 || s.monthlyIncome > 0);
         return `
         <div onclick="openBudgetSheet()" class="rounded-card p-5 shadow-md text-white relative overflow-hidden"
              style="background:linear-gradient(135deg, ${over ? '#F05838' : '#F8A048'} 0%, ${over ? '#D8452A' : '#F0863A'} 100%)">
-            <img src="./${mood.av}.png" alt="" class="absolute -right-3 -bottom-3 w-24 h-24 opacity-90 pointer-events-none">
+            <div class="absolute right-1 bottom-1 w-24 h-24 pointer-events-none">
+                <img src="./${mood.av}.png" alt="" class="w-full h-full opacity-90">
+                ${mascotBadge(mood)}
+            </div>
             <div class="relative">
                 <div class="text-[11px] font-bold opacity-80 mb-1">${currentMode === 'family' ? '公帳本月可用' : '本月還能花'}</div>
                 <div class="text-4xl font-bold font-rounded tracking-tight mb-1">
@@ -965,7 +1017,7 @@ function hexA(hex, a) {
                 const col = catColor(b.category);
                 return `<div class="space-y-1.5">
                     <div class="flex justify-between text-xs">
-                        <span class="text-stone-700 truncate">${esc(catIcon(b.category))} ${esc(b.category)}</span>
+                        <span class="text-stone-700 truncate"><i class="fa-solid ${esc(catIcon(b.category))} mr-1.5" style="color:${col}"></i>${esc(b.category)}</span>
                         <span class="font-bold font-rounded flex-shrink-0 ml-2 ${over ? 'text-pastel-red' : 'text-stone-700'}">${fmt(used)} / ${fmt(b.amount)}</span></div>
                     <div class="w-full bg-pastel-bg rounded-full h-2 overflow-hidden">
                         <div class="h-2 rounded-full transition-all duration-700" style="width:${pct}%;background:${over ? '#F05838' : col}"></div></div>
@@ -987,7 +1039,7 @@ function hexA(hex, a) {
                 <div class="text-xs font-bold text-stone-600 pt-1">分類預算（選填）</div>
                 ${cats.map(c => `
                     <div class="flex items-center gap-3">
-                        <div class="w-9 h-9 rounded-tile flex items-center justify-center text-base flex-shrink-0" style="background:${hexA(catColor(c.item_name), .16)}">${esc(c.icon_emoji)}</div>
+                        <div class="w-9 h-9 rounded-tile flex items-center justify-center flex-shrink-0" style="background:${hexA(catColor(c.item_name), .16)};color:${catColor(c.item_name)}"><i class="fa-solid ${esc(normIcon(c.icon_emoji, c.item_group))}"></i></div>
                         <span class="text-sm text-stone-700 flex-1 truncate">${esc(c.item_name)}</span>
                         <input type="number" inputmode="numeric" data-cat="${esc(c.item_name)}" value="${budgetFor(scope, c.item_name) || ''}" placeholder="—"
                             class="bud-inp w-24 p-2.5 rounded-xl bg-pastel-bg border border-pastel-border text-sm text-right font-rounded">
@@ -1050,7 +1102,7 @@ function hexA(hex, a) {
         };
         STATE.transactions.push(local);
         renderDataViews();
-        toast(okMsg || '已記錄 ✓');
+        toast(okMsg || '已記錄');
         try {
             const r = await api.call('addTransaction', { txn, receipt });
             const i = STATE.transactions.findIndex(t => t.txn_id === local.txn_id);
@@ -1185,7 +1237,7 @@ function hexA(hex, a) {
             <div class="flex gap-2">
                 <div class="relative flex-1 field">
                     <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-pastel-muted text-xs"></i>
-                    <input id="txnSearch" oninput="onSearchInput()" value="${esc(filters.q)}" placeholder="${filters.allTime ? '搜尋全部期間' : '搜尋本月備註、分類、帳戶'}" class="w-full bg-white border border-pastel-border rounded-full pl-10 pr-20 py-2.5 text-sm focus:outline-none focus:border-pastel-accent shadow-sm">
+                    <input id="txnSearch" oninput="onSearchInput()" oncompositionstart="onCompStart()" oncompositionend="onCompEnd()" value="${esc(filters.q)}" placeholder="${filters.allTime ? '搜尋全部期間' : '搜尋本月備註、分類、帳戶'}" class="w-full bg-white border border-pastel-border rounded-full pl-10 pr-20 py-2.5 text-sm focus:outline-none focus:border-pastel-accent shadow-sm">
                     <button onclick="toggleAllTime()" class="absolute right-1.5 top-1/2 -translate-y-1/2 px-2.5 py-1.5 rounded-full text-[10px] font-bold transition-all ${filters.allTime ? 'bg-pastel-accent text-white' : 'bg-pastel-bg text-pastel-muted border border-pastel-border'}">全期間</button>
                 </div>
                 <button onclick="openFilterSheet()" class="relative w-11 flex-shrink-0 bg-white border border-pastel-border rounded-full shadow-sm flex items-center justify-center text-stone-500">
@@ -1193,9 +1245,27 @@ function hexA(hex, a) {
                     ${fc ? `<span class="absolute -top-1 -right-1 w-4 h-4 bg-pastel-accent text-white text-[9px] font-bold rounded-full flex items-center justify-center">${fc}</span>` : ''}
                 </button>
             </div>
+            <div id="txnList" class="space-y-4"></div>`;
+        renderTxnList();
+    }
+
+    /* 只重畫清單，不動搜尋框 —— 中文（注音／拼音）輸入時若整頁重繪，
+       輸入框會被銷毀重建，組字中途就被打斷，永遠打不完一個字。 */
+    function renderTxnList() {
+        const box = document.getElementById('txnList'); if (!box) return;
+        const rows = filteredTxns();
+        const total = rows.reduce((a, t) => a + (t.entry_type === '支出' ? Number(t.amount) : 0), 0);
+        const grouped = rows.reduce((a, t) => { (a[t.date] ||= []).push(t); return a; }, {});
+        let list = Object.keys(grouped).sort().reverse().map(date => `
+            <div class="text-xs font-bold text-pastel-muted mt-4 ml-1 mb-2">${esc(relativeDateLabel(date))}</div>
+            <div class="space-y-3">${grouped[date].map(txnRow).join('')}</div>`).join('');
+        if (!rows.length) list = activeFilterCount() || filters.q
+            ? emptyState('av37', '找不到符合的紀錄', '換個關鍵字或把篩選條件放寬一點', { label: '清除篩選', fn: 'clearAllFilters()' })
+            : emptyState('av46', `${viewYM.slice(5, 7)} 月還是一片空白`, '記下第一筆，這個月的故事就開始了', { label: '記一筆', fn: "switchTab('add')" });
+        box.innerHTML = `
             <div class="flex justify-between items-center text-xs text-pastel-muted px-1">
                 <span>${rows.length} 筆</span><span>支出小計 <b class="text-pastel-red font-rounded">${fmt(total)}</b></span></div>
-            <p class="text-[10px] text-pastel-muted text-center bg-white/70 rounded-full py-1.5 border border-pastel-border">← 左滑作廢　·　右滑編輯 →　·　點一下看詳情</p>
+            <p class="text-[10px] text-pastel-muted text-center bg-white/70 rounded-full py-1.5 border border-pastel-border"><i class="fa-solid fa-arrow-left mr-1"></i>左滑作廢　·　右滑編輯<i class="fa-solid fa-arrow-right ml-1"></i>　·　點一下看詳情</p>
             ${list}`;
         bindSwipe();
     }
@@ -1212,7 +1282,8 @@ function hexA(hex, a) {
             </div>
             <div class="swipe-inner bg-white p-4 rounded-card border border-pastel-border/60 flex justify-between items-center shadow-card relative">
                 <div class="flex items-center gap-4 min-w-0">
-                    <div class="w-12 h-12 rounded-tile flex items-center justify-center text-xl flex-shrink-0" style="background:${hexA(catColor(t.category), .16)}">${esc(catIcon(t.category) || (t.entry_type === '轉帳' ? '🔁' : isExp ? '💸' : '💰'))}</div>
+                    <div class="w-12 h-12 rounded-tile flex items-center justify-center text-lg flex-shrink-0" style="background:${hexA(catColor(t.category), .16)};color:${catColor(t.category)}">
+                        <i class="fa-solid ${esc(t.category ? catIcon(t.category) : (isTr ? 'fa-right-left' : isExp ? 'fa-money-bill-transfer' : 'fa-sack-dollar'))}"></i></div>
                     <div class="min-w-0">
                         <div class="font-bold text-stone-800 text-sm mb-1 truncate">${esc(t.note || t.category || '（無備註）')}${t.recurring_rule_id ? ' <i class="fa-solid fa-rotate text-[10px] text-pastel-muted"></i>' : ''}</div>
                         <div class="text-xs text-pastel-muted flex items-center gap-2 truncate">
@@ -1291,11 +1362,15 @@ function hexA(hex, a) {
     function clearAllFilters() { filters = { type: 'all', natures: [], cats: [], tags: [], min: '', max: '', q: '', allTime: false }; renderTransactions(); }
     function toggleAllTime() { filters.allTime = !filters.allTime; buzz(); renderTransactions(); }
 
-    let _searchTimer;
+    let _searchTimer, _composing = false;
+    function onCompStart() { _composing = true; }
+    function onCompEnd() { _composing = false; onSearchInput(); }
     function onSearchInput() {
+        if (_composing) return;                 // 組字中完全不動作，等使用者選完字
         clearTimeout(_searchTimer);
-        const v = document.getElementById('txnSearch').value;
-        _searchTimer = setTimeout(() => { filters.q = v; renderTransactions(); const s = document.getElementById('txnSearch'); if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); } }, 300);
+        const el = document.getElementById('txnSearch');
+        const v = el ? el.value : '';
+        _searchTimer = setTimeout(() => { filters.q = v; renderTxnList(); }, 280);
     }
     function changeMonth(n) { const t = shiftYM(viewYM, n); if (t > currentYM()) return; viewYM = t; renderTransactions(); renderStats(); }
     function openMonthPicker() {
@@ -1562,7 +1637,7 @@ function hexA(hex, a) {
                             ${STATE.tags.map(t => `<option ${addState.to === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
                 </div>`
                 : rowBtn('分類', addState.cat
-                    ? `<span style="color:${catColor(addState.cat)}">${esc(catIcon(addState.cat))}</span> ${esc(addState.cat)}`
+                    ? `<i class="fa-solid ${esc(catIcon(addState.cat))} mr-1.5" style="color:${catColor(addState.cat)}"></i>${esc(addState.cat)}`
                     : '<span class="text-pastel-muted font-normal">請選擇</span>', 'openCatDrawer()')}
 
                 <div class="px-4 py-3 flex items-center justify-between gap-3">
@@ -1635,11 +1710,11 @@ function hexA(hex, a) {
             const on = c.item_name === addState.cat, col = catColor(c.item_name);
             return `<button onclick="chooseCat('${esc(c.item_name)}')" class="rounded-tile py-3 px-1 flex flex-col items-center gap-1 tactile transition-all"
                         style="background:${on ? col : hexA(col, .12)};color:${on ? '#fff' : '#3A3330'};${on ? `box-shadow:0 4px 14px ${hexA(col, .45)}` : ''}">
-                        <span class="text-2xl leading-none">${esc(c.icon_emoji)}</span>
+                        <i class="fa-solid ${esc(normIcon(c.icon_emoji, c.item_group))} text-xl leading-none"></i>
                         <span class="text-[10px] font-bold leading-tight text-center truncate w-full px-0.5">${esc(c.item_name)}</span></button>`;
         }).join('')}
                 <button onclick="addItem('${group}')" class="rounded-tile py-3 px-1 flex flex-col items-center gap-1 border-2 border-dashed border-pastel-border text-pastel-muted">
-                    <span class="text-2xl leading-none">＋</span><span class="text-[10px] font-bold">新增</span></button>
+                    <i class="fa-solid fa-plus text-xl leading-none"></i><span class="text-[10px] font-bold">新增</span></button>
             </div>`);
     }
 
@@ -1727,7 +1802,7 @@ function hexA(hex, a) {
             return optimisticAdd({
                 date: addState.date, entry_type: '轉帳', category: '', tag: from, amount, note,
                 nature: '純個人', related_id: to, member_id: STATE.me.member_id, payer_id: STATE.me.member_id
-            }, null, '轉帳已記錄 ✓');
+            }, null, '轉帳已記錄');
         }
 
         const nature = document.getElementById('inpNature')?.value || '純個人';
@@ -1762,7 +1837,7 @@ function hexA(hex, a) {
             const backup = idx >= 0 ? { ...STATE.transactions[idx] } : null;
             if (idx >= 0) Object.assign(STATE.transactions[idx], txn, { _pending: true });
             editingTxnId = null; pendingReceipt = null;
-            initAddForm(); renderDataViews(); switchTab('transactions'); toast('已更新 ✓'); buzz(14);
+            initAddForm(); renderDataViews(); switchTab('transactions'); toast('已更新'); buzz(14);
             try {
                 const r = await api.call('updateTransaction', { txn_id: oldId, txn, receipt });
                 const i2 = STATE.transactions.findIndex(t => t.txn_id === oldId);
@@ -1817,7 +1892,7 @@ function hexA(hex, a) {
                 <h3 class="font-bold text-stone-800 text-sm">分類排行</h3>
                 ${top.length ? top.map((c, i) => `
                     <div class="space-y-1.5">
-                        <div class="flex justify-between text-xs"><span class="text-stone-700 truncate">${esc(catIcon(c[0]))} ${esc(c[0])}</span><span class="font-bold font-rounded flex-shrink-0 ml-2">${fmt(c[1])}</span></div>
+                        <div class="flex justify-between text-xs"><span class="text-stone-700 truncate"><i class="fa-solid ${esc(catIcon(c[0]))} mr-1.5" style="color:${catColor(c[0])}"></i>${esc(c[0])}</span><span class="font-bold font-rounded flex-shrink-0 ml-2">${fmt(c[1])}</span></div>
                         <div class="w-full bg-pastel-bg rounded-full h-2 overflow-hidden"><div class="h-2 rounded-full transition-all duration-700" style="width:${(c[1] / maxC * 100).toFixed(0)}%;background:${catColor(c[0])}"></div></div>
                     </div>`).join('') : `<div class="flex flex-col items-center py-4 gap-2"><img src="./av14.png" alt="" class="w-12 h-12 opacity-70"><span class="text-xs text-pastel-muted">本月尚無支出</span></div>`}</div>
 
@@ -1869,13 +1944,13 @@ function hexA(hex, a) {
                 </button>
                 <div><h3 class="text-xl font-bold text-stone-800">${esc(STATE.me?.nickname)}</h3>
                     <p class="text-sm ${i.color} font-bold mt-0.5">${esc(i.name)}光環</p></div>
-                ${t ? `<div class="px-3 py-1.5 rounded-full text-xs font-bold ${HUE[t.hue][0]} ${HUE[t.hue][1]}">${t.icon} ${esc(t.name)}</div>` : ''}
+                ${t ? `<div class="px-3 py-1.5 rounded-full text-xs font-bold ${HUE[t.hue][0]} ${HUE[t.hue][1]}"><i class="fa-solid ${t.icon} mr-1.5"></i>${esc(t.name)}</div>` : ''}
                 <button onclick="openAvatarPicker()" class="text-xs text-pastel-accent font-bold underline">更換大頭貼</button>
             </div>
 
             <div class="bg-pastel-bg rounded-tile p-4 border border-pastel-border mb-5">
                 <div class="flex justify-between items-center mb-2">
-                    <span class="text-sm font-bold text-stone-700">🔥 連續記帳天數</span>
+                    <span class="text-sm font-bold text-stone-700"><i class="fa-solid fa-fire mr-1.5 text-pastel-accent"></i>連續記帳天數</span>
                     <span class="text-lg font-bold text-pastel-accent">${i.days} 天</span></div>
                 <div class="w-full bg-white rounded-full h-2 mb-2 overflow-hidden border border-pastel-border">
                     <div class="h-2 rounded-full transition-all duration-500" style="width:${i.progress}%;background:${i.ring}"></div></div>
@@ -1889,11 +1964,12 @@ function hexA(hex, a) {
                 ${list.map(a => {
             const pct = Math.min(a.cur / a.goal * 100, 100);
             return `<div class="flex items-center gap-3 p-3 rounded-tile border ${a.done ? `${HUE[a.hue][0]} border-transparent` : 'bg-white border-pastel-border'}">
-                    <div class="w-10 h-10 rounded-full flex items-center justify-center text-xl flex-shrink-0 ${a.done ? 'bg-white/70' : 'bg-pastel-bg grayscale opacity-50'}">${a.icon}</div>
+                    <div class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${a.done ? 'bg-white/70' : 'bg-pastel-bg'}">
+                        <i class="fa-solid ${a.icon} ${a.done ? HUE[a.hue][1] : 'text-pastel-muted'}"></i></div>
                     <div class="flex-1 min-w-0">
                         <div class="flex justify-between items-center gap-2">
                             <span class="font-bold text-sm truncate ${a.done ? HUE[a.hue][1] : 'text-stone-700'}">${esc(a.name)}</span>
-                            <span class="text-[10px] font-bold flex-shrink-0 ${a.done ? HUE[a.hue][1] : 'text-pastel-muted'}">${a.done ? '✓ 已達成' : `${Math.min(a.cur, a.goal)}/${a.goal}${a.unit}`}</span></div>
+                            <span class="text-[10px] font-bold flex-shrink-0 ${a.done ? HUE[a.hue][1] : 'text-pastel-muted'}">${a.done ? '已達成' : `${Math.min(a.cur, a.goal)}/${a.goal}${a.unit}`}</span></div>
                         <div class="text-[10px] text-pastel-muted mt-0.5 truncate">${esc(a.desc)}</div>
                         ${a.done ? '' : `<div class="w-full bg-pastel-bg rounded-full h-1.5 mt-1.5 overflow-hidden"><div class="bg-pastel-accent h-1.5 rounded-full" style="width:${pct}%"></div></div>`}
                     </div></div>`;
@@ -1921,9 +1997,9 @@ function hexA(hex, a) {
                 ${AVATARS.map(a => `<button onclick="setAvatar('${a}')" class="aspect-square rounded-full border-[3px] overflow-hidden flex items-center justify-center ${cur === a ? i.border + ' ' + i.bg : 'border-pastel-border bg-pastel-bg'}">
                     <img src="./${a}.png" alt="" class="w-full h-full object-cover"></button>`).join('')}
             </div>
-            <div class="text-xs font-bold text-stone-500 mb-3">或使用 Emoji</div>
+            <div class="text-xs font-bold text-stone-500 mb-3">或使用圖示</div>
             <div class="grid grid-cols-6 gap-2.5 mb-6">
-                ${EMOJI_AVATARS.map(e => `<button onclick="setAvatar('${e}')" class="aspect-square rounded-full border-2 text-2xl flex items-center justify-center ${cur === e ? 'border-pastel-accent bg-pastel-accentLight' : 'border-pastel-border bg-pastel-bg'}">${e}</button>`).join('')}
+                ${FA_AVATARS.map(a => `<button onclick="setAvatar('${a}')" class="aspect-square rounded-full border-2 text-lg flex items-center justify-center ${cur === a ? 'border-pastel-accent bg-pastel-accentLight text-pastel-accent' : 'border-pastel-border bg-pastel-bg text-stone-600'}"><i class="fa-solid ${a}"></i></button>`).join('')}
             </div>
             <button onclick="closeSheet()" class="w-full py-3 bg-pastel-bg text-stone-700 font-bold rounded-tile text-sm border border-pastel-border">取消</button>`);
     }
@@ -1948,7 +2024,7 @@ function hexA(hex, a) {
     function renderSettings() {
         const itemGrid = (list, group) => list.length ? list.map(c => `
             <div class="p-2.5 rounded-tile border border-pastel-border flex items-center gap-2 justify-between min-w-0" style="background:${hexA(catColor(c.item_name), .1)}">
-                <div class="flex items-center gap-2 min-w-0"><span class="text-base">${esc(c.icon_emoji)}</span><span class="font-bold text-stone-800 truncate">${esc(c.item_name)}</span></div>
+                <div class="flex items-center gap-2 min-w-0"><i class="fa-solid ${esc(normIcon(c.icon_emoji, c.item_group))} text-sm w-4 text-center" style="color:${catColor(c.item_name)}"></i><span class="font-bold text-stone-800 truncate">${esc(c.item_name)}</span></div>
                 <button class="text-stone-400 text-[10px] flex-shrink-0" onclick="archiveItem('${esc(c.item_name)}','${group}')"><i class="fa-solid fa-xmark"></i></button>
             </div>`).join('') : `<div class="col-span-2 text-xs text-pastel-muted">尚無項目</div>`;
 
@@ -1959,13 +2035,13 @@ function hexA(hex, a) {
 
         document.getElementById('settingsView').innerHTML = `
             <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card text-center relative overflow-hidden">
-                <div class="absolute -right-10 -top-10 text-9xl opacity-[0.06] pointer-events-none">🏆</div>
+                <i class="fa-solid fa-trophy absolute -right-8 -top-8 text-[7rem] opacity-[0.06] pointer-events-none"></i>
                 <button onclick="openProfileModal()" class="block mx-auto">
                     <div id="settingsAvatarContainer" class="w-16 h-16 mx-auto rounded-full border-[4px] flex items-center justify-center text-2xl overflow-hidden mb-3"></div></button>
                 <h2 class="font-bold text-lg text-stone-800">${esc(STATE.me?.nickname)}</h2>
                 <p class="text-xs text-pastel-muted mt-1">目前為 <span id="settingsLevelName"></span></p>
                 <div class="mt-4 flex items-center justify-center gap-2 text-sm font-bold text-stone-700 bg-pastel-bg py-2 px-4 rounded-xl w-max mx-auto">
-                    🔥 連續記帳 <span class="text-pastel-accent text-lg">${esc(STATE.me?.streak_days || 0)}</span> 天</div>
+                    <i class="fa-solid fa-fire mr-1.5 text-pastel-accent"></i>連續記帳 <span class="text-pastel-accent text-lg">${esc(STATE.me?.streak_days || 0)}</span> 天</div>
                 <button onclick="openProfileModal()" class="mt-3 text-xs font-bold text-pastel-accent">查看成就與更換大頭貼 →</button>
             </div>
 
@@ -1985,7 +2061,7 @@ function hexA(hex, a) {
                         </div>
                         <div class="text-[11px] font-bold text-stone-700 truncate w-full text-center mt-1">${esc(m.nickname)}${isMe ? ' ·我' : ''}</div>
                         <div class="text-[9px] ${i.color} font-bold truncate w-full text-center leading-tight">${esc(i.name)}</div>
-                        <div class="text-[9px] text-pastel-muted">🔥${Number(m.streak_days) || 0}</div>
+                        <div class="text-[9px] text-pastel-muted"><i class="fa-solid fa-fire"></i> ${Number(m.streak_days) || 0}</div>
                     </div>`;
         }).join('')}
                 </div>
@@ -2010,7 +2086,7 @@ function hexA(hex, a) {
                 ${rules.length ? rules.map(r => `
                     <div class="flex justify-between items-center bg-pastel-bg p-3 rounded-tile border border-pastel-border">
                         <div class="flex items-center gap-3 min-w-0">
-                            <div class="w-10 h-10 rounded-tile bg-white border border-pastel-border flex items-center justify-center text-lg flex-shrink-0">${esc(catIcon(r.category) || (r.entry_type === '收入' ? '💰' : '📺'))}</div>
+                            <div class="w-10 h-10 rounded-tile bg-white border border-pastel-border flex items-center justify-center flex-shrink-0" style="color:${catColor(r.category)}"><i class="fa-solid ${esc(r.category ? catIcon(r.category) : (r.entry_type === '收入' ? 'fa-sack-dollar' : 'fa-repeat'))}"></i></div>
                             <div class="min-w-0">
                                 <div class="font-bold text-stone-800 text-sm truncate">${esc(r.name)}${r.status === '停用' ? ' <span class="text-[9px] bg-stone-200 text-stone-500 px-1.5 py-0.5 rounded">已停用</span>' : ''}</div>
                                 <div class="text-[10px] text-pastel-muted mt-0.5 truncate">
@@ -2145,18 +2221,50 @@ function hexA(hex, a) {
         catch (e) { STATE.rules = backup; renderSettings(); toast('刪除失敗：' + e.message, true); }
     }
 
-    async function addItem(group) {
-        const name = prompt(group === 'PAYMENT_TAG' ? '新增帳戶／標籤名稱：' : '新增分類名稱：');
-        if (!name) return;
-        const icon = group === 'PAYMENT_TAG' ? '💳' : (prompt('選一個 Emoji 圖示：', '🏷️') || '🏷️');
+    let _newItem = { group: '', name: '', icon: 'fa-tag' };
+    function addItem(group) {
+        _newItem = { group, name: '', icon: group === 'PAYMENT_TAG' ? 'fa-credit-card' : 'fa-tag' };
+        openItemSheet();
+    }
+    function pickNewIcon(ic) { _newItem.icon = ic; _newItem.name = document.getElementById('niName')?.value || ''; openItemSheet(); }
+    function openItemSheet() {
+        const g = _newItem.group;
+        openSheet(`
+            <h3 class="text-lg font-bold text-stone-800 mb-5">${g === 'PAYMENT_TAG' ? '新增帳戶 / 標籤' : g === 'INCOME_CATEGORY' ? '新增收入分類' : '新增支出分類'}</h3>
+            <div class="flex items-center gap-3 mb-5">
+                <div class="w-14 h-14 rounded-tile flex items-center justify-center text-2xl flex-shrink-0"
+                     style="background:${hexA('#F8A048', .16)};color:#F8A048"><i class="fa-solid ${esc(_newItem.icon)}"></i></div>
+                <input id="niName" value="${esc(_newItem.name)}" placeholder="名稱，例如：富邦-信用卡"
+                    class="field flex-1 w-full p-3.5 rounded-tile bg-pastel-bg border border-pastel-border text-stone-800">
+            </div>
+            <div class="text-xs font-bold text-stone-500 mb-2">選一個圖示</div>
+            <div class="space-y-4 mb-5">
+                ${ICON_PICKER.map(([label, list]) => `
+                    <div>
+                        <div class="text-[11px] text-pastel-muted mb-1.5">${esc(label)}</div>
+                        <div class="grid grid-cols-7 gap-2">
+                            ${list.map(ic => `<button onclick="pickNewIcon('${ic}')"
+                                class="aspect-square rounded-xl flex items-center justify-center text-base border transition-all tactile ${_newItem.icon === ic ? 'bg-pastel-accent text-white border-pastel-accent shadow-sm' : 'bg-pastel-bg text-stone-600 border-pastel-border'}">
+                                <i class="fa-solid ${ic}"></i></button>`).join('')}
+                        </div></div>`).join('')}
+            </div>
+            <button onclick="confirmAddItem()" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile">新增</button>`);
+    }
+    async function confirmAddItem() {
+        const name = (document.getElementById('niName')?.value || '').trim();
+        if (!name) { buzz(30); return toast('請輸入名稱', true); }
+        const group = _newItem.group, icon = _newItem.icon;
+        closeSheet();
         const item = { item_name: name, item_group: group, icon_emoji: icon };
         if (group === 'PAYMENT_TAG') STATE.tags.push(item); else STATE.categories.push(item);
-        renderSettings(); initAddForm();
+        renderSettings(); initAddForm(true);
+        if (group !== 'PAYMENT_TAG') addState.cat = name; else addState.tag = name;
+        paintTagRow();
         try { await api.call('addItem', { item }); toast('已新增'); }
         catch (e) {
             if (group === 'PAYMENT_TAG') STATE.tags = STATE.tags.filter(x => x.item_name !== name);
             else STATE.categories = STATE.categories.filter(x => x.item_name !== name);
-            renderSettings(); initAddForm(); toast(e.message, true);
+            renderSettings(); initAddForm(true); toast(e.message, true);
         }
     }
     async function archiveItem(name, group) {
@@ -2200,16 +2308,16 @@ function hexA(hex, a) {
             { member_id: 'u_me', nickname: '大哥', avatar_emoji: 'av20', streak_days: 245, initial_balance: 28500, status: '啟用' },
             { member_id: 'u_dad', nickname: '爸爸', avatar_emoji: 'av2', streak_days: 130, initial_balance: 0, status: '啟用' },
             { member_id: 'u_mom', nickname: '媽媽', avatar_emoji: 'av12', streak_days: 520, initial_balance: 0, status: '啟用' },
-            { member_id: 'family_pool', nickname: '家庭公帳', avatar_emoji: '🏠', streak_days: 0, initial_balance: 65000, status: '啟用' }
+            { member_id: 'family_pool', nickname: '家庭公帳', avatar_emoji: 'fa-house', streak_days: 0, initial_balance: 65000, status: '啟用' }
         ];
         const categories = [
-            { item_name: '餐飲美食', item_group: 'EXPENSE_CATEGORY', icon_emoji: '🍔' },
-            { item_name: '日常採購', item_group: 'EXPENSE_CATEGORY', icon_emoji: '🥬' },
-            { item_name: '訂閱服務', item_group: 'EXPENSE_CATEGORY', icon_emoji: '📺' },
-            { item_name: '休閒娛樂', item_group: 'EXPENSE_CATEGORY', icon_emoji: '🍿' },
-            { item_name: '固定薪資', item_group: 'INCOME_CATEGORY', icon_emoji: '💰' }
+            { item_name: '餐飲美食', item_group: 'EXPENSE_CATEGORY', icon_emoji: 'fa-utensils' },
+            { item_name: '日常採購', item_group: 'EXPENSE_CATEGORY', icon_emoji: 'fa-cart-shopping' },
+            { item_name: '訂閱服務', item_group: 'EXPENSE_CATEGORY', icon_emoji: 'fa-tv' },
+            { item_name: '休閒娛樂', item_group: 'EXPENSE_CATEGORY', icon_emoji: 'fa-film' },
+            { item_name: '固定薪資', item_group: 'INCOME_CATEGORY', icon_emoji: 'fa-money-bill-wave' }
         ];
-        const tags = [{ item_name: '信用卡', item_group: 'PAYMENT_TAG', icon_emoji: '💳' }, { item_name: '現金', item_group: 'PAYMENT_TAG', icon_emoji: '💵' }];
+        const tags = [{ item_name: '信用卡', item_group: 'PAYMENT_TAG', icon_emoji: 'fa-credit-card' }, { item_name: '現金', item_group: 'PAYMENT_TAG', icon_emoji: 'fa-money-bills' }];
         const t = todayISO(), ym = t.slice(0, 7);
         const mk = (d, o) => Object.assign({ txn_id: 'd' + Math.random(), created_at: t, date: `${ym}-${pad2(d)}`, member_id: 'u_me', payer_id: 'u_me', entry_type: '支出', category: '餐飲美食', tag: '現金', amount: 100, note: '', nature: '純個人', related_id: '', parent_txn_id: '', is_rollup: false, recurring_rule_id: '', receipt_file_id: '', status: '有效' }, o);
         const transactions = [
@@ -2235,9 +2343,11 @@ function hexA(hex, a) {
             return;
         }
         const vv = window.visualViewport;
-        // 鍵盤彈出時 visualViewport 會縮小；此時改用 innerHeight，避免導覽列被頂上來
-        const kbOpen = vv && (window.innerHeight - vv.height) > 120;
-        const h = Math.round(kbOpen ? window.innerHeight : (vv ? vv.height : window.innerHeight));
+        // 鍵盤彈出時 iOS 會把整個版面往上捲，導致上方 Header 消失。
+        // 對策：讓外框直接縮到「鍵盤上方的可視高度」，並強制把捲動位置歸零。
+        const kbOpen = !!(vv && (window.innerHeight - vv.height) > 120);
+        const h = Math.round(vv ? vv.height : window.innerHeight);
+        if (kbOpen) { window.scrollTo(0, 0); document.body.scrollTop = 0; }
         document.documentElement.style.setProperty('--appH', h + 'px');
         // 導覽列是 fixed，主內容區必須自己讓出等高的底部空間
         const nav = document.getElementById('appNav');
@@ -2283,6 +2393,10 @@ ${L.standalone ? 'PWA' : 'WEB(Safari)'}  dpr=${window.devicePixelRatio}  statusB
         const sat = Math.round(probeT.getBoundingClientRect().height);
         probeT.remove();
         document.documentElement.style.setProperty('--sat', sat + 'px');
+        // iOS standalone 會自己保留狀態列高度（screen.height − innerHeight），
+        // 但 env(safe-area-inset-top) 仍回報同樣的數值。若直接沿用就會多佔一整條。
+        const reservedTop = Math.max(0, (window.screen ? window.screen.height : 0) - window.innerHeight);
+        document.documentElement.style.setProperty('--topPad', Math.max(0, sat - reservedTop) + 'px');
         let sab = Math.round(probe.getBoundingClientRect().height);
         probe.remove();
         // iOS 偶爾在 standalone 下把 env(safe-area-inset-bottom) 回報成 0，
@@ -2300,8 +2414,15 @@ ${L.standalone ? 'PWA' : 'WEB(Safari)'}  dpr=${window.devicePixelRatio}  statusB
         window.addEventListener('orientationchange', () => setTimeout(syncFrameHeight, 260));
         if (window.visualViewport) {
             window.visualViewport.addEventListener('resize', syncFrameHeight);
-            window.visualViewport.addEventListener('scroll', syncFrameHeight);
+            window.visualViewport.addEventListener('scroll', () => { window.scrollTo(0, 0); syncFrameHeight(); });
         }
+        // 輸入框取得焦點時 iOS 常會自行捲動版面，這裡把它拉回來
+        document.addEventListener('focusin', e => {
+            if (!/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+            setTimeout(() => { window.scrollTo(0, 0); syncFrameHeight(); }, 120);
+            setTimeout(() => { window.scrollTo(0, 0); syncFrameHeight(); }, 420);
+        });
+        document.addEventListener('focusout', () => setTimeout(() => { window.scrollTo(0, 0); syncFrameHeight(); }, 200));
     }
 
     /* ==========================================================
