@@ -51,55 +51,47 @@
         }
     </script>
     <style>
-        /* 版面錨定：不使用任何百分比高度。
-           iOS 的 position:fixed + height:100% 在工具列伸縮時解析出的值不等於實際可視高度，
-           底部會差一截；直接把外框釘在視窗四邊（inset:0）才會真正貼底。 */
+        /* 1. 全域底色改為純白，防止 Safari 底部工具列透出奶油底色造成懸空錯覺 */
         html, body {
-            background-color:#FBF2E6; height:100%; margin:0; padding:0;
-            overflow:hidden; overscroll-behavior:none; touch-action:manipulation;
+            background-color: #FFFFFF; 
+            height: 100%; margin: 0; padding: 0;
+            overflow: hidden; overscroll-behavior: none; touch-action: manipulation;
         }
-        body { font-family:'Inter','Noto Sans TC',sans-serif; color:#3A3330; -webkit-tap-highlight-color:transparent; }
-
-        /* ID 選擇器優先權高於 Tailwind class，直接覆寫外框定位。
-           高度不用 inset:0 也不用 dvh —— iOS 對這兩者的解析在標準列／安全區存在時
-           不見得等於使用者實際看到的高度。改由 JS 量測 visualViewport 寫入 --appH，
-           這是唯一保證與螢幕所見一致的來源。 */
+        body { font-family: 'Inter', 'Noto Sans TC', sans-serif; color: #3A3330; -webkit-tap-highlight-color: transparent; }
+        
+        /* 2. 手機版主外框：拿掉 inset:0 和複雜的 calc，乾淨俐落依靠 100dvh 撐滿 */
         #appFrame {
-            position:fixed; inset:0;
-            width:100%; max-width:none;
-            /* iOS PWA 三個高度來源（innerHeight / visualViewport / 100dvh）
-               都會少報一個「上方安全區」的量，但畫面其實是從 y=0 開始畫的，
-               因此真正的可畫高度 = 100dvh + safe-area-inset-top。 */
-            height:calc(100dvh + env(safe-area-inset-top, 0px));
-            height:var(--appH, calc(100dvh + env(safe-area-inset-top, 0px)));
-            border-radius:0; border:0;
-            display:flex; flex-direction:column;
+            position: fixed; top: 0; left: 0; right: 0; /* 取代 inset:0，解除 bottom 的綁定 */
+            width: 100%; max-width: none;
+            height: 100dvh; /* 唯一真理，不管 JS 怎麼算，就是 100dvh */
+            border-radius: 0; border: 0;
+            display: flex; flex-direction: column;
         }
-
-        /* ── 手機：導覽列不再依賴外框的 flex 計算，直接釘在「視窗」底邊 ──
-           先前三個版本都是想辦法讓外框高度正確、再讓 flex 把 nav 推到底。
-           只要外框高度有一點誤差，nav 就會懸空。改成 fixed 之後，
-           不論外框算成多高，nav 永遠貼在螢幕最底。 */
+        
+        /* 3. 手機版佈局：導覽列與提示框使用 absolute，精準貼齊 874px 的外框底邊 */
         @media (max-width:767px) {
             #appFrame { height: 100dvh !important; }
-            #appNav   { position:fixed; left:0; right:0; bottom:0; }
-            #appMain  { padding-bottom:var(--navH, 92px); }
-            #toast    { position:absolute; left:0; right:0; bottom:calc(var(--navH, 92px) + 14px); }
+            #appNav   { position: absolute; left: 0; right: 0; bottom: 0; } /* 避免 PWA 62px 懸空地雷 */
+            #appMain  { padding-bottom: var(--navH, 92px); }
+            #toast    { position: absolute; left: 0; right: 0; bottom: calc(var(--navH, 92px) + 14px); }
         }
-        /* 桌機恢復置中的手機外框 */
+        
+        /* 桌機恢復置中的手機外框 (這段沒問題，維持原樣) */
         @media (min-width:768px) {
-            html, body { height:auto; overflow:auto; }
+            html, body { height: auto; overflow: auto; background-color: #FBF2E6; } /* 桌機才把底色改回奶油色 */
             #appFrame {
-                position:relative; top:auto; left:auto; right:auto; bottom:auto; margin:0 auto;
-                width:100%; max-width:28rem; height:880px;
-                border-radius:44px; border-width:10px;
-                display:flex; flex-direction:column;
+                position: relative; top: auto; left: auto; right: auto; bottom: auto; margin: 0 auto;
+                width: 100%; max-width: 28rem; height: 880px;
+                border-radius: 44px; border-width: 10px;
+                display: flex; flex-direction: column;
             }
         }
-        #appMain { -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
-        /* 導覽列背景延伸到 Home Indicator 底下，padding 只負責把內容推上來 */
-        #appNav { background-color:#FFFFFF; padding-bottom:0.35rem; }
-        html.dark #appNav { background-color:#221F1D !important; }
+        
+        #appMain { -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+        
+        /* 導覽列背景延伸到 Home Indicator 底下，完美貼合 */
+        #appNav { background-color: #FFFFFF; padding-bottom: calc(0.35rem + var(--sab, env(safe-area-inset-bottom, 0px))); }
+        html.dark #appNav { background-color: #221F1D !important; }
         /* 已加入主畫面時，整個底色改成 App 奶油色，狀態列區域才不會露出不同色 */
         @media (display-mode: standalone) { html, body { background-color:#FFF8F0; } }
         .hide-scrollbar::-webkit-scrollbar { display:none; }
