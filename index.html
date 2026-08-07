@@ -81,9 +81,9 @@
            只要外框高度有一點誤差，nav 就會懸空。改成 fixed 之後，
            不論外框算成多高，nav 永遠貼在螢幕最底。 */
         @media (max-width:767px) {
-            #appNav   { position:fixed; left:0; right:0; bottom:0; }
+            #appNav   { position:absolute; left:0; right:0; bottom:0; }
             #appMain  { padding-bottom:var(--navH, 92px); }
-            #toast    { position:fixed; left:0; right:0; bottom:calc(var(--navH, 92px) + 14px); }
+            #toast    { position:absolute; left:0; right:0; bottom:calc(var(--navH, 92px) + 14px); }
         }
         /* 桌機恢復置中的手機外框 */
         @media (min-width:768px) {
