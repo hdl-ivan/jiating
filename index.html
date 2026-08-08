@@ -305,11 +305,11 @@
     </header>
 
     <main id="appMain" class="flex-1 min-h-0 flex-shrink overflow-y-auto px-5 py-4 hide-scrollbar js-hide bg-[#FBF2E6]">
-        <div id="dashboardView" class="space-y-4"></div>
-        <div id="transactionsView" class="space-y-4 hidden"></div>
-        <div id="addView" class="space-y-4 hidden"></div>
-        <div id="statsView" class="space-y-4 hidden"></div>
-        <div id="settingsView" class="space-y-4 hidden"></div>
+        <div id="dashboardView" class="space-y-3"></div>
+        <div id="transactionsView" class="space-y-3 hidden"></div>
+        <div id="addView" class="space-y-3 hidden"></div>
+        <div id="statsView" class="space-y-3 hidden"></div>
+        <div id="settingsView" class="space-y-3 hidden"></div>
     </main>
 
     <div id="updateBar" class="js-hide absolute left-0 right-0 top-0 z-[99] px-4 pt-2">
@@ -353,7 +353,7 @@
        ========================================================== */
 
     const CONFIG = {
-        VERSION: 'v4.9.0',
+        VERSION: 'v4.9.1',
         // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
         API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         DEMO: false
@@ -1231,13 +1231,8 @@ function hexA(hex, a) {
         if (currentMode === 'personal') {
             const net = s.cashBalance + s.poolOwesMe - s.iOweOthers;
             c.innerHTML = `
-                <!-- 第一層：主卡（＋分類預算） -->
+                <!-- 第一層：唯一一張主卡（預算＋淨資產＋分類預算） -->
                 ${budgetHero(s)}
-                ${categoryBudgets(s)}
-                <div class="grid grid-cols-2 gap-4">
-                    ${statCard('本月支出', 'fa-arrow-trend-down', 'text-pastel-red', 'bg-pastel-redLight', s.monthlyExpense, '個人實際支付')}
-                    ${statCard('本月收入', 'fa-arrow-trend-up', 'text-pastel-green', 'bg-pastel-greenLight', s.monthlyIncome, '薪資與其他')}
-                </div>
 
                 <!-- 第二層：待辦（沒事就不出現） -->
                 ${todoCard()}
@@ -1262,25 +1257,18 @@ function hexA(hex, a) {
                         <div class="text-sm font-bold text-stone-800">我需償還他人</div>
                         <span class="font-bold text-pastel-red font-rounded text-base">-${fmt(s.iOweOthers)}</span></div>
                 </div>
-                <div class="flex justify-between items-center px-5 py-3.5 bg-stone-800 text-white rounded-tile shadow-md">
-                    <span class="text-sm font-medium">實際淨資產</span>
-                    <span class="text-lg font-bold font-rounded tracking-wide">${fmt(net)}</span></div>
+
                 ${jarSection()}`;
         } else {
             c.innerHTML = `
-                <!-- 第一層：主卡（＋分類預算） -->
+                <!-- 第一層：唯一一張主卡 -->
                 ${budgetHero(s)}
-                ${categoryBudgets(s)}
-                <div class="grid grid-cols-2 gap-4">
-                    ${statCard('公帳本月支出', 'fa-arrow-trend-down', 'text-pastel-red', 'bg-pastel-redLight', s.monthlyExpense, '公帳與代墊')}
-                    ${statCard('公帳本月收入', 'fa-arrow-trend-up', 'text-pastel-green', 'bg-pastel-greenLight', s.monthlyIncome, '收入與注資')}
-                </div>
                 <!-- 第二層：待辦 -->
                 ${todoCard()}
 
                 <!-- 第三層：模組區 -->
                 <h3 class="text-sm font-bold text-stone-800 ml-1">公帳資金狀況</h3>
-                <div class="bg-stone-800 text-white rounded-card p-5 shadow-md space-y-4">
+                <div class="bg-stone-800 text-white rounded-card p-5 shadow-sm space-y-4">
                     <div class="flex justify-between items-center text-sm text-stone-300 border-b border-stone-600/50 pb-3">
                         <span class="font-bold truncate"><i class="fa-solid fa-users mr-2 text-pastel-accent"></i>${esc(STATE.familyName || '家庭公帳')}</span>
                         <span class="bg-pastel-yellow/20 text-pastel-yellow px-2.5 py-1 rounded-md text-[10px] font-bold flex-shrink-0">${currentYM().replace('-', '/')}</span></div>
@@ -1341,65 +1329,77 @@ function hexA(hex, a) {
             <i class="fa-solid ${state.badge.icon} ${state.badge.anim} text-xs" style="color:${state.color}"></i></span>`;
     }
 
+    /* ---------- 第一層：唯一一張主卡 ----------
+       上部（填色）：本月還能花、進度、每日可用
+       中部（填色內分隔）：淨資產 · 本月收入
+       下部（白底，同一張卡）：分類預算
+       一張卡回答「我現在如何」，不再散成四張。 */
     function budgetHero(s) {
         const total = budgetFor(currentMode, '');
+        const isFam = currentMode === 'family';
+        const catRows = (STATE.budgets || []).filter(b => b.scope === currentMode && b.category &&
+            b.budget_id === budgetKey(currentMode, b.category));
+        const spentMap = Object.fromEntries(s.byCategory);
+
+        const lower = catRows.length ? `
+            <div class="bg-white px-5 pt-3.5 pb-4 space-y-3">
+                <div class="flex justify-between items-center">
+                    <span class="text-xs font-bold text-stone-600">分類預算</span>
+                    <button onclick="event.stopPropagation();openBudgetSheet()" class="text-xs font-bold text-pastel-accent">調整</button></div>
+                ${catRows.map(b => {
+            const used = spentMap[b.category] || 0, pct2 = Math.min(used / b.amount * 100, 100), over2 = used > b.amount;
+            const col = catColor(b.category);
+            return `<div class="space-y-1.5">
+                        <div class="flex justify-between text-xs">
+                            <span class="text-stone-700 truncate"><i class="fa-solid ${esc(catIcon(b.category))} mr-1.5" style="color:${col}"></i>${esc(b.category)}</span>
+                            <span class="font-bold font-rounded flex-shrink-0 ml-2 ${over2 ? 'text-pastel-red' : 'text-stone-700'}">${fmt(used)} / ${fmt(b.amount)}</span></div>
+                        <div class="w-full bg-pastel-bg rounded-full h-1.5 overflow-hidden">
+                            <div class="h-1.5 rounded-full transition-all duration-700" style="width:${pct2}%;background:${over2 ? '#F05838' : col}"></div></div>
+                    </div>`;
+        }).join('')}
+            </div>` : '';
+
         if (!total) {
-            return `<button onclick="openBudgetSheet()" class="w-full text-left bg-white border border-dashed border-pastel-accent/50 rounded-card p-5 shadow-card flex items-center gap-4">
-                <img src="./av48.png" alt="" class="w-12 h-12 flex-shrink-0">
-                <div class="min-w-0"><div class="font-bold text-sm text-stone-800">設定${currentMode === 'family' ? '公帳' : '每月'}預算</div>
-                <div class="text-xs text-pastel-muted mt-0.5">知道「還能花多少」，比知道「花了多少」更有用</div></div>
-                <i class="fa-solid fa-chevron-right text-pastel-accent ml-auto"></i></button>`;
+            return `<div class="rounded-card shadow-card overflow-hidden border border-dashed border-pastel-accent/50 bg-white">
+                <button onclick="openBudgetSheet()" class="w-full text-left p-5 flex items-center gap-4 tactile">
+                    <img src="./av48.png" alt="" class="w-12 h-12 flex-shrink-0">
+                    <div class="min-w-0"><div class="font-bold text-sm text-stone-800">設定${isFam ? '公帳' : '每月'}預算</div>
+                    <div class="text-xs text-pastel-muted mt-0.5">知道「還能花多少」，比知道「花了多少」更有用</div></div>
+                    <i class="fa-solid fa-chevron-right text-pastel-accent ml-auto"></i></button>
+                ${lower}</div>`;
         }
+
         const used = s.monthlyExpense, left = total - used;
         const pct = Math.min(used / total * 100, 100), over = used > total;
         const n = daysInYM(currentYM()), day = Number(todayISO().slice(8, 10));
-        const remainDays = Math.max(n - day + 1, 1);
-        const daily = Math.max(left, 0) / remainDays;
+        const daily = Math.max(left, 0) / Math.max(n - day + 1, 1);
         const mood = getMascotState(used / total * 100, s.monthlyExpense > 0 || s.monthlyIncome > 0);
-        const hasCat = (STATE.budgets || []).some(b => b.scope === currentMode && b.category && b.budget_id === budgetKey(currentMode, b.category));
-        return `
-        <div onclick="openBudgetSheet()" class="${hasCat ? 'rounded-t-card' : 'rounded-card'} p-5 shadow-md text-white relative overflow-hidden"
-             style="background:linear-gradient(135deg, ${over ? '#F05838' : '#F8A048'} 0%, ${over ? '#D8452A' : '#F0863A'} 100%)">
-            <div class="absolute right-1 bottom-1 w-24 h-24 pointer-events-none">
-                <img src="./${mood.av}.png" alt="" class="w-full h-full opacity-90">
-                ${mascotBadge(mood)}
-            </div>
-            <div class="relative">
-                <div class="text-[11px] font-bold opacity-80 mb-1">${currentMode === 'family' ? '公帳本月可用' : '本月還能花'}</div>
-                <div class="text-4xl font-bold font-rounded tracking-tight mb-1">
-                    <span class="num-sym text-2xl">$</span><span data-count="${Math.abs(left)}" data-pre="${over ? '-' : ''}">0</span></div>
-                <div class="text-[11px] opacity-90 mb-3">預算 ${fmt(total)} · 已用 ${fmt(used)}</div>
-                <div class="w-full bg-white/25 rounded-full h-2.5 overflow-hidden mb-2 max-w-[62%]">
-                    <div class="bg-white h-2.5 rounded-full transition-all duration-700" style="width:${pct}%"></div></div>
-                <div class="flex items-center gap-2 text-[11px] font-bold">
-                    <span class="bg-white/25 px-2 py-1 rounded-md">每日可用 ${fmt(daily)}</span>
-                    <span class="opacity-85">${esc(mood.word)}</span></div>
-            </div>
-        </div>`;
-    }
+        const secondary = isFam
+            ? [['公帳餘額', fmt(s.poolBalance)], ['本月收入', fmt(s.monthlyIncome)]]
+            : [['淨資產', fmt(s.cashBalance + s.poolOwesMe - s.iOweOthers)], ['本月收入', fmt(s.monthlyIncome)]];
 
-    /* 分類預算不再獨立成卡，直接接在主卡下方，視覺上屬於同一個「預算」單元 */
-    function categoryBudgets(s) {
-        const set = (STATE.budgets || []).filter(b => b.scope === currentMode && b.category &&
-            b.budget_id === budgetKey(currentMode, b.category));
-        if (!set.length) return '';
-        const spent = Object.fromEntries(s.byCategory);
-        return `<div class="bg-white border border-pastel-border/60 border-t-0 rounded-b-card px-5 pb-4 pt-3 shadow-card space-y-3 -mt-4">
-            <div class="flex justify-between items-center">
-                <span class="text-xs font-bold text-stone-600">分類預算</span>
-                <button onclick="openBudgetSheet()" class="text-xs font-bold text-pastel-accent">調整</button></div>
-            ${set.map(b => {
-                const used = spent[b.category] || 0, pct = Math.min(used / b.amount * 100, 100), over = used > b.amount;
-                const col = catColor(b.category);
-                return `<div class="space-y-1.5">
-                    <div class="flex justify-between text-xs">
-                        <span class="text-stone-700 truncate"><i class="fa-solid ${esc(catIcon(b.category))} mr-1.5" style="color:${col}"></i>${esc(b.category)}</span>
-                        <span class="font-bold font-rounded flex-shrink-0 ml-2 ${over ? 'text-pastel-red' : 'text-stone-700'}">${fmt(used)} / ${fmt(b.amount)}</span></div>
-                    <div class="w-full bg-pastel-bg rounded-full h-2 overflow-hidden">
-                        <div class="h-2 rounded-full transition-all duration-700" style="width:${pct}%;background:${over ? '#F05838' : col}"></div></div>
-                </div>`;
-            }).join('')}
-        </div>`;
+        return `<div class="rounded-card shadow-md overflow-hidden">
+            <div onclick="openBudgetSheet()" class="relative p-5 text-white"
+                 style="background:linear-gradient(135deg, ${over ? '#F05838' : '#F8A048'} 0%, ${over ? '#D8452A' : '#F0863A'} 100%)">
+                <div class="absolute right-1 bottom-1 w-24 h-24 pointer-events-none">
+                    <img src="./${mood.av}.png" alt="" class="w-full h-full opacity-90">
+                    ${mascotBadge(mood)}
+                </div>
+                <div class="relative">
+                    <div class="text-[11px] font-bold opacity-80 mb-1">${isFam ? '公帳本月可用' : '本月還能花'}</div>
+                    <div class="text-4xl font-bold font-rounded tracking-tight mb-1">
+                        <span class="num-sym text-2xl">$</span><span data-count="${Math.abs(left)}" data-pre="${over ? '-' : ''}">0</span></div>
+                    <div class="w-full bg-white/25 rounded-full h-2.5 overflow-hidden mb-1.5 max-w-[62%]">
+                        <div class="bg-white h-2.5 rounded-full transition-all duration-700" style="width:${pct}%"></div></div>
+                    <div class="text-[11px] opacity-90 mb-3">每日可用 ${fmt(daily)} ・ 已花 ${fmt(used)} / ${fmt(total)}</div>
+
+                    <div class="flex items-center gap-4 pt-3 border-t border-white/25 text-[11px]">
+                        ${secondary.map(([l, v]) => `<span class="opacity-85">${l} <b class="font-rounded text-sm ml-0.5">${v}</b></span>`).join('<span class="opacity-40">·</span>')}
+                    </div>
+                    <div class="text-[11px] opacity-85 mt-1.5">${esc(mood.word)}</div>
+                </div>
+            </div>
+            ${lower}</div>`;
     }
 
     function openBudgetSheet() {
@@ -2212,22 +2212,9 @@ function hexA(hex, a) {
                 <h2 class="text-lg font-bold text-stone-800">${currentMode === 'personal' ? '我的明細' : '家庭公帳明細'}</h2>
                 <button onclick="refreshData()" aria-label="同步" class="text-stone-400 text-lg px-1"><i class="fa-solid fa-rotate"></i></button>
             </div>
-            ${filters.allTime ? `<div class="flex items-center justify-between bg-pastel-accentLight border border-pastel-accent/40 rounded-tile px-4 py-2.5 text-xs font-bold text-pastel-accent">
-                <span><i class="fa-solid fa-infinity mr-1.5"></i>正在搜尋全部期間</span>
-                <button onclick="toggleAllTime()" class="underline">回到單月</button></div>` : monthNav()}
+            ${toolbarRow()}
             ${summaryStrip()}
-            <div class="flex gap-2">
-                <div class="relative flex-1 field">
-                    <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-pastel-muted text-xs"></i>
-                    <input id="txnSearch" oninput="onSearchInput()" oncompositionstart="onCompStart()" oncompositionend="onCompEnd()" value="${esc(filters.q)}" placeholder="${filters.allTime ? '搜尋全部期間' : '搜尋本月備註、分類、帳戶'}" class="w-full bg-white border border-pastel-border rounded-full pl-10 pr-20 py-2.5 text-sm focus:outline-none focus:border-pastel-accent shadow-sm">
-                    <button onclick="toggleAllTime()" class="absolute right-1.5 top-1/2 -translate-y-1/2 px-2.5 py-1.5 rounded-full text-[10px] font-bold transition-all ${filters.allTime ? 'bg-pastel-accent text-white' : 'bg-pastel-bg text-pastel-muted border border-pastel-border'}">全期間</button>
-                </div>
-                <button onclick="openFilterSheet()" class="relative w-11 flex-shrink-0 bg-white border border-pastel-border rounded-full shadow-sm flex items-center justify-center text-stone-500">
-                    <i class="fa-solid fa-sliders"></i>
-                    ${fc ? `<span class="absolute -top-1 -right-1 w-4 h-4 bg-pastel-accent text-white text-[9px] font-bold rounded-full flex items-center justify-center">${fc}</span>` : ''}
-                </button>
-            </div>
-            <div id="txnList" class="space-y-4"></div>`;
+            <div id="txnList" class="space-y-3"></div>`;
         renderTxnList();
     }
 
@@ -2252,20 +2239,83 @@ function hexA(hex, a) {
         bindSwipe();
     }
 
-    /* 明細頁不再放圖（跟圖表頁重複），改用三個能直接判讀的數字 */
+    /* ---------- 明細頁頂部工具列 + 摘要卡 ----------
+       原本年月、摘要、搜尋、滑動說明四段各佔一列共約 210px，
+       這裡把年月與搜尋併成一列、摘要壓成兩行、說明只顯示三次。 */
+    let _searchOpen = false;
+    function toggleSearchBar() {
+        _searchOpen = !_searchOpen;
+        if (!_searchOpen && filters.q) { filters.q = ''; }
+        renderTransactions();
+        if (_searchOpen) setTimeout(() => document.getElementById('txnSearch')?.focus(), 60);
+    }
+    function toolbarRow() {
+        const fc = activeFilterCount();
+        const btn = (icon, on, fn, badge) => `<button onclick="${fn}" class="relative w-9 h-9 rounded-full flex items-center justify-center border tactile ${on ? 'bg-pastel-accent text-white border-pastel-accent' : 'bg-white text-stone-500 border-pastel-border'}">
+            <i class="fa-solid ${icon} text-sm"></i>${badge ? `<span class="absolute -top-1 -right-1 w-4 h-4 bg-pastel-accent text-white text-[9px] font-bold rounded-full flex items-center justify-center border border-white">${badge}</span>` : ''}</button>`;
+        return `<div class="flex items-center gap-2">
+            <div class="flex-1 flex items-center justify-between bg-white rounded-tile border border-pastel-border shadow-sm px-1 h-11 min-w-0">
+                ${filters.allTime
+                ? `<button onclick="toggleAllTime()" class="flex-1 h-full flex items-center justify-center gap-2 text-xs font-bold text-pastel-accent"><i class="fa-solid fa-infinity"></i>全部期間 ・ 回到單月</button>`
+                : `<button onclick="changeMonth(-1)" class="w-9 h-9 flex items-center justify-center text-stone-500"><i class="fa-solid fa-chevron-left text-sm"></i></button>
+                   <button onclick="openMonthPicker()" class="flex-1 font-bold text-stone-800 text-sm truncate">${viewYM.slice(0, 4)} 年 ${Number(viewYM.slice(5, 7))} 月<i class="fa-solid fa-caret-down text-pastel-muted text-[10px] ml-1.5"></i></button>
+                   <button onclick="changeMonth(1)" class="w-9 h-9 flex items-center justify-center text-stone-500 ${viewYM >= currentYM() ? 'opacity-30' : ''}"><i class="fa-solid fa-chevron-right text-sm"></i></button>`}
+            </div>
+            ${btn('fa-magnifying-glass', _searchOpen || !!filters.q, 'toggleSearchBar()')}
+            ${btn('fa-sliders', fc > 0, 'openFilterSheet()', fc || '')}
+        </div>
+        ${_searchOpen ? `<div class="relative">
+            <i class="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-pastel-muted text-xs"></i>
+            <input id="txnSearch" oninput="onSearchInput()" oncompositionstart="onCompStart()" oncompositionend="onCompEnd()" value="${esc(filters.q)}"
+                placeholder="${filters.allTime ? '搜尋全部期間' : '搜尋本月備註、分類、帳戶'}"
+                class="w-full bg-white border border-pastel-border rounded-full pl-10 pr-24 py-2.5 text-sm focus:outline-none focus:border-pastel-accent shadow-sm">
+            <button onclick="toggleAllTime()" class="absolute right-1.5 top-1/2 -translate-y-1/2 px-2.5 py-1.5 rounded-full text-[10px] font-bold ${filters.allTime ? 'bg-pastel-accent text-white' : 'bg-pastel-bg text-pastel-muted border border-pastel-border'}">全期間</button>
+        </div>` : ''}
+        ${fc ? `<div class="flex items-center justify-between bg-pastel-accentLight border border-pastel-accent/30 rounded-tile px-3 py-2 text-[11px] font-bold text-pastel-accent">
+            <span>已套用 ${fc} 個篩選條件</span>
+            <button onclick="clearAllFilters()" class="underline">清除</button></div>` : ''}`;
+    }
+
+    /* 摘要壓成兩行，並加上月對比，讓它從「記錄」變成「回饋」 */
     function summaryStrip() {
         const rows = filters.allTime ? scopedTxns(null) : scopedTxns(viewYM);
-        const i = rows.filter(t => t.entry_type === '收入' || t.entry_type === '注資').reduce((a, b) => a + Number(b.amount), 0);
-        const e = rows.filter(t => t.entry_type === '支出').reduce((a, b) => a + Number(b.amount), 0);
-        const net = i - e;
-        const cell = (label, val, cls, sign) => `<div class="flex-1 text-center min-w-0">
-            <div class="text-[10px] text-pastel-muted mb-0.5">${label}</div>
-            <div class="text-sm font-bold font-rounded truncate ${cls}">${sign}${fmt(Math.abs(val))}</div></div>`;
-        return `<div class="bg-white border border-pastel-border/60 rounded-card px-3 py-3.5 shadow-card flex items-center divide-x divide-pastel-border">
-            ${cell('收入', i, 'text-pastel-green', '+')}
-            ${cell('支出', e, 'text-pastel-red', '-')}
-            ${cell('結餘', net, net >= 0 ? 'text-stone-800' : 'text-pastel-red', net >= 0 ? '' : '-')}
-        </div>`;
+        const inc = rows.filter(t => t.entry_type === '收入' || t.entry_type === '注資').reduce((a, b) => a + Number(b.amount), 0);
+        const exp = rows.filter(t => t.entry_type === '支出').reduce((a, b) => a + Number(b.amount), 0);
+        const net = inc - exp;
+        let cmp = '';
+        if (!filters.allTime) {
+            const prev = scopedTxns(shiftYM(viewYM, -1)).filter(t => t.entry_type === '支出')
+                .reduce((a, b) => a + Number(b.amount), 0);
+            if (prev > 0) {
+                const d = (exp - prev) / prev * 100;
+                cmp = `<span class="text-[11px] font-bold ${d <= 0 ? 'text-pastel-green' : 'text-pastel-red'}">
+                    <i class="fa-solid fa-arrow-${d <= 0 ? 'down' : 'up'} mr-1"></i>比上月${d <= 0 ? '少' : '多'}花 ${Math.abs(d).toFixed(0)}%</span>`;
+            }
+        }
+        return `<div class="bg-white border border-pastel-border/60 rounded-card px-4 py-3 shadow-sm">
+            <div class="flex items-center gap-3">
+                <span class="text-[11px] text-pastel-muted">收入</span>
+                <span class="text-sm font-bold font-rounded text-pastel-green">+${fmt(inc)}</span>
+                <span class="w-px h-3 bg-pastel-border"></span>
+                <span class="text-[11px] text-pastel-muted">支出</span>
+                <span class="text-sm font-bold font-rounded text-pastel-red">-${fmt(exp)}</span>
+            </div>
+            <div class="flex items-center justify-between gap-3 mt-1.5 pt-1.5 border-t border-pastel-border">
+                <span class="flex items-center gap-3">
+                    <span class="text-[11px] text-pastel-muted">結餘</span>
+                    <span class="text-base font-bold font-rounded ${net >= 0 ? 'text-stone-800' : 'text-pastel-red'}">${net >= 0 ? '+' : '-'}${fmt(Math.abs(net))}</span></span>
+                ${cmp}
+            </div></div>`;
+    }
+
+    /* 滑動說明只顯示三次，學會之後就不再佔位 */
+    function swipeHint() {
+        let n = 0;
+        try { n = Number(localStorage.getItem('swipeHint') || 0); } catch (e) { }
+        if (n >= 3) return '';
+        try { localStorage.setItem('swipeHint', String(n + 1)); } catch (e) { }
+        return `<p class="text-[10px] text-pastel-muted text-center bg-white/70 rounded-full py-1.5 border border-pastel-border">
+            <i class="fa-solid fa-arrow-left mr-1"></i>左滑作廢　·　右滑編輯<i class="fa-solid fa-arrow-right ml-1"></i>　·　點一下看詳情</p>`;
     }
 
     function txnRow(t) {
