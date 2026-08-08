@@ -100,7 +100,12 @@
         }
         #appMain { -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
         /* 導覽列背景延伸到 Home Indicator 底下，padding 只負責把內容推上來 */
-        #appNav { background-color:#FFFFFF; padding-bottom:calc(0.35rem + var(--sab, env(safe-area-inset-bottom, 0px))); }
+        /* iOS PWA 的版面視窗比實體螢幕矮一個上安全區（實測 62px），
+           那塊區域任何元素都畫不進去，WebKit #295283 至今未解，
+           且官方建議的 obscuredContentInsets 是原生 App API，網頁端拿不到。
+           因此所有可點擊元件一律避開底部 64px。 */
+        #appNav { background-color:#FFFFFF; padding-bottom:max(64px, calc(0.35rem + var(--sab, env(safe-area-inset-bottom, 0px)))); }
+        #sheetContent, #profileModalContent { padding-bottom:max(64px, calc(1.5rem + var(--sab, env(safe-area-inset-bottom, 0px)))) !important; }
         html.dark #appNav { background-color:#221F1D !important; }
         /* 已加入主畫面時，整個底色改成 App 奶油色，狀態列區域才不會露出不同色 */
         /* iOS PWA 的版面視窗（812）比實體螢幕（874）矮，中間那 62px 只會被
@@ -348,7 +353,7 @@
        ========================================================== */
 
     const CONFIG = {
-        VERSION: 'v4.8.2',
+        VERSION: 'v4.9.0',
         // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
         API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         DEMO: false
@@ -613,11 +618,11 @@ function hexA(hex, a) {
             (r.scope === 'family' ? currentMode === 'family' : r.member_id === meId) &&
             (!r.end_date || String(r.next_run) <= String(r.end_date)));
     }
-    function reminderCard() {
+    function reminderSection() {
         const due = dueReminders();
         if (!due.length) return '';
-        return `<div class="bg-white border-2 border-pastel-yellow/60 rounded-card p-5 shadow-card space-y-3">
-            <div class="flex items-center gap-2 text-sm font-bold text-stone-800">
+        return `<div class="space-y-2.5">
+            <div class="flex items-center gap-2 text-xs font-bold text-stone-600">
                 <i class="fa-solid fa-bell fa-shake text-pastel-yellow"></i> 待確認的重複性收支
                 <span class="text-[10px] bg-pastel-yellowLight text-[#D9A216] px-2 py-0.5 rounded-full">${due.length}</span></div>
             ${due.map(r => `
@@ -1226,17 +1231,20 @@ function hexA(hex, a) {
         if (currentMode === 'personal') {
             const net = s.cashBalance + s.poolOwesMe - s.iOweOthers;
             c.innerHTML = `
-                ${reminderCard()}
-                ${pendingCard()}
-                ${receivableCard()}
+                <!-- 第一層：主卡（＋分類預算） -->
                 ${budgetHero(s)}
                 ${categoryBudgets(s)}
                 <div class="grid grid-cols-2 gap-4">
                     ${statCard('本月支出', 'fa-arrow-trend-down', 'text-pastel-red', 'bg-pastel-redLight', s.monthlyExpense, '個人實際支付')}
                     ${statCard('本月收入', 'fa-arrow-trend-up', 'text-pastel-green', 'bg-pastel-greenLight', s.monthlyIncome, '薪資與其他')}
                 </div>
+
+                <!-- 第二層：待辦（沒事就不出現） -->
+                ${todoCard()}
+
+                <!-- 第三層：模組區 -->
                 <h3 class="text-sm font-bold text-stone-800 ml-1">資產與帳務狀況</h3>
-                <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card">
+                <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-sm">
                     <div class="flex justify-between items-center text-xs mb-3 pb-2 border-b border-pastel-border">
                         <span class="font-bold text-stone-600"><i class="fa-solid fa-wallet text-pastel-accent mr-1"></i> 現金與公帳代墊</span></div>
                     <div class="grid grid-cols-2 gap-3 text-center">
@@ -1247,7 +1255,7 @@ function hexA(hex, a) {
                             <div class="font-bold text-pastel-green text-lg font-rounded truncate">+${fmt(s.poolOwesMe)}</div></div>
                     </div>
                 </div>
-                <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card">
+                <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-sm">
                     <div class="flex justify-between items-center text-xs mb-3 pb-2 border-b border-pastel-border">
                         <span class="font-bold text-stone-600"><i class="fa-solid fa-user-group text-pastel-blue mr-1"></i> 私人親友債務</span></div>
                     <div class="flex justify-between items-center px-2">
@@ -1257,21 +1265,20 @@ function hexA(hex, a) {
                 <div class="flex justify-between items-center px-5 py-3.5 bg-stone-800 text-white rounded-tile shadow-md">
                     <span class="text-sm font-medium">實際淨資產</span>
                     <span class="text-lg font-bold font-rounded tracking-wide">${fmt(net)}</span></div>
-                ${jarSection()}
-                <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card">
-                    <div class="flex justify-between items-center mb-4"><span class="text-sm font-bold text-stone-800">開銷占比</span>
-                        <span class="text-xs text-pastel-muted bg-pastel-bg px-2.5 py-1 rounded-full">本月</span></div>
-                    ${pieHtml(s.byCategory, s.monthlyExpense)}
-                </div>`;
+                ${jarSection()}`;
         } else {
             c.innerHTML = `
-                ${reminderCard()}
+                <!-- 第一層：主卡（＋分類預算） -->
                 ${budgetHero(s)}
                 ${categoryBudgets(s)}
                 <div class="grid grid-cols-2 gap-4">
                     ${statCard('公帳本月支出', 'fa-arrow-trend-down', 'text-pastel-red', 'bg-pastel-redLight', s.monthlyExpense, '公帳與代墊')}
                     ${statCard('公帳本月收入', 'fa-arrow-trend-up', 'text-pastel-green', 'bg-pastel-greenLight', s.monthlyIncome, '收入與注資')}
                 </div>
+                <!-- 第二層：待辦 -->
+                ${todoCard()}
+
+                <!-- 第三層：模組區 -->
                 <h3 class="text-sm font-bold text-stone-800 ml-1">公帳資金狀況</h3>
                 <div class="bg-stone-800 text-white rounded-card p-5 shadow-md space-y-4">
                     <div class="flex justify-between items-center text-sm text-stone-300 border-b border-stone-600/50 pb-3">
@@ -1281,13 +1288,8 @@ function hexA(hex, a) {
                         <div class="text-3xl font-bold text-white font-rounded tracking-wide">${fmt(s.poolBalance)}</div></div>
                 </div>
                 ${jarSection()}
-                <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card">
-                    <div class="flex justify-between items-center mb-4"><span class="text-sm font-bold text-stone-800">公帳開銷占比</span>
-                        <span class="text-xs text-pastel-muted bg-pastel-bg px-2.5 py-1 rounded-full">本月</span></div>
-                    ${pieHtml(s.byCategory, s.monthlyExpense)}
-                </div>
                 ${intentCard()}
-                <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-4">
+                <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-sm space-y-4">
                     <h3 class="text-sm font-bold text-stone-800"><i class="fa-solid fa-hand-holding-dollar text-pastel-accent mr-1.5"></i> 公帳待結算核銷</h3>
                     <div class="space-y-3">
                         <div class="text-xs font-bold text-pastel-muted border-b border-pastel-border pb-1">公帳需還款給成員</div>
@@ -1354,8 +1356,9 @@ function hexA(hex, a) {
         const remainDays = Math.max(n - day + 1, 1);
         const daily = Math.max(left, 0) / remainDays;
         const mood = getMascotState(used / total * 100, s.monthlyExpense > 0 || s.monthlyIncome > 0);
+        const hasCat = (STATE.budgets || []).some(b => b.scope === currentMode && b.category && b.budget_id === budgetKey(currentMode, b.category));
         return `
-        <div onclick="openBudgetSheet()" class="rounded-card p-5 shadow-md text-white relative overflow-hidden"
+        <div onclick="openBudgetSheet()" class="${hasCat ? 'rounded-t-card' : 'rounded-card'} p-5 shadow-md text-white relative overflow-hidden"
              style="background:linear-gradient(135deg, ${over ? '#F05838' : '#F8A048'} 0%, ${over ? '#D8452A' : '#F0863A'} 100%)">
             <div class="absolute right-1 bottom-1 w-24 h-24 pointer-events-none">
                 <img src="./${mood.av}.png" alt="" class="w-full h-full opacity-90">
@@ -1375,14 +1378,15 @@ function hexA(hex, a) {
         </div>`;
     }
 
+    /* 分類預算不再獨立成卡，直接接在主卡下方，視覺上屬於同一個「預算」單元 */
     function categoryBudgets(s) {
         const set = (STATE.budgets || []).filter(b => b.scope === currentMode && b.category &&
             b.budget_id === budgetKey(currentMode, b.category));
         if (!set.length) return '';
         const spent = Object.fromEntries(s.byCategory);
-        return `<div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-4">
+        return `<div class="bg-white border border-pastel-border/60 border-t-0 rounded-b-card px-5 pb-4 pt-3 shadow-card space-y-3 -mt-4">
             <div class="flex justify-between items-center">
-                <span class="text-sm font-bold text-stone-800">分類預算</span>
+                <span class="text-xs font-bold text-stone-600">分類預算</span>
                 <button onclick="openBudgetSheet()" class="text-xs font-bold text-pastel-accent">調整</button></div>
             ${set.map(b => {
                 const used = spent[b.category] || 0, pct = Math.min(used / b.amount * 100, 100), over = used > b.amount;
@@ -1441,7 +1445,7 @@ function hexA(hex, a) {
     }
 
     /* ---------- 統一待清償中心 ---------- */
-    function pendingCard() {
+    function pendingSection() {
         const list = myPendingSettlements();
         if (!list.length) return '';
         const total = list.reduce((a, b) => a + b.remaining, 0);
@@ -1450,8 +1454,8 @@ function hexA(hex, a) {
             const items = list.filter(x => x.itemType === type);
             if (!items.length) return '';
             return `<div class="space-y-2">
-                <div class="text-xs font-bold text-pastel-muted border-b border-pastel-border pb-1"><i class="fa-solid ${icon} mr-1.5"></i>${label}</div>
-                ${items.map((x, i) => `
+                <div class="text-[11px] font-bold text-pastel-muted"><i class="fa-solid ${icon} mr-1.5"></i>${label}</div>
+                ${items.map(x => `
                     <div class="bg-pastel-bg rounded-tile p-3 border border-pastel-border">
                         <div class="flex justify-between items-start gap-2 mb-2">
                             <div class="min-w-0">
@@ -1467,19 +1471,18 @@ function hexA(hex, a) {
                     </div>`).join('')}
             </div>`;
         };
-        return `<div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-4">
+        return `<div class="space-y-3">
             <div class="flex justify-between items-center">
-                <span class="text-sm font-bold text-stone-800"><i class="fa-solid fa-file-invoice-dollar text-pastel-red mr-1.5"></i>待清償</span>
-                <span class="text-xs text-pastel-muted">共 ${list.length} 筆 ・ <b class="text-pastel-red font-rounded">${fmt(total)}</b></span></div>
+                <span class="text-xs font-bold text-stone-600"><i class="fa-solid fa-file-invoice-dollar text-pastel-red mr-1.5"></i>我要還給別人</span>
+                <span class="text-[11px] text-pastel-muted">${list.length} 筆 ・ <b class="text-pastel-red font-rounded">${fmt(total)}</b></span></div>
             ${grp('pool', '公帳代墊分攤', 'fa-users')}
             ${grp('private', '私人拆帳', 'fa-user-group')}
-            ${priv.length > 1 ? `<button onclick="repayAll('private')" class="w-full py-3 bg-stone-800 text-white font-bold rounded-tile text-sm tactile">一鍵歸還全部私人拆帳（${fmt(priv.reduce((a, b) => a + b.remaining, 0))}）</button>` : ''}
-            ${list.length > 1 ? `<button onclick="repayAll('all')" class="w-full py-3 bg-white border-2 border-stone-800 text-stone-800 font-bold rounded-tile text-sm tactile">一鍵歸還全部（含公帳代墊，${fmt(total)}）</button>` : ''}
+            ${priv.length > 1 ? `<button onclick="repayAll('private')" class="w-full py-2.5 bg-stone-800 text-white font-bold rounded-tile text-xs tactile">一鍵歸還全部私人拆帳（${fmt(priv.reduce((a, b) => a + b.remaining, 0))}）</button>` : ''}
+            ${list.length > 1 ? `<button onclick="repayAll('all')" class="w-full py-2.5 bg-white border-2 border-stone-800 text-stone-800 font-bold rounded-tile text-xs tactile">一鍵歸還全部（含公帳代墊，${fmt(total)}）</button>` : ''}
         </div>`;
     }
 
-    /* ---------- 代墊人視角：誰還欠我、還了多少 ---------- */
-    function receivableCard() {
+    function receivableSection() {
         const list = othersOweMe();
         if (!list.length) return '';
         const byMember = {};
@@ -1490,30 +1493,38 @@ function hexA(hex, a) {
             byMember[x.memberId].expected += x.expected;
         });
         const total = list.reduce((a, b) => a + b.remaining, 0);
-        return `<div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-3">
+        return `<div class="space-y-2.5">
             <div class="flex justify-between items-center">
-                <span class="text-sm font-bold text-stone-800"><i class="fa-solid fa-hand-holding-dollar text-pastel-green mr-1.5"></i>別人欠我</span>
-                <span class="text-xs text-pastel-muted">共 ${list.length} 筆 ・ <b class="text-pastel-green font-rounded">${fmt(total)}</b></span></div>
+                <span class="text-xs font-bold text-stone-600"><i class="fa-solid fa-hand-holding-dollar text-pastel-green mr-1.5"></i>別人要還我</span>
+                <span class="text-[11px] text-pastel-muted">${list.length} 筆 ・ <b class="text-pastel-green font-rounded">${fmt(total)}</b></span></div>
             ${Object.entries(byMember).map(([id, g]) => {
                 const paid = g.expected - g.remaining, pct = g.expected ? paid / g.expected * 100 : 0;
                 const m = STATE.members.find(x => x.member_id === id);
                 const lv = getLevelInfo(m?.streak_days);
                 return `<div class="bg-pastel-bg rounded-tile p-3 border border-pastel-border">
                     <div class="flex items-center gap-3 mb-2">
-                        <div class="w-9 h-9 rounded-full border-2 ${lv.border} ${lv.bg} overflow-hidden flex items-center justify-center text-sm flex-shrink-0">${avatarInner(m?.avatar_emoji)}</div>
+                        <div class="w-8 h-8 rounded-full border-2 ${lv.border} ${lv.bg} overflow-hidden flex items-center justify-center text-xs flex-shrink-0">${avatarInner(m?.avatar_emoji)}</div>
                         <div class="flex-1 min-w-0">
                             <div class="font-bold text-sm text-stone-800 truncate">${esc(g.name)}</div>
                             <div class="text-[10px] text-pastel-muted">${g.items.length} 筆 ・ 已還 ${fmt(paid)} / ${fmt(g.expected)}</div></div>
                         <div class="font-bold font-rounded text-pastel-green flex-shrink-0">${fmt(g.remaining)}</div></div>
-                    <div class="w-full bg-white rounded-full h-2 overflow-hidden border border-pastel-border">
-                        <div class="bg-pastel-green h-2 rounded-full transition-all duration-700" style="width:${pct.toFixed(0)}%"></div></div>
-                    <div class="mt-2 space-y-1">
-                        ${g.items.map(x => `<div class="flex justify-between text-[10px] text-pastel-muted">
-                            <span class="truncate">${esc(x.date)} ${esc(x.note || x.category || '')}</span>
-                            <span class="flex-shrink-0 ml-2">${fmt(x.remaining)} / ${fmt(x.expected)}</span></div>`).join('')}
-                    </div></div>`;
+                    <div class="w-full bg-white rounded-full h-1.5 overflow-hidden border border-pastel-border">
+                        <div class="bg-pastel-green h-1.5 rounded-full transition-all duration-700" style="width:${pct.toFixed(0)}%"></div></div>
+                </div>`;
             }).join('')}
-            <p class="text-[10px] text-pastel-muted">對方在自己的首頁會看到「待清償」，可直接還款或標記由公帳月結。</p>
+        </div>`;
+    }
+
+    /* ---------- 第二層：待辦（三類合併成一張，但個別項目仍直接列出） ---------- */
+    function todoCard() {
+        const secs = [reminderSection(), pendingSection(), receivableSection()].filter(Boolean);
+        if (!secs.length) return '';
+        const n = dueReminders().length + myPendingSettlements().length + othersOweMe().length;
+        return `<div class="bg-white rounded-card shadow-card border border-pastel-border/60 border-l-4 border-l-pastel-accent p-5 space-y-4">
+            <div class="flex justify-between items-center">
+                <span class="text-sm font-bold text-stone-800"><i class="fa-solid fa-list-check text-pastel-accent mr-1.5"></i>待辦</span>
+                <span class="text-xs text-pastel-muted">${n} 件</span></div>
+            ${secs.join('<div class="border-t border-pastel-border"></div>')}
         </div>`;
     }
 
@@ -1676,13 +1687,15 @@ function hexA(hex, a) {
         const done = saved >= g.target_amount && g.target_amount > 0;
         const pct = g.target_amount ? Math.min(saved / g.target_amount * 100, 100) : 0;
         return `<div class="snap-i flex-shrink-0 w-full px-0.5">
-            <div class="bg-white border border-pastel-border/60 rounded-card shadow-card p-4 space-y-3">
+            <div class="bg-white border border-pastel-border/60 rounded-card shadow-sm p-4 space-y-3">
                 <!-- 罐子與數字並排：罐子仍是主角，但卡片高度比置中版少約三分之一 -->
                 <div class="flex items-center gap-4">
-                    <button onclick="openGoalDetail('${esc(g.goal_id)}')" class="relative w-[92px] h-[118px] flex-shrink-0">
+                    <button onclick="openGoalDetail('${esc(g.goal_id)}')" class="relative w-[100px] h-[128px] flex-shrink-0">
                         ${jarSvg(g, saved)}
-                        ${done ? '<i class="fa-solid fa-crown fa-beat absolute top-0 right-1 text-pastel-yellow"></i>' : ''}
-                        <div class="absolute inset-x-0 bottom-2 text-center text-[11px] font-bold" style="color:${done ? '#8A6410' : '#8A5A22'}">${pct.toFixed(0)}%</div>
+                        ${done ? '<i class="fa-solid fa-crown fa-beat absolute top-0 right-0 text-pastel-yellow"></i>' : ''}
+                        <div class="absolute inset-0 flex items-center justify-center pt-3 pointer-events-none">
+                            <span class="text-3xl font-bold font-rounded tracking-tight" style="color:${pct > 45 ? '#FFFFFF' : '#8A5A22'};text-shadow:${pct > 45 ? '0 1px 3px rgba(0,0,0,.18)' : 'none'}">${pct.toFixed(0)}<span class="text-lg">%</span></span>
+                        </div>
                     </button>
                     <div class="min-w-0 flex-1">
                         <div class="flex items-start justify-between gap-2">
@@ -1774,7 +1787,10 @@ function hexA(hex, a) {
         openSheet(`
             <div class="mb-5 pb-4 border-b border-pastel-border">
                 <div class="flex items-center gap-4">
-                    <div class="w-24 h-30 flex-shrink-0" style="height:7.5rem">${jarSvg(g, saved, true)}</div>
+                    <div class="relative w-[108px] flex-shrink-0" style="height:8.5rem">${jarSvg(g, saved, true)}
+                        <div class="absolute inset-0 flex items-center justify-center pt-3 pointer-events-none">
+                            <span class="text-3xl font-bold font-rounded" style="color:${(g.target_amount ? Math.min(saved / g.target_amount * 100, 100) : 0) > 45 ? '#FFFFFF' : '#8A5A22'};text-shadow:${(g.target_amount ? Math.min(saved / g.target_amount * 100, 100) : 0) > 45 ? '0 1px 3px rgba(0,0,0,.18)' : 'none'}">${(g.target_amount ? Math.min(saved / g.target_amount * 100, 100) : 0).toFixed(0)}<span class="text-lg">%</span></span></div>
+                    </div>
                     <div class="min-w-0 flex-1">
                         <div class="font-bold text-stone-800 text-lg truncate"><i class="fa-solid ${esc(g.icon || 'fa-piggy-bank')} mr-1.5 text-pastel-accent"></i>${esc(g.name)}</div>
                         <div class="text-[11px] text-pastel-muted mb-2">${esc(g.scope === 'family' ? '家庭共同目標' : '個人目標')} ・ 建立者 ${esc(nameOf(g.owner_id))}</div>
@@ -3091,7 +3107,14 @@ function hexA(hex, a) {
                 ${comboChartHtml(viewYM)}
             </div>
 
-            <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-4">
+            <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-sm">
+                <div class="flex justify-between items-center mb-4">
+                    <span class="text-sm font-bold text-stone-800">${currentMode === 'family' ? '公帳開銷占比' : '開銷占比'}</span>
+                    <span class="text-xs text-pastel-muted bg-pastel-bg px-2.5 py-1 rounded-full">${esc(viewYM)}</span></div>
+                ${pieHtml(s.byCategory, s.monthlyExpense)}
+            </div>
+
+            <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-sm space-y-4">
                 <h3 class="font-bold text-stone-800 text-sm">分類排行</h3>
                 ${top.length ? top.map((c, i) => `
                     <div class="space-y-1.5">
