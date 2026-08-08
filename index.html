@@ -348,7 +348,7 @@
        ========================================================== */
 
     const CONFIG = {
-        VERSION: 'v4.8.1',
+        VERSION: 'v4.8.2',
         // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
         API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         DEMO: false
@@ -1132,7 +1132,11 @@ function hexA(hex, a) {
         toastTimer = setTimeout(() => el.classList.add('opacity-0', 'pointer-events-none'), action ? 5200 : 2600);
     }
     function hideToast() { const el = document.getElementById('toast'); el.classList.add('opacity-0', 'pointer-events-none'); }
+    let _sheetHideTimer = null;
     function openSheet(html) {
+        // 若前一次 closeSheet 的隱藏計時器還沒觸發，必須先取消，
+        // 否則新開的面板會在 300ms 後被那個舊計時器藏起來（看起來就是「閃一下就不見」）。
+        clearTimeout(_sheetHideTimer); _sheetHideTimer = null;
         const m = document.getElementById('sheetModal'), c = document.getElementById('sheetContent');
         c.innerHTML = `<div class="w-12 h-1.5 bg-stone-200 rounded-full mx-auto mb-5"></div>` + html;
         m.classList.remove('js-hide'); void m.offsetWidth;
@@ -1141,7 +1145,8 @@ function hexA(hex, a) {
     function closeSheet() {
         const m = document.getElementById('sheetModal'), c = document.getElementById('sheetContent');
         m.classList.add('opacity-0'); c.classList.add('translate-y-full');
-        setTimeout(() => m.classList.add('js-hide'), 300);
+        clearTimeout(_sheetHideTimer);
+        _sheetHideTimer = setTimeout(() => { m.classList.add('js-hide'); _sheetHideTimer = null; }, 300);
     }
 
     /* ==========================================================
@@ -1671,44 +1676,42 @@ function hexA(hex, a) {
         const done = saved >= g.target_amount && g.target_amount > 0;
         const pct = g.target_amount ? Math.min(saved / g.target_amount * 100, 100) : 0;
         return `<div class="snap-i flex-shrink-0 w-full px-0.5">
-            <div class="bg-white border border-pastel-border/60 rounded-card shadow-card overflow-hidden">
-                <div class="relative px-5 pt-4 pb-3" style="background:linear-gradient(180deg,${hexA(done ? '#F8C850' : '#F8A048', .14)},transparent)">
-                    <div class="flex items-start justify-between gap-2">
-                        <div class="min-w-0">
-                            <div class="font-bold text-stone-800 text-base truncate"><i class="fa-solid ${esc(g.icon || 'fa-piggy-bank')} mr-1.5 text-pastel-accent"></i>${esc(g.name)}</div>
-                            <div class="text-[11px] text-pastel-muted mt-0.5 truncate">${esc(g.scope === 'family' ? '家庭共同目標' : '個人目標')} ・ 建立者 ${esc(nameOf(g.owner_id))}</div>
+            <div class="bg-white border border-pastel-border/60 rounded-card shadow-card p-4 space-y-3">
+                <!-- 罐子與數字並排：罐子仍是主角，但卡片高度比置中版少約三分之一 -->
+                <div class="flex items-center gap-4">
+                    <button onclick="openGoalDetail('${esc(g.goal_id)}')" class="relative w-[92px] h-[118px] flex-shrink-0">
+                        ${jarSvg(g, saved)}
+                        ${done ? '<i class="fa-solid fa-crown fa-beat absolute top-0 right-1 text-pastel-yellow"></i>' : ''}
+                        <div class="absolute inset-x-0 bottom-2 text-center text-[11px] font-bold" style="color:${done ? '#8A6410' : '#8A5A22'}">${pct.toFixed(0)}%</div>
+                    </button>
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="min-w-0">
+                                <div class="font-bold text-stone-800 text-base truncate"><i class="fa-solid ${esc(g.icon || 'fa-piggy-bank')} mr-1.5 text-pastel-accent"></i>${esc(g.name)}</div>
+                                <div class="text-[11px] text-pastel-muted truncate">${esc(g.scope === 'family' ? '家庭共同' : '個人')} ・ ${esc(nameOf(g.owner_id))}</div>
+                            </div>
+                            <button onclick="openGoalMenu('${esc(g.goal_id)}')" aria-label="更多" class="w-8 h-8 -mt-1 -mr-1 rounded-full flex items-center justify-center text-stone-400 flex-shrink-0 tactile"><i class="fa-solid fa-ellipsis"></i></button>
                         </div>
-                        <button onclick="openGoalMenu('${esc(g.goal_id)}')" aria-label="更多" class="w-8 h-8 rounded-full bg-white/80 border border-pastel-border flex items-center justify-center text-stone-500 flex-shrink-0 tactile"><i class="fa-solid fa-ellipsis"></i></button>
+                        <div class="mt-2 text-2xl font-bold font-rounded text-stone-800 tracking-tight truncate">
+                            <span class="num-sym text-base">$</span>${Number(saved).toLocaleString('en-US')}</div>
+                        <div class="text-[11px] text-pastel-muted truncate">目標 ${fmt(g.target_amount)}${spent > 0 ? ` ・ 已花 ${fmt(spent)}` : ''}</div>
+                        ${g.note ? `<div class="text-[11px] text-stone-500 mt-1 truncate">${esc(g.note)}</div>` : ''}
                     </div>
                 </div>
 
-                <button onclick="openGoalDetail('${esc(g.goal_id)}')" class="w-full px-5 pb-2 flex flex-col items-center">
-                    <div class="w-32 h-40 relative">
-                        ${jarSvg(g, saved)}
-                        ${done ? '<i class="fa-solid fa-crown fa-beat absolute top-1 right-3 text-pastel-yellow text-lg"></i>' : ''}
-                        <div class="absolute inset-x-0 bottom-3 text-center">
-                            <div class="text-[11px] font-bold" style="color:${done ? '#8A6410' : '#8A5A22'}">${pct.toFixed(0)}%</div></div>
-                    </div>
-                    <div class="mt-1 text-3xl font-bold font-rounded text-stone-800 tracking-tight">
-                        <span class="num-sym text-lg">$</span>${Number(saved).toLocaleString('en-US')}</div>
-                    <div class="text-[11px] text-pastel-muted mt-0.5">目標 ${fmt(g.target_amount)}${spent > 0 ? ` ・ 已花用 ${fmt(spent)}` : ''}</div>
-                    ${g.note ? `<div class="text-[11px] text-stone-500 mt-1.5 line-clamp-2 text-center px-2">${esc(g.note)}</div>` : ''}
-                </button>
-
-                <div class="px-5 pt-2 pb-4">
-                    <div class="flex items-center justify-between mb-2">
-                        <span class="text-[11px] font-bold text-stone-600">籌碼 ${coins.length} 枚${gold ? ` ・ 金幣 ${gold}` : ''}</span>
-                        <button onclick="openGoalDetail('${esc(g.goal_id)}')" class="text-[11px] font-bold text-pastel-accent">看明細 <i class="fa-solid fa-chevron-right text-[9px]"></i></button></div>
-                    <div class="flex gap-1.5 overflow-x-auto hide-scrollbar min-h-[28px] pb-1">
-                        ${coins.length ? coins.slice(-12).map(coinSvg).join('')
+                <div class="flex items-center gap-2">
+                    <div class="flex gap-1.5 overflow-x-auto hide-scrollbar flex-1 min-w-0">
+                        ${coins.length ? coins.slice(-10).map(coinSvg).join('')
                 : '<span class="text-[11px] text-pastel-muted self-center">還沒有籌碼，投第一枚吧</span>'}
                     </div>
-                    <div class="grid grid-cols-2 gap-2 mt-3">
-                        <button onclick="openDeposit('${esc(g.goal_id)}')" class="py-3 bg-pastel-accent text-white font-bold rounded-tile text-sm tactile"><i class="fa-solid fa-coins mr-1.5"></i>存入劃撥</button>
-                        <button onclick="openGoalDetail('${esc(g.goal_id)}')" class="py-3 bg-pastel-bg border border-pastel-border text-stone-600 font-bold rounded-tile text-sm tactile"><i class="fa-solid fa-list-ul mr-1.5"></i>投入明細</button>
-                    </div>
-                    ${reserved > 0 && spent > 0 ? `<p class="text-[10px] text-pastel-muted mt-2">保留額 ${fmt(reserved)}（已隨貼標花費自動遞減）</p>` : ''}
+                    ${coins.length ? `<span class="text-[11px] text-pastel-muted flex-shrink-0">${coins.length} 枚${gold ? `・金 ${gold}` : ''}</span>` : ''}
                 </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <button onclick="openDeposit('${esc(g.goal_id)}')" class="py-2.5 bg-pastel-accent text-white font-bold rounded-tile text-sm tactile"><i class="fa-solid fa-coins mr-1.5"></i>存入劃撥</button>
+                    <button onclick="openGoalDetail('${esc(g.goal_id)}')" class="py-2.5 bg-pastel-bg border border-pastel-border text-stone-600 font-bold rounded-tile text-sm tactile"><i class="fa-solid fa-list-ul mr-1.5"></i>投入明細</button>
+                </div>
+                ${reserved > 0 && spent > 0 ? `<p class="text-[10px] text-pastel-muted">保留額 ${fmt(reserved)}（已隨貼標花費自動遞減）</p>` : ''}
             </div></div>`;
     }
 
@@ -1745,7 +1748,7 @@ function hexA(hex, a) {
     function openGoalMenu(id) {
         const g = goalById(id); if (!g) return;
         const mine = !g.owner_id || g.owner_id === STATE.me?.member_id;
-        const item = (icon, label, fn, cls) => `<button onclick="closeSheet();setTimeout(()=>${fn},220)" class="w-full flex items-center gap-3 px-4 py-3.5 rounded-tile bg-pastel-bg border border-pastel-border tactile ${cls || 'text-stone-700'}">
+        const item = (icon, label, fn, cls) => `<button onclick="closeSheet();setTimeout(()=>${fn},320)" class="w-full flex items-center gap-3 px-4 py-3.5 rounded-tile bg-pastel-bg border border-pastel-border tactile ${cls || 'text-stone-700'}">
             <i class="fa-solid ${icon} w-5 text-center"></i><span class="text-sm font-bold">${label}</span></button>`;
         openSheet(`
             <h3 class="text-lg font-bold text-stone-800 mb-1">${esc(g.name)}</h3>
@@ -1769,7 +1772,7 @@ function hexA(hex, a) {
         const byMember = {};
         coins.forEach(c => { byMember[c.member_id] = (byMember[c.member_id] || 0) + 1; });
         openSheet(`
-            <div class="-mx-6 -mt-5 px-6 pt-5 pb-5 mb-5" style="background:linear-gradient(180deg,${hexA('#F8A048', .16)},transparent)">
+            <div class="mb-5 pb-4 border-b border-pastel-border">
                 <div class="flex items-center gap-4">
                     <div class="w-24 h-30 flex-shrink-0" style="height:7.5rem">${jarSvg(g, saved, true)}</div>
                     <div class="min-w-0 flex-1">
@@ -1818,7 +1821,7 @@ function hexA(hex, a) {
                         <div class="font-bold font-rounded text-pastel-red flex-shrink-0 ml-2">-${fmt(t.amount)}</div>
                     </div>`).join('')}</div></div>` : ''}
 
-            <button onclick="closeSheet();setTimeout(()=>openDeposit('${esc(id)}'),220)" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile"><i class="fa-solid fa-coins mr-1.5"></i>存入劃撥</button>`);
+            <button onclick="closeSheet();setTimeout(()=>openDeposit('${esc(id)}'),320)" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile"><i class="fa-solid fa-coins mr-1.5"></i>存入劃撥</button>`);
     }
 
     const GOAL_ICONS = ['fa-piggy-bank', 'fa-plane', 'fa-house', 'fa-car', 'fa-mobile-screen', 'fa-graduation-cap',
@@ -2618,7 +2621,7 @@ function hexA(hex, a) {
         addState.mode = m;
         addState.cat = '';
         initAddForm(true);
-        if (m !== 'transfer') setTimeout(openCatDrawer, 180);
+        if (m !== 'transfer') setTimeout(openCatDrawer, 320);
     }
     function pickTag(n) { buzz(); addState.tag = n; paintTagRow(); }
 
@@ -2922,7 +2925,7 @@ function hexA(hex, a) {
         buzz();
         addState.cat = name;
         closeSheet();
-        setTimeout(openKeypadDrawer, 260);
+        setTimeout(openKeypadDrawer, 320);
     }
 
     /* 鍵盤抽屜：金額與分類同框顯示，輸入時永遠看得到自己打了多少 */
@@ -2934,7 +2937,7 @@ function hexA(hex, a) {
             <div class="rounded-card p-5 mb-4 text-white" style="background:linear-gradient(135deg,${isTr ? '#3090F8,#2B7BD6' : isExp ? '#F8A048,#F0863A' : '#40B868,#35A25A'})">
                 <div class="flex justify-between items-center mb-1">
                     <span class="text-[11px] font-bold opacity-85">${isTr ? '轉帳' : isExp ? '支出' : '收入'}${addState.cat ? ' · ' + esc(addState.cat) : ''}</span>
-                    ${addState.cat ? `<button onclick="closeSheet();setTimeout(openCatDrawer,240)" class="text-[10px] font-bold bg-white/25 px-2 py-1 rounded-md">換分類</button>` : ''}</div>
+                    ${addState.cat ? `<button onclick="closeSheet();setTimeout(openCatDrawer,320)" class="text-[10px] font-bold bg-white/25 px-2 py-1 rounded-md">換分類</button>` : ''}</div>
                 <div id="kpAmt" class="text-5xl font-bold font-rounded tracking-tight leading-none break-all"></div>
                 <div id="kpHint" class="text-xs opacity-85 mt-1.5 h-4"></div>
             </div>
