@@ -103,7 +103,11 @@
         #appNav { background-color:#FFFFFF; padding-bottom:calc(0.35rem + var(--sab, env(safe-area-inset-bottom, 0px))); }
         html.dark #appNav { background-color:#221F1D !important; }
         /* 已加入主畫面時，整個底色改成 App 奶油色，狀態列區域才不會露出不同色 */
-        @media (display-mode: standalone) { html, body { background-color:#FFF8F0; } }
+        /* iOS PWA 的版面視窗（812）比實體螢幕（874）矮，中間那 62px 只會被
+           canvas 背景填滿——任何元素都畫不進去。把它設成與導覽列同色，
+           視覺上導覽列就是延伸到螢幕最底，不會再出現那條奶油色橫帶。 */
+        @media (display-mode: standalone) { html, body { background-color:#FFFFFF; } }
+        html.dark, html.dark body { background-color:#221F1D !important; }
         .hide-scrollbar::-webkit-scrollbar { display:none; }
         .hide-scrollbar { -ms-overflow-style:none; scrollbar-width:none; }
         input, select, textarea { font-size:16px; }
@@ -199,6 +203,8 @@
 
         /* 自建數字鍵盤 */
         .kp { -webkit-user-select:none; user-select:none; }
+        .snap-x { scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch; }
+        .snap-i { scroll-snap-align:center; scroll-snap-stop:always; }
         .kp button { transition:transform .08s ease, background-color .12s ease; }
         .kp button:active { transform:scale(.94); }
 
@@ -228,7 +234,7 @@
         <div class="flex items-center gap-2"><i class="fa-solid fa-wifi text-stone-600"></i><i class="fa-solid fa-battery-full text-stone-700"></i></div>
     </div>
     <!-- 瀏海安全區：只在系統「沒有」自己保留狀態列時才補，避免重複佔掉一整條 -->
-    <div id="topSafe" class="shrink-0 bg-pastel-bg" style="height:var(--topPad, env(safe-area-inset-top, 0px))"></div>
+    <div id="topSafe" class="shrink-0 bg-pastel-bg" style="height:max(var(--topPad, 0px), env(safe-area-inset-top, 0px))"></div>
 
     <div id="splash" class="absolute inset-0 bg-pastel-bg z-[80] flex flex-col items-center justify-center gap-4">
         <img src="./av5.png" alt="" class="w-24 h-24 float">
@@ -342,7 +348,7 @@
        ========================================================== */
 
     const CONFIG = {
-        VERSION: 'v4.8.0',
+        VERSION: 'v4.8.1',
         // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
         API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         DEMO: false
@@ -1619,7 +1625,7 @@ function hexA(hex, a) {
     }
 
     /* ---------- 存錢罐 UI ---------- */
-    function coinSvg(c, i) {
+    function coinSvg(c) {
         const m = STATE.members.find(x => x.member_id === c.member_id);
         const av = m?.avatar_emoji || 'av5';
         const isGold = c.kind === 'gold';
@@ -1634,64 +1640,83 @@ function hexA(hex, a) {
             <div class="w-4 h-4 rounded-full overflow-hidden flex items-center justify-center bg-white/70">${inner}</div></div>`;
     }
 
-    function jarCard(g) {
-        const saved = goalSaved(g.goal_id), spent = goalSpent(g.goal_id), reserved = goalReserved(g.goal_id);
+    /* 罐子：卡片主角，水位＝已存比例。進度條已移除，水位本身就是進度。 */
+    function jarSvg(g, saved, big) {
         const pct = g.target_amount ? Math.min(saved / g.target_amount * 100, 100) : 0;
-        const coins = goalCoins(g.goal_id);
-        const gold = coins.filter(c => c.kind === 'gold').length;
-        const done = saved >= g.target_amount;
-        const shown = coins.slice(-14);
-        return `<div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-4">
-            <div class="flex items-start gap-4">
-                <!-- 罐子：填滿高度＝已存比例 -->
-                <div class="relative w-16 h-20 flex-shrink-0">
-                    <svg viewBox="0 0 60 76" class="w-full h-full">
-                        <rect x="18" y="2" width="24" height="7" rx="2.5" fill="#E7D9C6"/>
-                        <path d="M10 12 h40 a6 6 0 0 1 6 6 v46 a8 8 0 0 1 -8 8 h-36 a8 8 0 0 1 -8 -8 v-46 a6 6 0 0 1 6 -6 z" fill="#F3E7D8" opacity=".55"/>
-                        <clipPath id="jc${esc(g.goal_id)}">
-                            <path d="M10 12 h40 a6 6 0 0 1 6 6 v46 a8 8 0 0 1 -8 8 h-36 a8 8 0 0 1 -8 -8 v-46 a6 6 0 0 1 6 -6 z"/></clipPath>
-                        <rect clip-path="url(#jc${esc(g.goal_id)})" x="4" y="${(70 - 58 * pct / 100).toFixed(1)}" width="52" height="70" fill="${done ? '#F8C850' : '#F8A048'}" opacity=".85"/>
-                        <path d="M10 12 h40 a6 6 0 0 1 6 6 v46 a8 8 0 0 1 -8 8 h-36 a8 8 0 0 1 -8 -8 v-46 a6 6 0 0 1 6 -6 z" fill="none" stroke="#E7D9C6" stroke-width="2.5"/>
-                    </svg>
-                    ${done ? '<i class="fa-solid fa-crown fa-beat absolute -top-1 -right-1 text-pastel-yellow"></i>' : ''}
-                </div>
-                <div class="flex-1 min-w-0">
-                    <div class="flex items-start justify-between gap-2">
-                        <div class="min-w-0">
-                            <div class="font-bold text-stone-800 text-sm truncate"><i class="fa-solid ${esc(g.icon || 'fa-piggy-bank')} mr-1.5 text-pastel-accent"></i>${esc(g.name)}</div>
-                            <div class="text-[11px] text-pastel-muted mt-0.5">${esc(g.scope === 'family' ? '家庭共同目標' : '個人目標')} ・ 建立者 ${esc(nameOf(g.owner_id))}</div>
-                        </div>
-                        <button onclick="openGoalSheet('${esc(g.goal_id)}')" class="text-pastel-muted text-xs px-1 flex-shrink-0"><i class="fa-solid fa-ellipsis"></i></button>
-                    </div>
-                    <div class="mt-2 text-2xl font-bold font-rounded text-stone-800"><span class="num-sym text-base">$</span>${Number(saved).toLocaleString('en-US')}</div>
-                    <div class="text-[11px] text-pastel-muted">目標 ${fmt(g.target_amount)}${spent > 0 ? ` ・ 已花用 ${fmt(spent)}` : ''}</div>
-                    <div class="w-full bg-pastel-bg rounded-full h-2 mt-2 overflow-hidden border border-pastel-border">
-                        <div class="h-2 rounded-full transition-all duration-700" style="width:${pct}%;background:${done ? '#F8C850' : '#F8A048'}"></div></div>
-                </div>
-            </div>
-
-            <div>
-                <div class="flex justify-between items-center mb-2">
-                    <span class="text-[11px] font-bold text-stone-600">投入籌碼 ${coins.length} 枚${gold ? ` ・ 金幣 ${gold}` : ''}</span>
-                    <span class="text-[10px] text-pastel-muted">每天每罐一枚，不比金額</span></div>
-                <div id="coins-${esc(g.goal_id)}" class="flex flex-wrap gap-1.5 min-h-[28px]">
-                    ${coins.length ? shown.map(coinSvg).join('') + (coins.length > shown.length ? `<span class="text-[10px] text-pastel-muted self-center ml-1">+${coins.length - shown.length}</span>` : '')
-                : '<span class="text-[11px] text-pastel-muted">還沒有籌碼，投第一枚吧</span>'}
-                </div>
-            </div>
-
-            <div class="grid grid-cols-2 gap-2">
-                <button onclick="openDeposit('${esc(g.goal_id)}')" class="py-3 bg-pastel-accent text-white font-bold rounded-tile text-sm tactile"><i class="fa-solid fa-coins mr-1.5"></i>存入劃撥</button>
-                <button onclick="openCloseGoal('${esc(g.goal_id)}')" class="py-3 bg-pastel-bg border border-pastel-border text-stone-600 font-bold rounded-tile text-sm tactile">${done ? '達成結案' : '歸銷結案'}</button>
-            </div>
-            ${reserved > 0 && spent > 0 ? `<p class="text-[10px] text-pastel-muted">保留額 ${fmt(reserved)}（已隨貼標花費自動遞減）</p>` : ''}
-        </div>`;
+        const done = saved >= g.target_amount && g.target_amount > 0;
+        const uid2 = 'jc' + String(g.goal_id).replace(/[^\w]/g, '');
+        const body = 'M14 20 h72 a10 10 0 0 1 10 10 v76 a14 14 0 0 1 -14 14 h-64 a14 14 0 0 1 -14 -14 v-76 a10 10 0 0 1 10 -10 z';
+        const lvl = 120 - 96 * pct / 100;
+        return `<svg viewBox="0 0 100 132" class="${big ? 'w-full h-full' : 'w-full h-full'}">
+            <defs>
+                <linearGradient id="${uid2}g" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="${done ? '#FFD97A' : '#FFB979'}"/>
+                    <stop offset="100%" stop-color="${done ? '#F0AF10' : '#F08A32'}"/></linearGradient>
+                <clipPath id="${uid2}c"><path d="${body}"/></clipPath>
+            </defs>
+            <rect x="34" y="6" width="32" height="9" rx="3.5" fill="#DCCDB8"/>
+            <path d="${body}" fill="#FDF6EC"/>
+            <g clip-path="url(#${uid2}c)">
+                <rect x="0" y="${lvl.toFixed(1)}" width="100" height="132" fill="url(#${uid2}g)"/>
+                <path d="M0 ${lvl.toFixed(1)} q12 -5 25 0 t25 0 t25 0 t25 0 v10 h-100 z" fill="${done ? '#FFE29A' : '#FFC994'}" opacity=".8"/>
+            </g>
+            <path d="${body}" fill="none" stroke="#E7D9C6" stroke-width="3"/>
+            <path d="M24 34 q6 -6 14 -6" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" fill="none" opacity=".65"/>
+        </svg>`;
     }
 
+    function jarCard(g) {
+        const saved = goalSaved(g.goal_id), spent = goalSpent(g.goal_id), reserved = goalReserved(g.goal_id);
+        const coins = goalCoins(g.goal_id), gold = coins.filter(c => c.kind === 'gold').length;
+        const done = saved >= g.target_amount && g.target_amount > 0;
+        const pct = g.target_amount ? Math.min(saved / g.target_amount * 100, 100) : 0;
+        return `<div class="snap-i flex-shrink-0 w-full px-0.5">
+            <div class="bg-white border border-pastel-border/60 rounded-card shadow-card overflow-hidden">
+                <div class="relative px-5 pt-4 pb-3" style="background:linear-gradient(180deg,${hexA(done ? '#F8C850' : '#F8A048', .14)},transparent)">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                            <div class="font-bold text-stone-800 text-base truncate"><i class="fa-solid ${esc(g.icon || 'fa-piggy-bank')} mr-1.5 text-pastel-accent"></i>${esc(g.name)}</div>
+                            <div class="text-[11px] text-pastel-muted mt-0.5 truncate">${esc(g.scope === 'family' ? '家庭共同目標' : '個人目標')} ・ 建立者 ${esc(nameOf(g.owner_id))}</div>
+                        </div>
+                        <button onclick="openGoalMenu('${esc(g.goal_id)}')" aria-label="更多" class="w-8 h-8 rounded-full bg-white/80 border border-pastel-border flex items-center justify-center text-stone-500 flex-shrink-0 tactile"><i class="fa-solid fa-ellipsis"></i></button>
+                    </div>
+                </div>
+
+                <button onclick="openGoalDetail('${esc(g.goal_id)}')" class="w-full px-5 pb-2 flex flex-col items-center">
+                    <div class="w-32 h-40 relative">
+                        ${jarSvg(g, saved)}
+                        ${done ? '<i class="fa-solid fa-crown fa-beat absolute top-1 right-3 text-pastel-yellow text-lg"></i>' : ''}
+                        <div class="absolute inset-x-0 bottom-3 text-center">
+                            <div class="text-[11px] font-bold" style="color:${done ? '#8A6410' : '#8A5A22'}">${pct.toFixed(0)}%</div></div>
+                    </div>
+                    <div class="mt-1 text-3xl font-bold font-rounded text-stone-800 tracking-tight">
+                        <span class="num-sym text-lg">$</span>${Number(saved).toLocaleString('en-US')}</div>
+                    <div class="text-[11px] text-pastel-muted mt-0.5">目標 ${fmt(g.target_amount)}${spent > 0 ? ` ・ 已花用 ${fmt(spent)}` : ''}</div>
+                    ${g.note ? `<div class="text-[11px] text-stone-500 mt-1.5 line-clamp-2 text-center px-2">${esc(g.note)}</div>` : ''}
+                </button>
+
+                <div class="px-5 pt-2 pb-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-[11px] font-bold text-stone-600">籌碼 ${coins.length} 枚${gold ? ` ・ 金幣 ${gold}` : ''}</span>
+                        <button onclick="openGoalDetail('${esc(g.goal_id)}')" class="text-[11px] font-bold text-pastel-accent">看明細 <i class="fa-solid fa-chevron-right text-[9px]"></i></button></div>
+                    <div class="flex gap-1.5 overflow-x-auto hide-scrollbar min-h-[28px] pb-1">
+                        ${coins.length ? coins.slice(-12).map(coinSvg).join('')
+                : '<span class="text-[11px] text-pastel-muted self-center">還沒有籌碼，投第一枚吧</span>'}
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 mt-3">
+                        <button onclick="openDeposit('${esc(g.goal_id)}')" class="py-3 bg-pastel-accent text-white font-bold rounded-tile text-sm tactile"><i class="fa-solid fa-coins mr-1.5"></i>存入劃撥</button>
+                        <button onclick="openGoalDetail('${esc(g.goal_id)}')" class="py-3 bg-pastel-bg border border-pastel-border text-stone-600 font-bold rounded-tile text-sm tactile"><i class="fa-solid fa-list-ul mr-1.5"></i>投入明細</button>
+                    </div>
+                    ${reserved > 0 && spent > 0 ? `<p class="text-[10px] text-pastel-muted mt-2">保留額 ${fmt(reserved)}（已隨貼標花費自動遞減）</p>` : ''}
+                </div>
+            </div></div>`;
+    }
+
+    /* 目標改用左右滑動的輪播，頁面不會因為目標變多而愈拉愈長 */
     function jarSection() {
         const list = activeGoals();
         const head = `<div class="flex justify-between items-center">
-            <h3 class="text-sm font-bold text-stone-800 ml-1"><i class="fa-solid fa-piggy-bank text-pastel-accent mr-1.5"></i>存錢罐</h3>
+            <h3 class="text-sm font-bold text-stone-800 ml-1"><i class="fa-solid fa-piggy-bank text-pastel-accent mr-1.5"></i>存錢罐${list.length > 1 ? `<span class="text-pastel-muted font-normal ml-1.5 text-xs">${list.length} 個</span>` : ''}</h3>
             <button onclick="openGoalSheet()" class="text-xs font-bold text-pastel-accent">新增目標</button></div>`;
         if (!list.length) return `${head}
             <button onclick="openGoalSheet()" class="w-full text-left bg-white border border-dashed border-pastel-accent/50 rounded-card p-5 shadow-card flex items-center gap-4 tactile">
@@ -1699,54 +1724,164 @@ function hexA(hex, a) {
                 <div class="min-w-0"><div class="font-bold text-sm text-stone-800">建立第一個存錢目標</div>
                 <div class="text-xs text-pastel-muted mt-0.5">每次存入都會投一枚印著你頭像的籌碼</div></div>
                 <i class="fa-solid fa-chevron-right text-pastel-accent ml-auto"></i></button>`;
-        return head + list.map(jarCard).join('');
+        return `${head}
+            <div id="jarRail" class="snap-x flex gap-3 overflow-x-auto hide-scrollbar -mx-1 px-1" onscroll="paintJarDots()">
+                ${list.map(jarCard).join('')}
+            </div>
+            ${list.length > 1 ? `<div id="jarDots" class="flex justify-center gap-1.5">
+                ${list.map((_, i) => `<span class="w-1.5 h-1.5 rounded-full ${i === 0 ? 'bg-pastel-accent' : 'bg-pastel-border'}"></span>`).join('')}
+            </div>` : ''}`;
+    }
+    function paintJarDots() {
+        const rail = document.getElementById('jarRail'), dots = document.getElementById('jarDots');
+        if (!rail || !dots) return;
+        const i = Math.round(rail.scrollLeft / Math.max(rail.clientWidth, 1));
+        [...dots.children].forEach((d, j) => {
+            d.className = `w-1.5 h-1.5 rounded-full ${j === i ? 'bg-pastel-accent' : 'bg-pastel-border'}`;
+        });
+    }
+
+    /* ---------- 「⋯」選單：編輯 / 刪除 / 結案 ---------- */
+    function openGoalMenu(id) {
+        const g = goalById(id); if (!g) return;
+        const mine = !g.owner_id || g.owner_id === STATE.me?.member_id;
+        const item = (icon, label, fn, cls) => `<button onclick="closeSheet();setTimeout(()=>${fn},220)" class="w-full flex items-center gap-3 px-4 py-3.5 rounded-tile bg-pastel-bg border border-pastel-border tactile ${cls || 'text-stone-700'}">
+            <i class="fa-solid ${icon} w-5 text-center"></i><span class="text-sm font-bold">${label}</span></button>`;
+        openSheet(`
+            <h3 class="text-lg font-bold text-stone-800 mb-1">${esc(g.name)}</h3>
+            <p class="text-xs text-pastel-muted mb-5">${mine ? '' : `只有建立者 ${esc(nameOf(g.owner_id))} 可以編輯或刪除`}</p>
+            <div class="space-y-2.5">
+                ${item('fa-list-ul', '投入明細', `openGoalDetail('${esc(id)}')`)}
+                ${mine ? item('fa-pen', '編輯目標', `openGoalSheet('${esc(id)}')`) : ''}
+                ${mine ? item('fa-flag-checkered', '歸銷結案', `openCloseGoal('${esc(id)}')`) : ''}
+                ${mine ? item('fa-trash', '刪除目標', `deleteGoal('${esc(id)}')`, 'text-pastel-red') : ''}
+            </div>`);
+    }
+
+    /* ---------- 投入明細：滿版面板 ---------- */
+    function openGoalDetail(id) {
+        const g = goalById(id); if (!g) return;
+        const saved = goalSaved(id), spent = goalSpent(id), reserved = goalReserved(id);
+        const coins = goalCoins(id);
+        const deps = goalDeposits(id).slice().sort((a, b) => (b.date + b.created_at).localeCompare(a.date + a.created_at));
+        const spends = activeTxns().filter(t => t.entry_type === '支出' && t.tag === g.project_tag)
+            .sort((a, b) => (b.date + b.created_at).localeCompare(a.date + a.created_at));
+        const byMember = {};
+        coins.forEach(c => { byMember[c.member_id] = (byMember[c.member_id] || 0) + 1; });
+        openSheet(`
+            <div class="-mx-6 -mt-5 px-6 pt-5 pb-5 mb-5" style="background:linear-gradient(180deg,${hexA('#F8A048', .16)},transparent)">
+                <div class="flex items-center gap-4">
+                    <div class="w-24 h-30 flex-shrink-0" style="height:7.5rem">${jarSvg(g, saved, true)}</div>
+                    <div class="min-w-0 flex-1">
+                        <div class="font-bold text-stone-800 text-lg truncate"><i class="fa-solid ${esc(g.icon || 'fa-piggy-bank')} mr-1.5 text-pastel-accent"></i>${esc(g.name)}</div>
+                        <div class="text-[11px] text-pastel-muted mb-2">${esc(g.scope === 'family' ? '家庭共同目標' : '個人目標')} ・ 建立者 ${esc(nameOf(g.owner_id))}</div>
+                        <div class="text-2xl font-bold font-rounded text-stone-800"><span class="num-sym text-base">$</span>${Number(saved).toLocaleString('en-US')}</div>
+                        <div class="text-[11px] text-pastel-muted">目標 ${fmt(g.target_amount)}</div>
+                    </div>
+                </div>
+                ${g.note ? `<p class="text-xs text-stone-600 leading-relaxed mt-3 bg-white/70 rounded-tile p-3 border border-pastel-border">${esc(g.note)}</p>` : ''}
+            </div>
+
+            <div class="grid grid-cols-3 gap-2 mb-5 text-center">
+                ${[['累計劃撥', fmt(saved), 'text-stone-800'], ['已貼標花用', fmt(spent), 'text-pastel-red'], ['目前保留額', fmt(reserved), 'text-pastel-green']]
+                .map(([l, v, c]) => `<div class="bg-pastel-bg rounded-tile p-3 border border-pastel-border min-w-0">
+                    <div class="text-[10px] text-pastel-muted mb-0.5">${l}</div>
+                    <div class="text-sm font-bold font-rounded truncate ${c}">${v}</div></div>`).join('')}
+            </div>
+
+            <div class="mb-5">
+                <div class="text-xs font-bold text-stone-600 mb-2">籌碼牆 ${coins.length} 枚</div>
+                ${coins.length ? `<div class="flex flex-wrap gap-1.5 p-3 rounded-tile bg-pastel-bg border border-pastel-border">${coins.map(coinSvg).join('')}</div>
+                <div class="flex flex-wrap gap-3 mt-2">${Object.entries(byMember).map(([mid, n]) =>
+                    `<span class="text-[11px] text-pastel-muted">${esc(nameOf(mid))} ${n} 枚</span>`).join('')}</div>`
+                : '<div class="text-[11px] text-pastel-muted">還沒有籌碼</div>'}
+            </div>
+
+            <div class="mb-5">
+                <div class="text-xs font-bold text-stone-600 mb-2">劃撥紀錄</div>
+                <div class="space-y-2">
+                ${deps.length ? deps.map(t => `
+                    <div class="flex justify-between items-center bg-pastel-bg rounded-tile px-3 py-2.5 border border-pastel-border">
+                        <div class="min-w-0"><div class="text-sm font-bold text-stone-800 truncate">${esc(nameOf(t.payer_id))}${t.settle_member_id === 'RELEASE' ? '（結案釋出）' : ''}</div>
+                        <div class="text-[10px] text-pastel-muted">${esc(t.date)} ・ ${esc(t.tag || '—')}</div></div>
+                        <div class="font-bold font-rounded flex-shrink-0 ml-2 ${t.settle_member_id === 'RELEASE' ? 'text-pastel-muted' : 'text-pastel-green'}">${t.settle_member_id === 'RELEASE' ? '-' : '+'}${fmt(t.amount)}</div>
+                    </div>`).join('') : '<div class="text-[11px] text-pastel-muted">尚無劃撥</div>'}
+                </div>
+            </div>
+
+            ${spends.length ? `<div class="mb-5">
+                <div class="text-xs font-bold text-stone-600 mb-2">貼標花費（會自動扣抵保留額）</div>
+                <div class="space-y-2">${spends.map(t => `
+                    <div class="flex justify-between items-center bg-pastel-bg rounded-tile px-3 py-2.5 border border-pastel-border">
+                        <div class="min-w-0"><div class="text-sm font-bold text-stone-800 truncate">${esc(t.note || t.category || '—')}</div>
+                        <div class="text-[10px] text-pastel-muted">${esc(t.date)} ・ ${esc(nameOf(t.payer_id))}</div></div>
+                        <div class="font-bold font-rounded text-pastel-red flex-shrink-0 ml-2">-${fmt(t.amount)}</div>
+                    </div>`).join('')}</div></div>` : ''}
+
+            <button onclick="closeSheet();setTimeout(()=>openDeposit('${esc(id)}'),220)" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile"><i class="fa-solid fa-coins mr-1.5"></i>存入劃撥</button>`);
     }
 
     const GOAL_ICONS = ['fa-piggy-bank', 'fa-plane', 'fa-house', 'fa-car', 'fa-mobile-screen', 'fa-graduation-cap',
         'fa-heart', 'fa-camera', 'fa-laptop', 'fa-ring', 'fa-gift', 'fa-umbrella-beach'];
     let _goalDraft = {};
+    function stashGoalDraft() {
+        const n = document.getElementById('glName'); if (n) _goalDraft.name = n.value;
+        const a = document.getElementById('glAmt'); if (a) _goalDraft.target_amount = a.value;
+        const d = document.getElementById('glNote'); if (d) _goalDraft.note = d.value;
+        const sc = document.getElementById('glScope'); if (sc) _goalDraft.scope = sc.value;
+    }
+    /* 先前這裡呼叫 openGoalSheet(id)，而它第一行就用資料庫的值覆蓋草稿，
+       等於每點一次圖示就被還原一次——圖示看起來「按不動」的原因。 */
+    function pickGoalIcon(ic) {
+        buzz();
+        stashGoalDraft();       // 先把使用者已輸入的內容保住
+        _goalDraft.icon = ic;
+        renderGoalSheet();      // 只重繪，不從資料庫還原
+    }
     function openGoalSheet(id) {
         const g = id ? goalById(id) : null;
+        _goalDraft = g ? { ...g } : { goal_id: '', name: '', icon: 'fa-piggy-bank', target_amount: '', note: '', scope: currentMode === 'family' ? 'family' : 'personal' };
+        renderGoalSheet();
+    }
+    function renderGoalSheet() {
+        const d = _goalDraft, isEdit = !!d.goal_id;
+        const g = isEdit ? goalById(d.goal_id) : null;
         const mine = !g || !g.owner_id || g.owner_id === STATE.me?.member_id;
-        _goalDraft = g ? { ...g } : { name: '', icon: 'fa-piggy-bank', target_amount: '', scope: currentMode === 'family' ? 'family' : 'personal', note: '' };
         openSheet(`
-            <h3 class="text-lg font-bold text-stone-800 mb-1">${g ? '編輯目標' : '新增存錢目標'}</h3>
-            <p class="text-xs text-pastel-muted mb-5">${g ? (mine ? '' : '只有建立者可以修改') : '例如「日本旅遊 $60,000」「換手機 $20,000」'}</p>
+            <h3 class="text-lg font-bold text-stone-800 mb-1">${isEdit ? '編輯目標' : '新增存錢目標'}</h3>
+            <p class="text-xs text-pastel-muted mb-5">${isEdit ? (mine ? '' : '只有建立者可以修改') : '例如「日本旅遊 $60,000」「換手機 $20,000」'}</p>
             <div class="space-y-4">
                 <div class="flex items-center gap-3">
                     <div class="w-14 h-14 rounded-tile flex items-center justify-center text-2xl flex-shrink-0"
-                         style="background:${hexA('#F8A048', .16)};color:#F8A048"><i class="fa-solid ${esc(_goalDraft.icon)}"></i></div>
-                    <input id="glName" value="${esc(_goalDraft.name)}" ${mine ? '' : 'disabled'} placeholder="目標名稱"
+                         style="background:${hexA('#F8A048', .16)};color:#F8A048"><i class="fa-solid ${esc(d.icon)}"></i></div>
+                    <input id="glName" value="${esc(d.name)}" ${mine ? '' : 'disabled'} placeholder="目標名稱"
                         class="field flex-1 w-full p-3.5 rounded-tile bg-pastel-bg border border-pastel-border text-stone-800"></div>
                 <div class="grid grid-cols-6 gap-2">
-                    ${GOAL_ICONS.map(ic => `<button onclick="pickGoalIcon('${ic}')" ${mine ? '' : 'disabled'}
-                        class="aspect-square rounded-xl flex items-center justify-center border tactile ${_goalDraft.icon === ic ? 'bg-pastel-accent text-white border-pastel-accent' : 'bg-pastel-bg text-stone-600 border-pastel-border'}">
+                    ${GOAL_ICONS.map(ic => `<button type="button" onclick="pickGoalIcon('${ic}')" ${mine ? '' : 'disabled'}
+                        class="aspect-square rounded-xl flex items-center justify-center border tactile ${d.icon === ic ? 'bg-pastel-accent text-white border-pastel-accent shadow-sm' : 'bg-pastel-bg text-stone-600 border-pastel-border'}">
                         <i class="fa-solid ${ic}"></i></button>`).join('')}
                 </div>
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">目標金額</label>
-                    <input id="glAmt" type="number" inputmode="numeric" ${mine ? '' : 'disabled'} value="${esc(_goalDraft.target_amount)}"
+                    <input id="glAmt" type="number" inputmode="numeric" ${mine ? '' : 'disabled'} value="${esc(d.target_amount)}"
                         class="w-full p-3.5 rounded-tile bg-pastel-accentLight border-2 border-pastel-accent/40 text-stone-800 font-bold text-lg font-rounded"></div>
-                ${g ? '' : `<div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">誰看得到</label>
+                <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">說明（選填）</label>
+                    <textarea id="glNote" rows="3" ${mine ? '' : 'disabled'} placeholder="為什麼想存這筆？想達成什麼？"
+                        class="w-full p-3.5 rounded-tile bg-pastel-bg border border-pastel-border text-stone-800 text-sm leading-relaxed resize-none">${esc(d.note || '')}</textarea></div>
+                ${isEdit ? '' : `<div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">誰看得到</label>
                     <select id="glScope" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
-                        <option value="personal" ${_goalDraft.scope === 'personal' ? 'selected' : ''}>只有我</option>
-                        <option value="family" ${_goalDraft.scope === 'family' ? 'selected' : ''}>全家共同目標</option></select></div>`}
+                        <option value="personal" ${d.scope === 'personal' ? 'selected' : ''}>只有我</option>
+                        <option value="family" ${d.scope === 'family' ? 'selected' : ''}>全家共同目標</option></select></div>`}
                 ${g ? `<div class="text-[11px] text-pastel-muted bg-pastel-bg rounded-tile p-3">
                     記帳時選擇標籤「${esc(g.project_tag)}」的支出，會自動從這個罐子的保留額扣抵。</div>` : ''}
-                ${mine ? `<button onclick="saveGoal('${esc(id || '')}')" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile">${g ? '儲存變更' : '建立目標'}</button>` : ''}
-                ${g && mine ? `<button onclick="deleteGoal('${esc(id)}')" class="w-full py-3 bg-white border border-pastel-red/30 text-pastel-red font-bold rounded-tile text-xs tactile">刪除這個目標</button>` : ''}
+                ${mine ? `<button onclick="saveGoal()" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile">${isEdit ? '儲存變更' : '建立目標'}</button>` : ''}
             </div>`);
     }
-    function pickGoalIcon(ic) {
-        _goalDraft.icon = ic;
-        _goalDraft.name = document.getElementById('glName')?.value || _goalDraft.name;
-        _goalDraft.target_amount = document.getElementById('glAmt')?.value || _goalDraft.target_amount;
-        openGoalSheet(_goalDraft.goal_id);
-    }
-    async function saveGoal(id) {
+    async function saveGoal() {
+        stashGoalDraft();
         const goal = {
-            goal_id: id || '', name: (document.getElementById('glName').value || '').trim(),
-            icon: _goalDraft.icon, target_amount: Number(document.getElementById('glAmt').value),
-            scope: document.getElementById('glScope')?.value || _goalDraft.scope
+            goal_id: _goalDraft.goal_id || '', name: String(_goalDraft.name || '').trim(),
+            icon: _goalDraft.icon, target_amount: Number(_goalDraft.target_amount),
+            note: _goalDraft.note || '', scope: _goalDraft.scope
         };
         if (!goal.name) { buzz(30); return toast('請輸入名稱', true); }
         if (!goal.target_amount || goal.target_amount <= 0) { buzz(30); return toast('請輸入目標金額', true); }
@@ -1755,14 +1890,15 @@ function hexA(hex, a) {
             const r2 = await api.call('saveGoal', { goal });
             const i = STATE.goals.findIndex(x => x.goal_id === r2.goal.goal_id);
             if (i >= 0) STATE.goals[i] = r2.goal; else STATE.goals.push(r2.goal);
-            renderDashboard(); initAddForm(true); toast(id ? '已儲存' : '目標已建立');
+            renderDashboard(); initAddForm(true); toast(goal.goal_id ? '已儲存' : '目標已建立');
         } catch (e) { toast(e.message, true); }
     }
     async function deleteGoal(id) {
-        if (!confirm('確定刪除這個目標？已投入的劃撥紀錄會保留，但保留額會釋放。')) return;
+        const g = goalById(id);
+        if (!confirm(`確定刪除「${g ? g.name : ''}」？\n已投入的劃撥紀錄會保留在明細中，但保留額會釋放。`)) return;
         const bak = [...STATE.goals];
-        STATE.goals = STATE.goals.filter(g => g.goal_id !== id);
-        closeSheet(); renderDashboard(); toast('已刪除');
+        STATE.goals = STATE.goals.filter(x => x.goal_id !== id);
+        renderDashboard(); toast('已刪除');
         try { await api.call('deleteGoal', { goal_id: id }); }
         catch (e) { STATE.goals = bak; renderDashboard(); toast(e.message, true); }
     }
@@ -3469,6 +3605,7 @@ function hexA(hex, a) {
         return px;
     }
     function syncFrameHeight() {
+        measureSafeAreas();          // 安全區可能在啟動後才算好，每次都重量
         if (window.innerWidth >= 768) {                 // 桌機交回 CSS 處理
             document.documentElement.style.removeProperty('--appH');
             return;
@@ -3530,6 +3667,25 @@ ${L.standalone ? 'PWA' : 'WEB(Safari)'}  dpr=${window.devicePixelRatio}  statusB
         const el = document.getElementById('diagBox');
         if (el) el.textContent = diagText();
     }
+    function measureSafeAreas() {
+        const probe = document.createElement('div');
+        probe.style.cssText = 'position:fixed;bottom:0;height:env(safe-area-inset-bottom,0px);width:0';
+        document.body.appendChild(probe);
+        let sab = Math.round(probe.getBoundingClientRect().height);
+        probe.remove();
+        const probeT = document.createElement('div');
+        probeT.style.cssText = 'position:fixed;top:0;height:env(safe-area-inset-top,0px);width:0';
+        document.body.appendChild(probeT);
+        const sat = Math.round(probeT.getBoundingClientRect().height);
+        probeT.remove();
+        const standalone = !!(window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches);
+        if (sab === 0 && standalone && window.innerHeight >= 780) sab = 20;
+        document.documentElement.style.setProperty('--sab', sab + 'px');
+        if (sat > 0) document.documentElement.style.setProperty('--topPad', sat + 'px');
+        document.documentElement.style.setProperty('--sat', sat + 'px');
+        return { sat, sab };
+    }
+
     function bindLayout() {
         // 讀出安全區數值供診斷用
         const probe = document.createElement('div');
@@ -3543,7 +3699,9 @@ ${L.standalone ? 'PWA' : 'WEB(Safari)'}  dpr=${window.devicePixelRatio}  statusB
         document.documentElement.style.setProperty('--sat', sat + 'px');
         // 修正 v4.5.0 的誤判：iOS PWA 確實從 Y=0 開始繪製（所以這段留白是必要的），
         // 少報的是 innerHeight 而不是安全區。直接沿用安全區原值。
-        document.documentElement.style.setProperty('--topPad', sat + 'px');
+        // 冷啟動時 iOS 可能尚未算好安全區而回報 0，此時不要寫入變數，
+        // 讓 CSS 的 env() 自行生效；之後每次重量若拿到有效值再覆蓋。
+        if (sat > 0) document.documentElement.style.setProperty('--topPad', sat + 'px');
         let sab = Math.round(probe.getBoundingClientRect().height);
         probe.remove();
         // iOS 偶爾在 standalone 下把 env(safe-area-inset-bottom) 回報成 0，
