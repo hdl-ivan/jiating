@@ -174,8 +174,12 @@
         }
 
         /* 6. 觸覺感 UI：按下時輕微下沉 */
+        /* 小型控制項：按下微微下沉 */
         .tactile { transition:transform .09s ease, box-shadow .09s ease; }
         .tactile:active { transform:translateY(2px); box-shadow:0 1px 4px rgba(160,130,100,.14) !important; }
+        /* 大面積卡片：整塊下沉會有閃動感，改為微縮＋陰影變淺 */
+        .tactile-card { transition:transform .12s cubic-bezier(.2,.7,.4,1), box-shadow .12s ease; }
+        .tactile-card:active { transform:scale(.985); box-shadow:0 2px 8px rgba(160,130,100,.10) !important; }
 
         /* 8. 記帳完成微互動：金幣飛向大頭貼 */
         .coin { position:absolute; width:26px; height:26px; border-radius:9999px;
@@ -323,8 +327,8 @@
     <nav id="appNav" class="mt-auto shrink-0 bg-white border-t border-pastel-border px-6 pt-2.5 flex justify-between items-center z-30 shadow-[0_-10px_40px_rgba(160,130,100,0.06)] js-hide">
         <button onclick="switchTab('dashboard')" id="navDashboard" class="flex flex-col items-center text-pastel-accent w-12 nav-btn"><i class="fa-solid fa-house-chimney text-lg mb-1"></i><span class="text-[10px] font-bold">首頁</span></button>
         <button onclick="switchTab('transactions')" id="navTransactions" class="flex flex-col items-center text-pastel-muted w-12 nav-btn"><i class="fa-solid fa-list-ul text-lg mb-1"></i><span class="text-[10px] font-bold">明細</span></button>
-        <button onclick="switchTab('add')" id="navAdd" aria-label="新增" class="relative -mt-10 nav-btn tactile">
-            <div id="addBtnInner" class="w-16 h-16 bg-pastel-accent text-white rounded-full flex items-center justify-center shadow-soft border-[6px] border-[#FBF2E6] transition-all duration-300"><i class="fa-solid fa-plus text-3xl"></i></div>
+        <button onclick="switchTab('add')" id="navAdd" aria-label="新增" class="relative -mt-11 nav-btn tactile">
+            <div id="addBtnInner" class="w-16 h-16 bg-pastel-accent text-white rounded-full flex items-center justify-center border-[4px] border-[#FBF2E6] shadow-[0_6px_20px_rgba(248,160,72,0.42)] transition-all duration-300"><i class="fa-solid fa-plus text-3xl"></i></div>
         </button>
         <button onclick="switchTab('stats')" id="navStats" class="flex flex-col items-center text-pastel-muted w-12 nav-btn"><i class="fa-solid fa-chart-pie text-lg mb-1"></i><span class="text-[10px] font-bold">圖表</span></button>
         <button onclick="switchTab('settings')" id="navSettings" class="flex flex-col items-center text-pastel-muted w-12 nav-btn"><i class="fa-solid fa-user-group text-lg mb-1"></i><span class="text-[10px] font-bold">設定</span></button>
@@ -353,7 +357,7 @@
        ========================================================== */
 
     const CONFIG = {
-        VERSION: 'v4.9.1',
+        VERSION: 'v4.9.2',
         // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
         API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         DEMO: false
@@ -443,7 +447,7 @@
         }
     };
 
-    let STATE = { familyName: '', members: [], categories: [], tags: [], transactions: [], rules: [], budgets: [], intents: [], goals: [], me: null, poolInitial: 0 };
+    let STATE = { familyName: '', members: [], categories: [], tags: [], transactions: [], rules: [], budgets: [], intents: [], goals: [], achievements: [], cheers: [], me: null, poolInitial: 0 };
 
 /* 記住上次選擇：零記帳習慣的人，每次重選帳戶與歸屬是最容易讓人放棄的摩擦 */
 const PREF = {
@@ -461,6 +465,7 @@ let addState = { mode: 'expense', expr: '0', cat: '', tag: '', nature: '', date:
     let editingTxnId = null;
     let viewYM = currentYM();
     let filters = { type: 'all', natures: [], cats: [], tags: [], min: '', max: '', q: '', allTime: false };
+    let statsRange = 'month';        // 'week' | 'month' | 'year'
 
 /* 分類顏色：讓每個分類有自己的識別色，明細與圖表一致 */
 const FALLBACK_HEX = ['#F8A048', '#3090F8', '#40B868', '#F0A8B0', '#F8C850', '#88D8F8', '#A084E8', '#F05838'];
@@ -998,7 +1003,7 @@ function hexA(hex, a) {
     /* 統一正規化：只要有任何一個陣列欄位是 undefined（例如後端尚未部署新版），
        整個 App 就會在渲染時崩潰。與其在 17 個取用點各加防護，
        不如在資料進入的唯一入口一次補齊。 */
-    const STATE_ARRAYS = ['members', 'categories', 'tags', 'transactions', 'rules', 'budgets', 'intents', 'goals'];
+    const STATE_ARRAYS = ['members', 'categories', 'tags', 'transactions', 'rules', 'budgets', 'intents', 'goals', 'achievements', 'cheers'];
     function normalizeState() {
         STATE_ARRAYS.forEach(k => { if (!Array.isArray(STATE[k])) STATE[k] = []; });
         STATE.poolInitial = Number(STATE.poolInitial) || 0;
@@ -1008,7 +1013,7 @@ function hexA(hex, a) {
         const d = await api.call('bootstrap');
         Object.assign(STATE, {
             familyName: d.familyName, members: d.members, categories: d.categories,
-            tags: d.tags, transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], goals: d.goals || [], poolInitial: d.poolInitial
+            tags: d.tags, transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], goals: d.goals || [], achievements: d.achievements || [], cheers: d.cheers || [], poolInitial: d.poolInitial
         });
         normalizeState();
         STATE.me = STATE.members.find(m => m.member_id === AUTH.memberId);
@@ -1031,6 +1036,72 @@ function hexA(hex, a) {
 
     function renderAll() { renderDashboard(); renderTransactions(); initAddForm(); renderStats(); renderSettings(); }
     function renderDataViews() { renderDashboard(); renderTransactions(); renderStats(); updateLevelDisplays(); checkNewAchievements(); }
+
+    /* ==========================================================
+       家庭互動：打氣 + 動態廣播
+       ========================================================== */
+    const CHEER_MSGS = ['一起加油！', '想你的帳本了', '今天也記一筆吧', '別讓連續天數斷掉！', '我們一起撐住'];
+
+    function daysSince(iso) {
+        if (!iso) return 999;
+        const d = new Date(String(iso).slice(0, 10) + 'T00:00:00');
+        return Math.round((new Date(todayISO() + 'T00:00:00') - d) / 86400000);
+    }
+    /** 超過 2 天沒記帳，連續天數快斷了 */
+    function needsCheer(m) {
+        return m.member_id !== 'family_pool' && m.member_id !== STATE.me?.member_id &&
+            m.status !== '停用' && daysSince(m.last_entry_date) >= 2;
+    }
+    function cheeredToday(toId) {
+        const cut = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+        return (STATE.cheers || []).some(c => c.from_member === STATE.me?.member_id &&
+            c.to_member === toId && String(c.created_at).slice(0, 10) >= cut);
+    }
+    async function sendCheer(toId) {
+        const msg = CHEER_MSGS[Math.floor(Math.random() * CHEER_MSGS.length)];
+        buzz(14);
+        const local = { cheer_id: 'tmp' + Math.random(), from_member: STATE.me.member_id, to_member: toId, message: msg, created_at: localStamp() };
+        STATE.cheers.push(local);
+        renderSettings(); renderDashboard(); toast(`已幫 ${nameOf(toId)} 加油：${msg}`);
+        try { await api.call('sendCheer', { to_member: toId, message: msg }); }
+        catch (e) {
+            STATE.cheers = STATE.cheers.filter(c => c.cheer_id !== local.cheer_id);
+            renderSettings(); renderDashboard(); toast(e.message, true);
+        }
+    }
+
+    /** 家庭動態：近期成就解鎖與打氣，合併後依時間排序 */
+    function familyFeed(limit) {
+        const feed = [];
+        (STATE.achievements || []).forEach(a => feed.push({
+            kind: 'ach', at: String(a.unlocked_at || ''), member: a.member_id,
+            icon: a.ach_icon || 'fa-trophy', text: `解鎖了「${a.ach_name || a.ach_id}」成就`
+        }));
+        (STATE.cheers || []).forEach(c => feed.push({
+            kind: 'cheer', at: String(c.created_at || ''), member: c.from_member,
+            icon: 'fa-hand-fist', text: `幫 ${nameOf(c.to_member)} 加油：${c.message || ''}`
+        }));
+        return feed.sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit || 6);
+    }
+    function familyFeedCard() {
+        const feed = familyFeed(6);
+        if (!feed.length) return '';
+        return `<div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-sm space-y-3">
+            <div class="text-sm font-bold text-stone-800"><i class="fa-solid fa-bullhorn text-pastel-accent mr-1.5"></i>家庭動態</div>
+            ${feed.map(f => {
+            const m = STATE.members.find(x => x.member_id === f.member);
+            const lv = getLevelInfo(m?.streak_days);
+            return `<div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-full border-2 ${lv.border} ${lv.bg} overflow-hidden flex items-center justify-center text-xs flex-shrink-0">${avatarInner(m?.avatar_emoji)}</div>
+                    <div class="min-w-0 flex-1">
+                        <div class="text-sm text-stone-700 truncate"><b class="text-stone-800">${esc(nameOf(f.member))}</b> ${esc(f.text)}</div>
+                        <div class="text-[10px] text-pastel-muted">${esc(String(f.at).slice(0, 10))}</div></div>
+                    <div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${f.kind === 'ach' ? 'bg-pastel-yellowLight text-[#D9A216]' : 'bg-pastel-accentLight text-pastel-accent'}">
+                        <i class="fa-solid ${esc(f.icon)} text-xs"></i></div>
+                </div>`;
+        }).join('')}
+        </div>`;
+    }
 
     /* ---------- 記帳完成微互動：金幣飛向大頭貼 ---------- */
     function coinFly() {
@@ -1066,7 +1137,8 @@ function hexA(hex, a) {
         if (!localStorage.getItem(initKey)) {
             localStorage.setItem(initKey, '1');
             localStorage.setItem(achKey(), JSON.stringify(doneIds));
-            return;   // 第一次載入不慶祝既有成就
+            syncAchievements(list.filter(a => a.done));   // 補寫既有成就，但不慶祝
+            return;
         }
         let seen = [];
         try { seen = JSON.parse(localStorage.getItem(achKey()) || '[]'); } catch (e) { }
@@ -1074,7 +1146,20 @@ function hexA(hex, a) {
         if (fresh.length) {
             localStorage.setItem(achKey(), JSON.stringify(doneIds));
             celebrate(list.find(a => a.id === fresh[0]));
+            syncAchievements(list.filter(a => fresh.includes(a.id)));
         }
+    }
+
+    /* 成就狀態寫回後端，家人才看得到彼此的里程碑。
+       後端以 member_id|ach_id 去重，重複呼叫是安全的。 */
+    async function syncAchievements(items) {
+        if (!items || !items.length) return;
+        try {
+            const r2 = await api.call('unlockAchievement', {
+                items: items.map(a => ({ id: a.id, name: a.name, icon: a.icon }))
+            });
+            if (r2.achievements) { STATE.achievements = r2.achievements; renderDashboard(); }
+        } catch (e) { /* 失敗不影響本機顯示，下次開 App 會再試 */ }
     }
 
     function celebrate(a) {
@@ -1102,7 +1187,7 @@ function hexA(hex, a) {
     async function refreshData() {
         try {
             const d = await api.call('bootstrap');
-            Object.assign(STATE, { transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], goals: d.goals || [], categories: d.categories, tags: d.tags, members: d.members });
+            Object.assign(STATE, { transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], goals: d.goals || [], achievements: d.achievements || [], cheers: d.cheers || [], categories: d.categories, tags: d.tags, members: d.members });
             normalizeState();
             STATE.me = STATE.members.find(m => m.member_id === AUTH.memberId) || STATE.me;
             renderDataViews(); renderSettings(); toast('已同步');
@@ -1249,6 +1334,9 @@ function hexA(hex, a) {
                         <div class="bg-pastel-greenLight border border-pastel-green/20 p-3 rounded-tile min-w-0"><div class="text-xs text-pastel-green mb-1">公帳欠我</div>
                             <div class="font-bold text-pastel-green text-lg font-rounded truncate">+${fmt(s.poolOwesMe)}</div></div>
                     </div>
+                    <div class="flex justify-between items-center mt-3 pt-3 border-t border-dashed border-pastel-border">
+                        <span class="text-sm font-bold text-stone-700">淨資產</span>
+                        <span class="text-lg font-bold font-rounded text-stone-800">${fmt(net)}</span></div>
                 </div>
                 <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-sm">
                     <div class="flex justify-between items-center text-xs mb-3 pb-2 border-b border-pastel-border">
@@ -1265,6 +1353,7 @@ function hexA(hex, a) {
                 ${budgetHero(s)}
                 <!-- 第二層：待辦 -->
                 ${todoCard()}
+                ${familyFeedCard()}
 
                 <!-- 第三層：模組區 -->
                 <h3 class="text-sm font-bold text-stone-800 ml-1">公帳資金狀況</h3>
@@ -1361,7 +1450,7 @@ function hexA(hex, a) {
 
         if (!total) {
             return `<div class="rounded-card shadow-card overflow-hidden border border-dashed border-pastel-accent/50 bg-white">
-                <button onclick="openBudgetSheet()" class="w-full text-left p-5 flex items-center gap-4 tactile">
+                <button onclick="openBudgetSheet()" class="w-full text-left p-5 flex items-center gap-4 tactile-card">
                     <img src="./av48.png" alt="" class="w-12 h-12 flex-shrink-0">
                     <div class="min-w-0"><div class="font-bold text-sm text-stone-800">設定${isFam ? '公帳' : '每月'}預算</div>
                     <div class="text-xs text-pastel-muted mt-0.5">知道「還能花多少」，比知道「花了多少」更有用</div></div>
@@ -1374,9 +1463,6 @@ function hexA(hex, a) {
         const n = daysInYM(currentYM()), day = Number(todayISO().slice(8, 10));
         const daily = Math.max(left, 0) / Math.max(n - day + 1, 1);
         const mood = getMascotState(used / total * 100, s.monthlyExpense > 0 || s.monthlyIncome > 0);
-        const secondary = isFam
-            ? [['公帳餘額', fmt(s.poolBalance)], ['本月收入', fmt(s.monthlyIncome)]]
-            : [['淨資產', fmt(s.cashBalance + s.poolOwesMe - s.iOweOthers)], ['本月收入', fmt(s.monthlyIncome)]];
 
         return `<div class="rounded-card shadow-md overflow-hidden">
             <div onclick="openBudgetSheet()" class="relative p-5 text-white"
@@ -1391,12 +1477,8 @@ function hexA(hex, a) {
                         <span class="num-sym text-2xl">$</span><span data-count="${Math.abs(left)}" data-pre="${over ? '-' : ''}">0</span></div>
                     <div class="w-full bg-white/25 rounded-full h-2.5 overflow-hidden mb-1.5 max-w-[62%]">
                         <div class="bg-white h-2.5 rounded-full transition-all duration-700" style="width:${pct}%"></div></div>
-                    <div class="text-[11px] opacity-90 mb-3">每日可用 ${fmt(daily)} ・ 已花 ${fmt(used)} / ${fmt(total)}</div>
-
-                    <div class="flex items-center gap-4 pt-3 border-t border-white/25 text-[11px]">
-                        ${secondary.map(([l, v]) => `<span class="opacity-85">${l} <b class="font-rounded text-sm ml-0.5">${v}</b></span>`).join('<span class="opacity-40">·</span>')}
-                    </div>
-                    <div class="text-[11px] opacity-85 mt-1.5">${esc(mood.word)}</div>
+                    <div class="text-[11px] opacity-90 mb-2">每日可用 ${fmt(daily)} ・ 已花 ${fmt(used)} / ${fmt(total)}</div>
+                    <div class="text-[11px] opacity-85 font-bold">${esc(mood.word)}</div>
                 </div>
             </div>
             ${lower}</div>`;
@@ -1687,7 +1769,7 @@ function hexA(hex, a) {
         const done = saved >= g.target_amount && g.target_amount > 0;
         const pct = g.target_amount ? Math.min(saved / g.target_amount * 100, 100) : 0;
         return `<div class="snap-i flex-shrink-0 w-full px-0.5">
-            <div class="bg-white border border-pastel-border/60 rounded-card shadow-sm p-4 space-y-3">
+            <div class="bg-white border border-pastel-border/60 rounded-card shadow-sm p-4 space-y-3 tactile-card">
                 <!-- 罐子與數字並排：罐子仍是主角，但卡片高度比置中版少約三分之一 -->
                 <div class="flex items-center gap-4">
                     <button onclick="openGoalDetail('${esc(g.goal_id)}')" class="relative w-[100px] h-[128px] flex-shrink-0">
@@ -1735,7 +1817,7 @@ function hexA(hex, a) {
             <h3 class="text-sm font-bold text-stone-800 ml-1"><i class="fa-solid fa-piggy-bank text-pastel-accent mr-1.5"></i>存錢罐${list.length > 1 ? `<span class="text-pastel-muted font-normal ml-1.5 text-xs">${list.length} 個</span>` : ''}</h3>
             <button onclick="openGoalSheet()" class="text-xs font-bold text-pastel-accent">新增目標</button></div>`;
         if (!list.length) return `${head}
-            <button onclick="openGoalSheet()" class="w-full text-left bg-white border border-dashed border-pastel-accent/50 rounded-card p-5 shadow-card flex items-center gap-4 tactile">
+            <button onclick="openGoalSheet()" class="w-full text-left bg-white border border-dashed border-pastel-accent/50 rounded-card p-5 shadow-card flex items-center gap-4 tactile-card">
                 <img src="./av2.png" alt="" class="w-12 h-12 flex-shrink-0">
                 <div class="min-w-0"><div class="font-bold text-sm text-stone-800">建立第一個存錢目標</div>
                 <div class="text-xs text-pastel-muted mt-0.5">每次存入都會投一枚印著你頭像的籌碼</div></div>
@@ -1768,6 +1850,7 @@ function hexA(hex, a) {
             <p class="text-xs text-pastel-muted mb-5">${mine ? '' : `只有建立者 ${esc(nameOf(g.owner_id))} 可以編輯或刪除`}</p>
             <div class="space-y-2.5">
                 ${item('fa-list-ul', '投入明細', `openGoalDetail('${esc(id)}')`)}
+                ${mine ? item('fa-arrow-up-from-bracket', '中途提取', `openWithdraw('${esc(id)}')`) : ''}
                 ${mine ? item('fa-pen', '編輯目標', `openGoalSheet('${esc(id)}')`) : ''}
                 ${mine ? item('fa-flag-checkered', '歸銷結案', `openCloseGoal('${esc(id)}')`) : ''}
                 ${mine ? item('fa-trash', '刪除目標', `deleteGoal('${esc(id)}')`, 'text-pastel-red') : ''}
@@ -1820,8 +1903,8 @@ function hexA(hex, a) {
                 <div class="text-xs font-bold text-stone-600 mb-2">劃撥紀錄</div>
                 <div class="space-y-2">
                 ${deps.length ? deps.map(t => `
-                    <div class="flex justify-between items-center bg-pastel-bg rounded-tile px-3 py-2.5 border border-pastel-border">
-                        <div class="min-w-0"><div class="text-sm font-bold text-stone-800 truncate">${esc(nameOf(t.payer_id))}${t.settle_member_id === 'RELEASE' ? '（結案釋出）' : ''}</div>
+                    <div class="flex justify-between items-center bg-pastel-bg rounded-tile px-3 py-3 border border-pastel-border">
+                        <div class="min-w-0"><div class="text-sm font-bold text-stone-800 truncate">${esc(nameOf(t.payer_id))}${t.settle_member_id === 'RELEASE' ? (String(t.note).indexOf('結案') === 0 ? '（結案釋出）' : '（提取）') : ''}</div>
                         <div class="text-[10px] text-pastel-muted">${esc(t.date)} ・ ${esc(t.tag || '—')}</div></div>
                         <div class="font-bold font-rounded flex-shrink-0 ml-2 ${t.settle_member_id === 'RELEASE' ? 'text-pastel-muted' : 'text-pastel-green'}">${t.settle_member_id === 'RELEASE' ? '-' : '+'}${fmt(t.amount)}</div>
                     </div>`).join('') : '<div class="text-[11px] text-pastel-muted">尚無劃撥</div>'}
@@ -1831,13 +1914,16 @@ function hexA(hex, a) {
             ${spends.length ? `<div class="mb-5">
                 <div class="text-xs font-bold text-stone-600 mb-2">貼標花費（會自動扣抵保留額）</div>
                 <div class="space-y-2">${spends.map(t => `
-                    <div class="flex justify-between items-center bg-pastel-bg rounded-tile px-3 py-2.5 border border-pastel-border">
+                    <div class="flex justify-between items-center bg-pastel-bg rounded-tile px-3 py-3 border border-pastel-border">
                         <div class="min-w-0"><div class="text-sm font-bold text-stone-800 truncate">${esc(t.note || t.category || '—')}</div>
                         <div class="text-[10px] text-pastel-muted">${esc(t.date)} ・ ${esc(nameOf(t.payer_id))}</div></div>
                         <div class="font-bold font-rounded text-pastel-red flex-shrink-0 ml-2">-${fmt(t.amount)}</div>
                     </div>`).join('')}</div></div>` : ''}
 
-            <button onclick="closeSheet();setTimeout(()=>openDeposit('${esc(id)}'),320)" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile"><i class="fa-solid fa-coins mr-1.5"></i>存入劃撥</button>`);
+            <div class="grid grid-cols-2 gap-2">
+                <button onclick="closeSheet();setTimeout(()=>openDeposit('${esc(id)}'),320)" class="py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile"><i class="fa-solid fa-coins mr-1.5"></i>存入</button>
+                <button onclick="closeSheet();setTimeout(()=>openWithdraw('${esc(id)}'),320)" class="py-4 bg-pastel-bg border border-pastel-border text-stone-600 font-bold rounded-tile text-sm tactile"><i class="fa-solid fa-arrow-up-from-bracket mr-1.5"></i>提取</button>
+            </div>`);
     }
 
     const GOAL_ICONS = ['fa-piggy-bank', 'fa-plane', 'fa-house', 'fa-car', 'fa-mobile-screen', 'fa-graduation-cap',
@@ -1973,6 +2059,46 @@ function hexA(hex, a) {
             related_id: id, member_id: STATE.me.member_id, payer_id: STATE.me.member_id
         }, null, '已投入籌碼');
         coinFly();
+    }
+
+    /* ---------- 中途提取 ----------
+       與存入共用同一套寫入邏輯：一樣是 entry_type='劃撥儲蓄'，
+       只是以 settle_member_id='RELEASE' 標記為負向，保留額因此減少。
+       提取不是支出，錢只是從「保留」變回「可支配」。 */
+    function openWithdraw(id) {
+        const g = goalById(id); if (!g) return;
+        const reserved = goalReserved(id);
+        openSheet(`
+            <h3 class="text-lg font-bold text-stone-800 mb-1">從「${esc(g.name)}」提取</h3>
+            <p class="text-xs text-pastel-muted mb-5">目前可提取的保留額 ${fmt(reserved)}</p>
+            <div class="space-y-4">
+                <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">提取金額</label>
+                    <input id="wdAmt" type="number" inputmode="decimal" value="" placeholder="0"
+                        class="w-full p-3.5 rounded-tile bg-pastel-accentLight border-2 border-pastel-accent/40 text-stone-800 font-bold text-2xl font-rounded"></div>
+                <div class="flex gap-2">
+                    ${[Math.round(reserved / 2), reserved].filter((v, i, a) => v > 0 && a.indexOf(v) === i)
+                .map(v => `<button onclick="document.getElementById('wdAmt').value=${v}" class="flex-1 py-2 rounded-xl bg-pastel-bg border border-pastel-border text-xs font-bold text-stone-600 tactile">${fmt(v)}</button>`).join('')}
+                </div>
+                <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">原因（選填）</label>
+                    <input id="wdNote" placeholder="例如：臨時需要用錢" class="w-full p-3.5 rounded-tile bg-pastel-bg border border-pastel-border text-sm"></div>
+                <p class="text-[11px] text-pastel-muted leading-relaxed">提取不會被算成支出，只是把這筆錢從「保留」變回「可支配」。籌碼與紀錄都會保留。</p>
+                <button onclick="doWithdraw('${esc(id)}', ${reserved})" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile"><i class="fa-solid fa-arrow-up-from-bracket mr-1.5"></i>確認提取</button>
+            </div>`);
+    }
+    async function doWithdraw(id, reserved) {
+        const g = goalById(id); if (!g) return;
+        const amt = Number(document.getElementById('wdAmt').value);
+        if (!amt || amt <= 0) { buzz(30); return toast('請輸入金額', true); }
+        if (amt > reserved + 0.01) { buzz(30); return toast(`不能超過可提取的 ${fmt(reserved)}`, true); }
+        const note = document.getElementById('wdNote').value;
+        closeSheet();
+        await optimisticAdd({
+            date: todayISO(), entry_type: '劃撥儲蓄', category: '',
+            tag: PREF.get('tag', '') || (STATE.tags[0]?.item_name || ''), amount: amt,
+            note: note || `提取：${g.name}`, nature: g.scope === 'family' ? '家庭公帳' : '純個人',
+            related_id: id, member_id: STATE.me.member_id, payer_id: STATE.me.member_id,
+            settle_member_id: 'RELEASE'
+        }, null, '已提取');
     }
 
     /* ---------- 結案 ---------- */
@@ -2116,74 +2242,128 @@ function hexA(hex, a) {
          · 剩餘預算：從月總預算開始倒扣的下降線
        只要「剩餘預算線」始終在「支出累計線」上方就代表安全；
        兩線交叉的那一天，就是花費開始吃掉安全邊際的轉折點。 */
+    /* ---------- 期間分桶 ----------
+       週：本週一到今天，每天一桶
+       月：該月每天一桶（本月只畫到今天）
+       年：該年每月一桶（今年只畫到本月）
+       圖表的所有計算都改吃這組桶，才能一次支援三種區間。 */
+    function rangeBuckets(range, ym) {
+        const t = todayISO();
+        const rows0 = activeTxnsScoped();
+        const push = (arrI, arrE, idx, tx) => {
+            if (idx < 0) return;
+            if (tx.entry_type === '收入' || tx.entry_type === '注資') arrI[idx] += Number(tx.amount);
+            if (tx.entry_type === '支出') arrE[idx] += Number(tx.amount);
+        };
+        if (range === 'week') {
+            const ws = weekStartISO();
+            const n = 7, inc = Array(n).fill(0), exp = Array(n).fill(0);
+            const last = Math.min(Math.round((new Date(t + 'T00:00:00') - new Date(ws + 'T00:00:00')) / 86400000) + 1, 7);
+            rows0.filter(x => x.date >= ws).forEach(x => {
+                const i = Math.round((new Date(x.date + 'T00:00:00') - new Date(ws + 'T00:00:00')) / 86400000);
+                if (i >= 0 && i < n) push(inc, exp, i, x);
+            });
+            return { n, last, inc, exp, labels: ['一', '二', '三', '四', '五', '六', '日'], title: '本週', unit: '天',
+                     inRange: x => x.date >= ws, periods: 7 };
+        }
+        if (range === 'year') {
+            const y = ym.slice(0, 4), n = 12, inc = Array(n).fill(0), exp = Array(n).fill(0);
+            const last = y === t.slice(0, 4) ? Number(t.slice(5, 7)) : 12;
+            rows0.filter(x => String(x.date).slice(0, 4) === y).forEach(x => push(inc, exp, Number(x.date.slice(5, 7)) - 1, x));
+            return { n, last, inc, exp, labels: Array.from({ length: 12 }, (_, i) => `${i + 1}`), title: `${y} 年`, unit: '月',
+                     inRange: x => String(x.date).slice(0, 4) === y, periods: 12 };
+        }
+        const n = daysInYM(ym), inc = Array(n).fill(0), exp = Array(n).fill(0);
+        const last = ym === currentYM() ? Math.min(Number(t.slice(8, 10)), n) : n;
+        rows0.filter(x => inMonth(x.date, ym)).forEach(x => push(inc, exp, Number(x.date.slice(8, 10)) - 1, x));
+        return { n, last, inc, exp, labels: null, title: `${ym.slice(0, 4)} 年 ${Number(ym.slice(5, 7))} 月`, unit: '日',
+                 inRange: x => inMonth(x.date, ym), periods: n };
+    }
+    /** 依目前模式篩出可用交易（不限月份） */
+    function activeTxnsScoped() {
+        const meId = STATE.me?.member_id;
+        const rows = activeTxns();
+        return currentMode === 'personal' ? rows.filter(t => t.payer_id === meId)
+            : rows.filter(t => FAMILY_NATURES.includes(t.nature));
+    }
+    /** 該區間的預算額度（月預算按比例換算） */
+    function rangeBudget(range, ym) {
+        const b = budgetFor(currentMode, '');
+        if (!b) return 0;
+        if (range === 'week') return b / daysInYM(currentYM()) * 7;
+        if (range === 'year') return b * 12;
+        return b;
+    }
+
     function comboChartHtml(ym) {
-        const rows = scopedTxns(ym), n = daysInYM(ym);
-        const isCur = ym === currentYM();
-        const last = isCur ? Math.min(Number(todayISO().slice(8, 10)), n) : n;
-        const inc = Array(n).fill(0), exp = Array(n).fill(0);
-        rows.forEach(t => {
-            const d = Number(String(t.date).slice(8, 10)) - 1;
-            if (d < 0 || d >= n) return;
-            if (t.entry_type === '收入' || t.entry_type === '注資') inc[d] += Number(t.amount);
-            if (t.entry_type === '支出') exp[d] += Number(t.amount);
-        });
+        const B = rangeBuckets(statsRange, ym);
+        const { n, last } = B;
         let ci = 0, ce = 0;
-        const cumI = inc.map(v => (ci += v)).slice(0, last);
-        const cumE = exp.map(v => (ce += v)).slice(0, last);
-        const dayExp = exp.slice(0, last);
+        const cumI = B.inc.map(v => (ci += v)).slice(0, last);
+        const cumE = B.exp.map(v => (ce += v)).slice(0, last);
+        const dayExp = B.exp.slice(0, last);
         const totalI = cumI.length ? cumI[cumI.length - 1] : 0;
         const totalE = cumE.length ? cumE[cumE.length - 1] : 0;
-        if (!totalI && !totalE) return `<div class="flex flex-col items-center py-8 gap-2"><img src="./av14.png" alt="" class="w-14 h-14 opacity-70"><span class="text-xs text-pastel-muted">這個月還沒有資料</span></div>`;
+        if (!totalI && !totalE) return `<div class="flex flex-col items-center py-8 gap-2"><img src="./av14.png" alt="" class="w-14 h-14 opacity-70"><span class="text-xs text-pastel-muted">這個區間還沒有資料</span></div>`;
 
-        const budget = budgetFor(currentMode, '');
-        const remain = budget ? cumE.map(v => budget - v) : [];      // 預算倒扣
-        const W = 320, H = 150, L = 8, R = 8, T = 12, B = 128;       // 單一繪圖區，共用基準線 B
-        const pw = W - L - R, ph = B - T;
+        const budget = rangeBudget(statsRange, ym);
+        const remain = budget ? cumE.map(v => budget - v) : [];
+        const W = 320, H = 150, L = 8, R = 8, T = 12, Bt = 128;
+        const pw = W - L - R, ph = Bt - T;
         const maxV = Math.max(totalI, totalE, budget, 1);
         const x = i => L + (n === 1 ? pw / 2 : (i / (n - 1)) * pw);
-        const y = v => B - (Math.max(v, 0) / maxV) * ph;
+        const y = v => Bt - (Math.max(v, 0) / maxV) * ph;
         const pts = a => a.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
-
-        // 每日支出小柱：從基準線長出，最高只佔繪圖區 26%，不搶走折線的視覺
         const maxBar = Math.max(...dayExp, 1);
         const bw = Math.max(pw / n - 1.2, 1.4);
         const bars = dayExp.map((v, i) => {
             const hh = v > 0 ? Math.max((v / maxBar) * ph * 0.26, 2) : 0;
-            return hh ? `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${(B - hh).toFixed(1)}" width="${bw.toFixed(1)}" height="${hh.toFixed(1)}" rx="${Math.min(bw / 2, 1.6).toFixed(1)}" fill="#F8A048" opacity=".55"/>` : '';
+            return hh ? `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${(Bt - hh).toFixed(1)}" width="${bw.toFixed(1)}" height="${hh.toFixed(1)}" rx="${Math.min(bw / 2, 1.6).toFixed(1)}" fill="#F8A048" opacity=".55"/>` : '';
         }).join('');
-
-        // 兩線交叉點（剩餘預算 < 支出累計 的第一天）
-        let crossDay = 0;
-        if (budget) for (let i = 0; i < remain.length; i++) if (remain[i] < cumE[i]) { crossDay = i + 1; break; }
-        const crossMark = crossDay ? `<line x1="${x(crossDay - 1)}" y1="${T}" x2="${x(crossDay - 1)}" y2="${B}" stroke="#F05838" stroke-width="1" stroke-dasharray="2 3" opacity=".6"/>` : '';
-
-        const pace = last ? totalE / last * n : 0;                   // 依目前速度推估月底
+        let crossAt = 0;
+        if (budget) for (let i = 0; i < remain.length; i++) if (remain[i] < cumE[i]) { crossAt = i + 1; break; }
+        const crossMark = crossAt ? `<line x1="${x(crossAt - 1)}" y1="${T}" x2="${x(crossAt - 1)}" y2="${Bt}" stroke="#F05838" stroke-width="1" stroke-dasharray="2 3" opacity=".6"/>` : '';
+        const pace = last ? totalE / last * n : 0;
         const over = budget && pace > budget;
+        const tick = i => B.labels ? B.labels[i] : `${i + 1}`;
+        const endLabel = statsRange === 'week' ? '日' : statsRange === 'year' ? '12 月' : `${n}日`;
 
         return `
         <svg viewBox="0 0 ${W} ${H}" class="w-full" style="height:150px" preserveAspectRatio="none">
-            <line x1="${L}" y1="${B}" x2="${W - R}" y2="${B}" stroke="#E7D9C6" stroke-width="1.2"/>
+            <line x1="${L}" y1="${Bt}" x2="${W - R}" y2="${Bt}" stroke="#E7D9C6" stroke-width="1.2"/>
             <line x1="${L}" y1="${T + ph / 2}" x2="${W - R}" y2="${T + ph / 2}" stroke="#F3E7D8" stroke-width="1" stroke-dasharray="3 4"/>
-            ${crossMark}
-            ${bars}
+            ${crossMark}${bars}
             ${budget ? `<polyline points="${pts(remain)}" fill="none" stroke="#3090F8" stroke-width="2" stroke-dasharray="5 3" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
             <polyline points="${pts(cumI)}" fill="none" stroke="#40B868" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
             <polyline points="${pts(cumE)}" fill="none" stroke="#F05838" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
         </svg>
-        <div class="flex justify-between text-[10px] text-pastel-muted px-1 mt-1"><span>1日</span><span>${Math.ceil(n / 2)}日</span><span>${n}日${isCur ? `（今天 ${last} 日）` : ''}</span></div>
+        <div class="flex justify-between text-[10px] text-pastel-muted px-1 mt-1">
+            <span>${tick(0)}${B.labels ? '' : '日'}</span><span>${tick(Math.ceil(n / 2) - 1)}${B.labels ? '' : '日'}</span>
+            <span>${endLabel}${last < n ? `（目前第 ${last} ${B.unit}）` : ''}</span></div>
         <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 mt-3 pt-3 border-t border-pastel-border text-[11px]">
             <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 rounded bg-pastel-green"></span>收入累計 <b class="font-rounded">${fmt(totalI)}</b></span>
             <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 rounded bg-pastel-red"></span>支出累計 <b class="font-rounded">${fmt(totalE)}</b></span>
-            <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-sm bg-pastel-accent opacity-60"></span>每日支出</span>
+            <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-sm bg-pastel-accent opacity-60"></span>每${B.unit}支出</span>
             ${budget ? `<span class="flex items-center gap-1.5"><span class="w-3 h-0.5 rounded" style="background:repeating-linear-gradient(90deg,#3090F8 0 4px,transparent 4px 7px)"></span>剩餘預算 <b class="font-rounded">${fmt(budget - totalE)}</b></span>` : '<span></span>'}
         </div>
-        ${budget ? `<div class="mt-2.5 px-3 py-2 rounded-tile text-[11px] font-bold leading-relaxed ${crossDay || over ? 'bg-pastel-redLight text-pastel-red' : 'bg-pastel-greenLight text-pastel-green'}">
-            <i class="fa-solid ${crossDay || over ? 'fa-triangle-exclamation' : 'fa-circle-check'} mr-1.5"></i>
-            ${crossDay
-                ? `第 ${crossDay} 天起剩餘預算已低於支出累計，安全邊際正在被吃掉`
-                : '剩餘預算線始終在支出累計線上方，節奏安全'}
-            <br>依目前速度推估月底約 ${fmt(pace)}${over ? `，將超出預算 ${fmt(pace - budget)}` : `，預算內還有 ${fmt(budget - pace)} 空間`}
+        ${budget ? `<div class="mt-2.5 px-3 py-2 rounded-tile text-[11px] font-bold leading-relaxed ${crossAt || over ? 'bg-pastel-redLight text-pastel-red' : 'bg-pastel-greenLight text-pastel-green'}">
+            <i class="fa-solid ${crossAt || over ? 'fa-triangle-exclamation' : 'fa-circle-check'} mr-1.5"></i>
+            ${crossAt ? `第 ${crossAt} ${B.unit}起剩餘預算已低於支出累計，安全邊際正在被吃掉` : '剩餘預算線始終在支出累計線上方，節奏安全'}
+            <br>依目前速度推估${B.title}結束約 ${fmt(pace)}${over ? `，將超出 ${fmt(pace - budget)}` : `，還有 ${fmt(budget - pace)} 空間`}
         </div>` : `<button onclick="openBudgetSheet()" class="w-full mt-2.5 py-2 rounded-tile bg-pastel-accentLight text-pastel-accent text-[11px] font-bold tactile">設定預算後，這裡會多一條倒扣線可對照</button>`}`;
+    }
+
+    /* 區間切換：週 / 月 / 年 */
+    function setStatsRange(r2) { statsRange = r2; buzz(); renderStats(); }
+    function rangeTabs() {
+        const B = rangeBuckets(statsRange, viewYM);
+        return `<div class="flex items-center gap-2">
+            <div class="flex bg-stone-200/40 p-1 rounded-tile flex-1">
+                ${[['week', '本週'], ['month', '月'], ['year', '年']].map(([v, l]) =>
+            `<button onclick="setStatsRange('${v}')" class="flex-1 py-2 rounded-xl text-xs font-bold transition-all tactile ${statsRange === v ? 'bg-white text-pastel-text shadow-sm' : 'text-pastel-muted'}">${l}</button>`).join('')}
+            </div>
+            ${statsRange === 'week' ? '' : `<button onclick="openMonthPicker()" class="px-3 h-10 rounded-tile bg-white border border-pastel-border text-xs font-bold text-stone-700 shadow-sm tactile whitespace-nowrap">${statsRange === 'year' ? viewYM.slice(0, 4) + ' 年' : esc(B.title)}<i class="fa-solid fa-caret-down text-pastel-muted text-[10px] ml-1.5"></i></button>`}
+        </div>`;
     }
 
     function monthNav() {
@@ -2276,7 +2456,9 @@ function hexA(hex, a) {
             <button onclick="clearAllFilters()" class="underline">清除</button></div>` : ''}`;
     }
 
-    /* 摘要壓成兩行，並加上月對比，讓它從「記錄」變成「回饋」 */
+    /* 摘要卡：深色滿版三欄。
+       主卡已經是橘色，明細頁若也用橘色兩頁視覺重心會撞在一起；
+       深色底讓這一頁有自己的識別，綠／紅金額在深底上對比也更強。 */
     function summaryStrip() {
         const rows = filters.allTime ? scopedTxns(null) : scopedTxns(viewYM);
         const inc = rows.filter(t => t.entry_type === '收入' || t.entry_type === '注資').reduce((a, b) => a + Number(b.amount), 0);
@@ -2288,24 +2470,19 @@ function hexA(hex, a) {
                 .reduce((a, b) => a + Number(b.amount), 0);
             if (prev > 0) {
                 const d = (exp - prev) / prev * 100;
-                cmp = `<span class="text-[11px] font-bold ${d <= 0 ? 'text-pastel-green' : 'text-pastel-red'}">
-                    <i class="fa-solid fa-arrow-${d <= 0 ? 'down' : 'up'} mr-1"></i>比上月${d <= 0 ? '少' : '多'}花 ${Math.abs(d).toFixed(0)}%</span>`;
+                cmp = `<div class="text-right text-[11px] font-bold mt-2 ${d <= 0 ? 'text-[#7BE0A5]' : 'text-[#FF9B85]'}">
+                    <i class="fa-solid fa-arrow-${d <= 0 ? 'down' : 'up'} mr-1"></i>比上月${d <= 0 ? '少' : '多'}花 ${Math.abs(d).toFixed(0)}%</div>`;
             }
         }
-        return `<div class="bg-white border border-pastel-border/60 rounded-card px-4 py-3 shadow-sm">
-            <div class="flex items-center gap-3">
-                <span class="text-[11px] text-pastel-muted">收入</span>
-                <span class="text-sm font-bold font-rounded text-pastel-green">+${fmt(inc)}</span>
-                <span class="w-px h-3 bg-pastel-border"></span>
-                <span class="text-[11px] text-pastel-muted">支出</span>
-                <span class="text-sm font-bold font-rounded text-pastel-red">-${fmt(exp)}</span>
-            </div>
-            <div class="flex items-center justify-between gap-3 mt-1.5 pt-1.5 border-t border-pastel-border">
-                <span class="flex items-center gap-3">
-                    <span class="text-[11px] text-pastel-muted">結餘</span>
-                    <span class="text-base font-bold font-rounded ${net >= 0 ? 'text-stone-800' : 'text-pastel-red'}">${net >= 0 ? '+' : '-'}${fmt(Math.abs(net))}</span></span>
-                ${cmp}
-            </div></div>`;
+        const cell = (label, val, cls, sign) => `<div class="flex-1 text-center min-w-0">
+            <div class="text-[10px] text-white/55 mb-1">${label}</div>
+            <div class="text-base font-bold font-rounded truncate ${cls}">${sign}${fmt(Math.abs(val))}</div></div>`;
+        return `<div class="rounded-card px-3 py-3.5 shadow-md" style="background:#3A3430">
+            <div class="flex items-center divide-x divide-white/10">
+                ${cell('收入', inc, 'text-[#7BE0A5]', '+')}
+                ${cell('支出', exp, 'text-[#FF9B85]', '-')}
+                ${cell('結餘', net, net >= 0 ? 'text-white' : 'text-[#FF9B85]', net >= 0 ? '' : '-')}
+            </div>${cmp}</div>`;
     }
 
     /* 滑動說明只顯示三次，學會之後就不再佔位 */
@@ -2390,8 +2567,10 @@ function hexA(hex, a) {
                 if (!active) return;
                 const ddx = x - x0, ddy = y - y0;
                 if (lock === null) {
-                    if (Math.abs(ddx - rest) < 8 && Math.abs(ddy) < 8) return;
-                    lock = Math.abs(ddx - rest) > Math.abs(ddy) * 1.2 ? 'h' : 'v';
+                    // 啟動距離 12px、水平必須是垂直的 1.8 倍才算橫滑。
+                    // 原本 8px / 1.2 倍太鬆，上下捲動時手指自然的斜向軌跡就會誤觸。
+                    if (Math.abs(ddx - rest) < 12 && Math.abs(ddy) < 12) return;
+                    lock = Math.abs(ddx - rest) > Math.abs(ddy) * 1.8 ? 'h' : 'v';
                     if (lock === 'v') { active = false; return; }
                     closeAllSwipes(wrap);
                 }
@@ -2512,7 +2691,8 @@ function hexA(hex, a) {
 
     function openTxnSheet(id) {
         const t = STATE.transactions.find(x => x.txn_id === id); if (!t) return;
-        const row = (k, v) => `<div class="flex justify-between py-2 border-b border-pastel-border text-sm"><span class="text-pastel-muted">${esc(k)}</span><span class="font-bold text-stone-800 text-right ml-3 truncate">${esc(v)}</span></div>`;
+        // 同類清單項目改用留白引導視覺，不再逐列畫線
+        const row = (k, v) => `<div class="flex justify-between py-3 text-sm"><span class="text-pastel-muted">${esc(k)}</span><span class="font-bold text-stone-800 text-right ml-3 truncate">${esc(v)}</span></div>`;
         openSheet(`
             <h3 class="text-lg font-bold text-stone-800 mb-4">${esc(t.note || t.category || '交易明細')}</h3>
             <div class="text-3xl font-bold font-rounded mb-4 ${t.entry_type === '支出' ? 'text-pastel-red' : 'text-pastel-green'}">${t.entry_type === '支出' ? '-' : '+'}${fmt(t.amount)}</div>
@@ -3143,16 +3323,26 @@ function hexA(hex, a) {
        圖表
        ========================================================== */
     function renderStats() {
-        const s = computeSummary(currentMode, viewYM);
-        const net = s.monthlyIncome - s.monthlyExpense;
+        // 圖表頁的所有數字都改吃「區間」而非固定單月
+        const B = rangeBuckets(statsRange, viewYM);
+        const rows = activeTxnsScoped().filter(B.inRange);
+        const inc = rows.filter(t => t.entry_type === '收入' || t.entry_type === '注資').reduce((a, b2) => a + Number(b2.amount), 0);
+        const exp = rows.filter(t => t.entry_type === '支出').reduce((a, b2) => a + Number(b2.amount), 0);
+        const catMap = {};
+        rows.filter(t => t.entry_type === '支出').forEach(t => { const k = t.category || '未分類'; catMap[k] = (catMap[k] || 0) + Number(t.amount); });
+        const s = Object.assign({}, computeSummary(currentMode, viewYM), {
+            monthlyIncome: inc, monthlyExpense: exp,
+            byCategory: Object.entries(catMap).sort((a, b2) => b2[1] - a[1])
+        });
+        const net = inc - exp;
         const top = s.byCategory.slice(0, 6), maxC = top.length ? top[0][1] : 1;
 
         document.getElementById('statsView').innerHTML = `
-            ${monthNav()}
+            ${rangeTabs()}
             <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-2">
                 <div class="flex justify-between items-center">
                     <h3 class="font-bold text-stone-800 text-sm">收支節奏分析</h3>
-                    <span class="text-[10px] text-pastel-muted">${esc(viewYM)}</span></div>
+                    <span class="text-[10px] text-pastel-muted">${esc(B.title)}</span></div>
                 <p class="text-[11px] text-pastel-muted -mt-1">三條線共用同一基準線：收入累計、支出累計、預算倒扣</p>
                 ${comboChartHtml(viewYM)}
             </div>
@@ -3160,7 +3350,7 @@ function hexA(hex, a) {
             <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-sm">
                 <div class="flex justify-between items-center mb-4">
                     <span class="text-sm font-bold text-stone-800">${currentMode === 'family' ? '公帳開銷占比' : '開銷占比'}</span>
-                    <span class="text-xs text-pastel-muted bg-pastel-bg px-2.5 py-1 rounded-full">${esc(viewYM)}</span></div>
+                    <span class="text-xs text-pastel-muted bg-pastel-bg px-2.5 py-1 rounded-full">${esc(B.title)}</span></div>
                 ${pieHtml(s.byCategory, s.monthlyExpense)}
             </div>
 
@@ -3174,11 +3364,11 @@ function hexA(hex, a) {
 
             <h2 class="text-sm font-bold text-stone-800 ml-1">白話財務三表</h2>
             <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-3">
-                <div class="font-bold text-sm text-stone-800 border-b border-pastel-border pb-3">1. 收支表（這個月賺多還花多？）</div>
+                <div class="font-bold text-sm text-stone-800 border-b border-pastel-border pb-3">1. 收支表（${esc(B.title)}賺多還花多？）</div>
                 <div class="space-y-2.5 text-sm">
                     <div class="flex justify-between text-stone-600"><span>總收入</span><span class="font-bold text-pastel-green font-rounded">+${fmt(s.monthlyIncome)}</span></div>
                     <div class="flex justify-between text-stone-600"><span>總支出</span><span class="font-bold text-pastel-red font-rounded">-${fmt(s.monthlyExpense)}</span></div>
-                    <div class="pt-2 border-t border-dashed border-pastel-border flex justify-between font-bold text-stone-800"><span>本月淨結餘</span><span class="${net >= 0 ? 'text-pastel-green' : 'text-pastel-red'} font-rounded">${net >= 0 ? '+' : ''}${fmt(net)}</span></div></div></div>
+                    <div class="pt-2 border-t border-dashed border-pastel-border flex justify-between font-bold text-stone-800"><span>區間淨結餘</span><span class="${net >= 0 ? 'text-pastel-green' : 'text-pastel-red'} font-rounded">${net >= 0 ? '+' : ''}${fmt(net)}</span></div></div></div>
 
             <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-3">
                 <div class="font-bold text-sm text-stone-800 border-b border-pastel-border pb-3">2. 資產負債表（現在身家多少？）</div>
@@ -3194,8 +3384,8 @@ function hexA(hex, a) {
             <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-3">
                 <div class="font-bold text-sm text-stone-800 border-b border-pastel-border pb-3">3. 現金流量表（錢實際進出多少？）</div>
                 <div class="space-y-2.5 text-sm">
-                    <div class="flex justify-between text-stone-600"><span>本月現金流入</span><span class="font-bold text-pastel-green font-rounded">+${fmt(s.monthlyIncome)}</span></div>
-                    <div class="flex justify-between text-stone-600"><span>本月現金流出</span><span class="font-bold text-pastel-red font-rounded">-${fmt(s.monthlyExpense)}</span></div>
+                    <div class="flex justify-between text-stone-600"><span>區間現金流入</span><span class="font-bold text-pastel-green font-rounded">+${fmt(s.monthlyIncome)}</span></div>
+                    <div class="flex justify-between text-stone-600"><span>區間現金流出</span><span class="font-bold text-pastel-red font-rounded">-${fmt(s.monthlyExpense)}</span></div>
                     <div class="pt-2 border-t border-dashed border-pastel-border flex justify-between font-bold text-stone-800"><span>淨現金流</span><span class="${net >= 0 ? 'text-pastel-green' : 'text-pastel-red'} font-rounded">${net >= 0 ? '+' : ''}${fmt(net)}</span></div></div></div>`;
     }
 
@@ -3379,6 +3569,9 @@ function hexA(hex, a) {
                         <div class="text-[11px] font-bold text-stone-700 truncate w-full text-center mt-1">${esc(m.nickname)}${isMe ? ' ·我' : ''}</div>
                         <div class="text-[10px] ${i.color} font-bold truncate w-full text-center leading-tight">${esc(i.name)}</div>
                         <div class="text-[10px] text-pastel-muted"><i class="fa-solid fa-fire"></i> ${Number(m.streak_days) || 0}</div>
+                        ${needsCheer(m) ? (cheeredToday(m.member_id)
+                    ? `<span class="mt-1 text-[9px] text-pastel-muted">已加油</span>`
+                    : `<button onclick="sendCheer('${esc(m.member_id)}')" class="mt-1 px-2 py-1 rounded-full bg-pastel-accentLight text-pastel-accent text-[9px] font-bold tactile"><i class="fa-solid fa-hand-fist mr-0.5"></i>加油</button>`) : ''}
                     </div>`;
         }).join('')}
                 </div>
