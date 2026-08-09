@@ -408,7 +408,7 @@
        ========================================================== */
 
     const CONFIG = {
-        VERSION: 'v4.9.5',
+        VERSION: 'v4.9.6',
         // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
         API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         DEMO: false
@@ -2390,6 +2390,20 @@ function hexA(hex, a) {
         return d;
     }
 
+    /* 只圓上面兩角的長條。
+       SVG 的 rect rx/ry 會把四個角都圓掉，柱子一矮就變成膠囊甚至橢圓，
+       底部也跟著離開基準線。所以改用 path 自己畫：
+       左下 → 左上圓角 → 頂邊 → 右上圓角 → 右下 → 收合。 */
+    function topRoundedBar(x, y, w, h, fill, opacity) {
+        if (h <= 0) return '';
+        const r = Math.min(w / 2, h);                 // 高度不足時圓角自動縮小，不會變形
+        const f = v => v.toFixed(2);
+        const d = `M${f(x)},${f(y + h)} L${f(x)},${f(y + r)} A${f(r)},${f(r)} 0 0 1 ${f(x + r)},${f(y)}`
+            + ` L${f(x + w - r)},${f(y)} A${f(r)},${f(r)} 0 0 1 ${f(x + w)},${f(y + r)}`
+            + ` L${f(x + w)},${f(y + h)} Z`;
+        return `<path d="${d}" fill="${fill}" opacity="${opacity}"/>`;
+    }
+
     function comboChartHtml(ym) {
         const B = rangeBuckets(statsRange, ym);
         const { n, last } = B;
@@ -2413,8 +2427,7 @@ function hexA(hex, a) {
         const bw = Math.max(pw / n - 1.2, 1.4);
         const bars = dayExp.map((v, i) => {
             const hh = v > 0 ? Math.max((v / maxBar) * ph * 0.26, 2) : 0;
-            // 圓頭長條：圓角半徑取寬度的一半，柱頂就是半圓
-            return hh ? `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${(Bt - hh).toFixed(1)}" width="${bw.toFixed(1)}" height="${hh.toFixed(1)}" rx="${(bw / 2).toFixed(2)}" ry="${(bw / 2).toFixed(2)}" fill="#F8A048" opacity=".6"/>` : '';
+            return topRoundedBar(x(i) - bw / 2, Bt - hh, bw, hh, '#F8A048', .6);
         }).join('');
         let crossAt = 0;
         if (budget) for (let i = 0; i < remain.length; i++) if (remain[i] < cumE[i]) { crossAt = i + 1; break; }
