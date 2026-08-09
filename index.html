@@ -408,7 +408,7 @@
        ========================================================== */
 
     const CONFIG = {
-        VERSION: 'v4.9.6',
+        VERSION: 'v4.9.8',
         // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
         API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         DEMO: false
@@ -897,17 +897,17 @@ function hexA(hex, a) {
         const s = { monthlyIncome: 0, monthlyExpense: 0, cashBalance: 0, poolOwesMe: 0, iOweOthers: 0, poolBalance: 0, poolOwesMembers: [], membersOwePool: [], byCategory: [] };
 
         if (mode === 'personal') {
-            const mine = rows.filter(t => t.payer_id === meId);
+            const mine = rows.filter(t => isMine(t, meId));
             mine.forEach(t => {
                 const a = Number(t.amount) || 0;
                 if (inMonth(t.date, ym)) {
-                    if (t.entry_type === '支出') s.monthlyExpense += a;
-                    if (t.entry_type === '收入') s.monthlyIncome += a;
+                    if (t.entry_type === '支出' && t.payer_id === meId) s.monthlyExpense += a;
+                    if (t.entry_type === '收入' && t.payer_id === meId) s.monthlyIncome += a;
                 }
                 if (t.entry_type === '收入') s.cashBalance += a;
                 else if (t.entry_type === '支出' || t.entry_type === '注資') s.cashBalance -= a;
                 else if (t.entry_type === '還款') s.cashBalance += (t.related_id === meId ? a : -a);
-                if (t.nature === '家庭代墊' && t.entry_type === '支出') {
+                if (t.nature === '家庭代墊' && t.entry_type === '支出' && t.payer_id === meId) {
                     // 有分攤明細時，只有「其他人該還我」的部分算應收；
                     // 自己吸收的那一份不是任何人的債務。這是本次最重要的金額修正。
                     const sp = parseSplit(t);
@@ -922,11 +922,11 @@ function hexA(hex, a) {
                 .forEach(t => s.poolOwesMe -= Number(t.amount) || 0);
             s.iOweOthers = myPendingSettlements().reduce((x, y) => x + y.remaining, 0);
             const cm = {};
-            mine.filter(t => t.entry_type === '支出' && inMonth(t.date, ym))
+            mine.filter(t => t.entry_type === '支出' && t.payer_id === meId && inMonth(t.date, ym))
                 .forEach(t => { const k = t.category || '未分類'; cm[k] = (cm[k] || 0) + Number(t.amount); });
             s.byCategory = Object.entries(cm).sort((a, b) => b[1] - a[1]);
         } else {
-            const fam = rows.filter(t => FAMILY_NATURES.includes(t.nature));
+            const fam = rows.filter(isFamilyBook);
             fam.forEach(t => {
                 const a = Number(t.amount) || 0;
                 if (inMonth(t.date, ym)) {
@@ -935,7 +935,9 @@ function hexA(hex, a) {
                 }
                 if (t.entry_type === '收入' || t.entry_type === '注資') s.poolBalance += a;
                 if (t.entry_type === '支出' && t.nature === '家庭公帳') s.poolBalance -= a;
-                if (t.entry_type === '還款') s.poolBalance -= a;
+                // 先前這裡沒有分辨付款人，導致「媽媽從自己口袋還給大哥」也會扣掉公帳餘額。
+                // 公帳沒付錢就不該減少。
+                if (t.entry_type === '還款' && t.payer_id === 'family_pool') s.poolBalance -= a;
             });
             s.poolBalance += Number(STATE.poolInitial) || 0;
             const owe = {};
@@ -2289,10 +2291,25 @@ function hexA(hex, a) {
             ${sum ? `<span class="text-[11px] text-pastel-muted flex-shrink-0">支出 ${fmt(sum)}</span>` : ''}
         </div>`;
     }
+    /** 這筆交易是否屬於「我的帳」。
+        除了我付出去的，別人還給我的錢也是我的現金流入，
+        否則收到還款後口袋現金不會增加，明細裡也完全看不到這筆。 */
+    function isMine(t, meId) {
+        return t.payer_id === meId || (t.entry_type === '還款' && t.related_id === meId);
+    }
+    /** 這筆是否屬於「家庭帳簿」。
+        成員之間的還款（路徑 A）只是兩個人的皮夾互轉，家庭的錢總量沒變，
+        而那筆花費在代墊當下就已經記進家庭帳簿了，再記一次會憑空多出金流。
+        只有公帳實際撥款（payer 是 family_pool）才是家庭帳戶真的動了錢。 */
+    function isFamilyBook(t) {
+        if (!FAMILY_NATURES.includes(t.nature)) return false;
+        if (t.entry_type === '還款' && t.payer_id !== 'family_pool') return false;
+        return true;
+    }
     function scopedTxns(ym) {
         const meId = STATE.me?.member_id;
         const rows = activeTxns().filter(t => !ym || inMonth(t.date, ym));
-        return currentMode === 'personal' ? rows.filter(t => t.payer_id === meId) : rows.filter(t => FAMILY_NATURES.includes(t.nature));
+        return currentMode === 'personal' ? rows.filter(t => isMine(t, meId)) : rows.filter(isFamilyBook);
     }
     function filteredTxns() {
         // 全期間模式：跨月搜尋，找「去年那台除濕機多少錢」不必先猜月份
@@ -2598,15 +2615,40 @@ function hexA(hex, a) {
     /* 單筆不再是獨立卡片：改為群組卡內的一列。
        支出金額改用深灰而非紅色——大面積紅色會讓瀏覽帳目變成一種壓力，
        紅色留給真正的警訊（超支、欠款）。 */
+    /** 代墊／拆帳的清償進度：誰還了多少、還清了沒。
+        家庭帳簿不再多一筆還款之後，靠這一行維持「誰還了什麼」的可見性。 */
+    function settleSummary(t) {
+        if (t.entry_type !== '支出') return null;
+        if (t.nature !== '家庭代墊' && t.nature !== '私人拆帳') return null;
+        const sp = parseSplit(t);
+        const parts = sp.length ? sp
+            : (t.related_id ? [{ member_id: t.related_id, amount: Number(t.amount) || 0 }] : []);
+        if (!parts.length) return null;
+        const expected = parts.reduce((a, b) => a + b.amount, 0);
+        const paid = parts.reduce((a, b) => a + Math.min(paidFor(t.txn_id, b.member_id), b.amount), 0);
+        const done = paid >= expected - 0.01;
+        const who = parts.length === 1 ? nameOf(parts[0].member_id) : `${parts.length} 人`;
+        return { expected, paid, done, who };
+    }
+
     function txnRow(t, isLast) {
-        const isExp = t.entry_type === '支出' || t.entry_type === '注資';
+        const meId = STATE.me?.member_id;
         const isTr = t.entry_type === '轉帳';
         const isJar = t.entry_type === '劃撥儲蓄';
+        const isRepay = t.entry_type === '還款';
+        // 還款要看方向：我付出去是流出，別人還給我是流入。
+        // 先前一律當成流入而顯示綠色的 +，付款那一方看起來就變成「收入」。
+        const repayIn = isRepay && t.related_id === meId && t.payer_id !== meId;
+        const isExp = t.entry_type === '支出' || t.entry_type === '注資' || (isRepay && !repayIn);
         const icon = t.category ? catIcon(t.category)
-            : isJar ? 'fa-piggy-bank' : isTr ? 'fa-right-left' : isExp ? 'fa-money-bill-transfer' : 'fa-sack-dollar';
-        const col = t.category ? catColor(t.category) : (isTr ? '#3090F8' : isJar ? '#F8A048' : isExp ? '#9A918A' : '#40B868');
+            : isRepay ? (repayIn ? 'fa-hand-holding-dollar' : 'fa-money-bill-transfer')
+                : isJar ? 'fa-piggy-bank' : isTr ? 'fa-right-left' : isExp ? 'fa-money-bill-transfer' : 'fa-sack-dollar';
+        const col = t.category ? catColor(t.category)
+            : (isTr ? '#3090F8' : isJar ? '#F8A048' : isRepay ? (repayIn ? '#40B868' : '#9A918A') : isExp ? '#9A918A' : '#40B868');
         const amtCls = isTr || isJar ? 'text-pastel-blue' : isExp ? 'text-stone-800' : 'text-pastel-green';
         const sign = isTr || isJar ? '' : isExp ? '-' : '+';
+        const repayLabel = isRepay
+            ? `還款 ・ ${esc(nameOf(t.payer_id))} → ${esc(nameOf(t.related_id))}` : '';
         return `
         <div class="swipe-wrap relative w-full ${isLast ? '' : 'border-b border-pastel-border/50'} ${t._pending ? 'pending' : ''} ${t._new ? 'is-new' : ''}" data-id="${esc(t.txn_id)}">
             <div class="swipe-bg absolute inset-0 flex items-center justify-between px-6 text-white font-bold text-sm opacity-0 bg-pastel-blue">
@@ -2620,9 +2662,15 @@ function hexA(hex, a) {
                     <div class="min-w-0">
                         <div class="font-bold text-stone-800 text-[13px] truncate">${esc(t.note || t.category || '（無備註）')}${t.recurring_rule_id ? ' <i class="fa-solid fa-rotate text-[10px] text-pastel-muted"></i>' : ''}</div>
                         <div class="text-[11px] text-pastel-muted flex items-center gap-1.5 truncate mt-0.5">
-                            <span>${esc(t.category || t.entry_type)}</span>
-                            ${t.tag ? `<span class="w-1 h-1 rounded-full bg-stone-300 flex-shrink-0"></span><span class="truncate">${esc(t.tag)}</span>` : ''}
+                            <span class="truncate">${repayLabel || esc(t.category || t.entry_type)}</span>
+                            ${t.tag && !isRepay ? `<span class="w-1 h-1 rounded-full bg-stone-300 flex-shrink-0"></span><span class="truncate">${esc(t.tag)}</span>` : ''}
                         </div>
+                        ${(() => {
+            const st = settleSummary(t); if (!st) return '';
+            return `<div class="text-[10px] mt-1 flex items-center gap-1.5 truncate ${st.done ? 'text-pastel-green' : 'text-pastel-accent'}">
+                                <i class="fa-solid ${st.done ? 'fa-circle-check' : 'fa-hourglass-half'}"></i>
+                                <span class="truncate">${esc(nameOf(t.payer_id))}代墊 ・ ${esc(st.who)}已還 ${fmt(st.paid)} / ${fmt(st.expected)}</span></div>`;
+        })()}
                     </div>
                 </div>
                 <div class="text-right flex-shrink-0 ml-2">
