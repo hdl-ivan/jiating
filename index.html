@@ -181,6 +181,36 @@
         .tactile-card { transition:transform .12s cubic-bezier(.2,.7,.4,1), box-shadow .12s ease; }
         .tactile-card:active { transform:scale(.985); box-shadow:0 2px 8px rgba(160,130,100,.10) !important; }
 
+        /* ───────── 籌碼：帶厚度的實體硬幣 ─────────
+           左側偏移一層做出幣身厚度，並用重複漸層模擬滾花邊；
+           正面留一圈內環，中央是成員的角色頭像。 */
+        .coin3d { position:relative; flex-shrink:0; }
+        .coin3d .edge {
+            position:absolute; inset:0; border-radius:9999px;
+            transform:translateX(-3px);
+            background:repeating-linear-gradient(90deg, var(--cDark) 0 1.6px, var(--cMid) 1.6px 3.2px);
+            box-shadow:0 2px 5px rgba(0,0,0,.28);
+        }
+        .coin3d .face {
+            position:absolute; inset:0; border-radius:9999px;
+            background:var(--cFace); border:1.5px solid var(--cDark);
+            display:flex; align-items:center; justify-content:center; overflow:hidden;
+        }
+        .coin3d .face::before {
+            content:''; position:absolute; inset:2px; border-radius:9999px;
+            border:1px solid rgba(255,255,255,.55);
+        }
+        .coin3d .face::after {
+            content:''; position:absolute; left:12%; top:8%; width:34%; height:26%;
+            border-radius:9999px; background:rgba(255,255,255,.45); filter:blur(1px);
+        }
+        .coin3d .pic { width:58%; height:58%; border-radius:9999px; object-fit:cover;
+            border:1px solid var(--cDark); background:#fff; position:relative; z-index:1; }
+        .coin-gold   { --cFace:radial-gradient(circle at 34% 28%,#FFF0BC,#F8C850 58%,#E0A81E);
+                       --cDark:#B07C0C; --cMid:#E8B93A; }
+        .coin-silver { --cFace:radial-gradient(circle at 34% 28%,#FBFDFE,#D5DDE3 58%,#A9B4BD);
+                       --cDark:#78858F; --cMid:#BCC6CE; }
+
         /* 8. 記帳完成微互動：金幣飛向大頭貼 */
         .coin { position:absolute; width:26px; height:26px; border-radius:9999px;
                 background:radial-gradient(circle at 32% 30%, #FFE9A8, #F8C850 60%, #E0A81E);
@@ -357,7 +387,7 @@
        ========================================================== */
 
     const CONFIG = {
-        VERSION: 'v4.9.2',
+        VERSION: 'v4.9.3',
         // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
         API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         DEMO: false
@@ -1723,19 +1753,20 @@ function hexA(hex, a) {
     }
 
     /* ---------- 存錢罐 UI ---------- */
-    function coinSvg(c) {
+    /* 籌碼：外圈是有厚度的幣身（滾花邊 + 側面陰影），中央是投入者的角色頭像。
+       金幣與銀幣只差在配色變數，結構完全相同。 */
+    function coinSvg(c, size) {
+        const px = size || 28;
         const m = STATE.members.find(x => x.member_id === c.member_id);
         const av = m?.avatar_emoji || 'av5';
-        const isGold = c.kind === 'gold';
-        const ring = isGold ? '#E0A81E' : '#9AA4AD';
-        const face = isGold ? 'radial-gradient(circle at 32% 28%,#FFE9A8,#F8C850 62%,#DFA71C)'
-                            : 'radial-gradient(circle at 32% 28%,#F4F7F9,#CBD3DA 62%,#9AA4AD)';
+        const cls = c.kind === 'gold' ? 'coin-gold' : 'coin-silver';
         const inner = String(av).startsWith('av')
-            ? `<img src="./${esc(av)}.png" alt="" class="w-full h-full object-cover rounded-full">`
-            : `<i class="fa-solid ${esc(isFA(av) ? av : 'fa-user')} text-[9px]" style="color:${ring}"></i>`;
-        return `<div class="relative w-7 h-7 rounded-full flex items-center justify-center shadow-sm flex-shrink-0"
-             style="background:${face};border:1.5px solid ${ring}" title="${esc(c.date)} ${fmt(c.total)}">
-            <div class="w-4 h-4 rounded-full overflow-hidden flex items-center justify-center bg-white/70">${inner}</div></div>`;
+            ? `<img src="./${esc(av)}.png" alt="" class="pic">`
+            : `<span class="pic flex items-center justify-center" style="font-size:${Math.round(px * .3)}px;color:var(--cDark)"><i class="fa-solid ${esc(isFA(av) ? av : 'fa-user')}"></i></span>`;
+        return `<div class="coin3d ${cls}" style="width:${px}px;height:${px}px" title="${esc(c.date)} ${fmt(c.total)}${c.kind === 'gold' ? ' · 金幣' : ' · 銀幣'}">
+            <span class="edge"></span>
+            <span class="face">${inner}</span>
+        </div>`;
     }
 
     /* 罐子：卡片主角，水位＝已存比例。進度條已移除，水位本身就是進度。 */
@@ -1796,7 +1827,7 @@ function hexA(hex, a) {
 
                 <div class="flex items-center gap-2">
                     <div class="flex gap-1.5 overflow-x-auto hide-scrollbar flex-1 min-w-0">
-                        ${coins.length ? coins.slice(-10).map(coinSvg).join('')
+                        ${coins.length ? coins.slice(-10).map(c => coinSvg(c, 28)).join('')
                 : '<span class="text-[11px] text-pastel-muted self-center">還沒有籌碼，投第一枚吧</span>'}
                     </div>
                     ${coins.length ? `<span class="text-[11px] text-pastel-muted flex-shrink-0">${coins.length} 枚${gold ? `・金 ${gold}` : ''}</span>` : ''}
@@ -1893,7 +1924,7 @@ function hexA(hex, a) {
 
             <div class="mb-5">
                 <div class="text-xs font-bold text-stone-600 mb-2">籌碼牆 ${coins.length} 枚</div>
-                ${coins.length ? `<div class="flex flex-wrap gap-1.5 p-3 rounded-tile bg-pastel-bg border border-pastel-border">${coins.map(coinSvg).join('')}</div>
+                ${coins.length ? `<div class="flex flex-wrap gap-2.5 p-3.5 rounded-tile bg-pastel-bg border border-pastel-border">${coins.map(c => coinSvg(c, 36)).join('')}</div>
                 <div class="flex flex-wrap gap-3 mt-2">${Object.entries(byMember).map(([mid, n]) =>
                     `<span class="text-[11px] text-pastel-muted">${esc(nameOf(mid))} ${n} 枚</span>`).join('')}</div>`
                 : '<div class="text-[11px] text-pastel-muted">還沒有籌碼</div>'}
@@ -2042,7 +2073,7 @@ function hexA(hex, a) {
         const already = goalCoins(id).some(c => c.date === today && c.member_id === STATE.me?.member_id);
         if (!amt) { el.innerHTML = `<span class="text-[11px] text-pastel-muted">輸入金額後會顯示你將獲得的籌碼</span>`; return; }
         const kind = amt >= gold ? 'gold' : 'silver';
-        el.innerHTML = `${coinSvg({ kind, member_id: STATE.me?.member_id, date: today, total: amt }, 0)}
+        el.innerHTML = `${coinSvg({ kind, member_id: STATE.me?.member_id, date: today, total: amt }, 40)}
             <div class="text-[11px] leading-relaxed">
                 <div class="font-bold ${kind === 'gold' ? 'text-[#D9A216]' : 'text-stone-600'}">${kind === 'gold' ? '金幣' : '銀幣'}（單次 ${amt >= gold ? '≥' : '<'} 目標的 10%）</div>
                 <div class="text-pastel-muted">${already ? '今天已投過，金額會累加但不再多一枚' : '將投入 1 枚'}</div></div>`;
@@ -2211,6 +2242,22 @@ function hexA(hex, a) {
         if (diff === 0) return `今天 (${md})`;
         if (diff === 1) return `昨天 (${md})`;
         return `${md}（${['日', '一', '二', '三', '四', '五', '六'][d.getDay()]}）`;
+    }
+    /* 日期分組標題拆成「主標 + 日期」兩段，主標放大加深，
+       讓它真的形成段落分隔，而不是一行不起眼的灰字。 */
+    function dateHeader(iso) {
+        const d = new Date(iso + 'T00:00:00'), now = new Date(todayISO() + 'T00:00:00');
+        const diff = Math.round((now - d) / 86400000);
+        const wk = ['日', '一', '二', '三', '四', '五', '六'][d.getDay()];
+        const main = diff === 0 ? '今天' : diff === 1 ? '昨天' : `星期${wk}`;
+        const sum = filteredTxns().filter(t => t.date === iso && t.entry_type === '支出')
+            .reduce((a, b) => a + Number(b.amount), 0);
+        return `<div class="flex items-baseline justify-between px-1.5 mt-4 mb-2">
+            <div class="flex items-baseline gap-2 min-w-0">
+                <span class="text-[15px] font-bold text-stone-800">${main}</span>
+                <span class="text-[11px] text-pastel-muted">${d.getMonth() + 1} 月 ${d.getDate()} 日</span></div>
+            ${sum ? `<span class="text-[11px] text-pastel-muted flex-shrink-0">支出 ${fmt(sum)}</span>` : ''}
+        </div>`;
     }
     function scopedTxns(ym) {
         const meId = STATE.me?.member_id;
@@ -2394,7 +2441,7 @@ function hexA(hex, a) {
             </div>
             ${toolbarRow()}
             ${summaryStrip()}
-            <div id="txnList" class="space-y-3"></div>`;
+            <div id="txnList" class="space-y-0"></div>`;
         renderTxnList();
     }
 
@@ -2403,19 +2450,17 @@ function hexA(hex, a) {
     function renderTxnList() {
         const box = document.getElementById('txnList'); if (!box) return;
         const rows = filteredTxns();
-        const total = rows.reduce((a, t) => a + (t.entry_type === '支出' ? Number(t.amount) : 0), 0);
         const grouped = rows.reduce((a, t) => { (a[t.date] ||= []).push(t); return a; }, {});
+        // 同一天收進同一張大卡，列與列之間只用淡分隔線（iOS 群組清單的作法）
         let list = Object.keys(grouped).sort().reverse().map(date => `
-            <div class="text-xs font-bold text-pastel-muted mt-4 ml-1 mb-2">${esc(relativeDateLabel(date))}</div>
-            <div class="space-y-3">${grouped[date].map(txnRow).join('')}</div>`).join('');
+            ${dateHeader(date)}
+            <div class="bg-white border border-pastel-border/60 rounded-card shadow-sm overflow-hidden">
+                ${grouped[date].map((t, i, arr) => txnRow(t, i === arr.length - 1)).join('')}
+            </div>`).join('');
         if (!rows.length) list = activeFilterCount() || filters.q
             ? emptyState('av37', '找不到符合的紀錄', '換個關鍵字或把篩選條件放寬一點', { label: '清除篩選', fn: 'clearAllFilters()' })
             : emptyState('av46', `${viewYM.slice(5, 7)} 月還是一片空白`, '記下第一筆，這個月的故事就開始了', { label: '記一筆', fn: "switchTab('add')" });
-        box.innerHTML = `
-            <div class="flex justify-between items-center text-xs text-pastel-muted px-1">
-                <span>${rows.length} 筆</span><span>支出小計 <b class="text-pastel-red font-rounded">${fmt(total)}</b></span></div>
-            <p class="text-[10px] text-pastel-muted text-center bg-white/70 rounded-full py-1.5 border border-pastel-border"><i class="fa-solid fa-arrow-left mr-1"></i>左滑作廢　·　右滑編輯<i class="fa-solid fa-arrow-right ml-1"></i>　·　點一下看詳情</p>
-            ${list}`;
+        box.innerHTML = `${swipeHint()}${list}`;
         bindSwipe();
     }
 
@@ -2494,30 +2539,40 @@ function hexA(hex, a) {
         return `<p class="text-[10px] text-pastel-muted text-center bg-white/70 rounded-full py-1.5 border border-pastel-border">
             <i class="fa-solid fa-arrow-left mr-1"></i>左滑作廢　·　右滑編輯<i class="fa-solid fa-arrow-right ml-1"></i>　·　點一下看詳情</p>`;
     }
-
-    function txnRow(t) {
+    /* 單筆不再是獨立卡片：改為群組卡內的一列。
+       支出金額改用深灰而非紅色——大面積紅色會讓瀏覽帳目變成一種壓力，
+       紅色留給真正的警訊（超支、欠款）。 */
+    function txnRow(t, isLast) {
         const isExp = t.entry_type === '支出' || t.entry_type === '注資';
         const isTr = t.entry_type === '轉帳';
+        const isJar = t.entry_type === '劃撥儲蓄';
+        const icon = t.category ? catIcon(t.category)
+            : isJar ? 'fa-piggy-bank' : isTr ? 'fa-right-left' : isExp ? 'fa-money-bill-transfer' : 'fa-sack-dollar';
+        const col = t.category ? catColor(t.category) : (isTr ? '#3090F8' : isJar ? '#F8A048' : isExp ? '#9A918A' : '#40B868');
+        const amtCls = isTr || isJar ? 'text-pastel-blue' : isExp ? 'text-stone-800' : 'text-pastel-green';
+        const sign = isTr || isJar ? '' : isExp ? '-' : '+';
         return `
-        <div class="swipe-wrap relative rounded-card overflow-hidden ${t._pending ? 'pending' : ''} ${t._new ? 'is-new' : ''}" data-id="${esc(t.txn_id)}">
-            <!-- 修正：底層改為整條滿版單一色塊，滑動時不會再出現中間斷色 -->
-            <div class="swipe-bg absolute inset-0 rounded-card flex items-center justify-between px-6 text-white font-bold text-sm opacity-0 bg-pastel-blue">
+        <div class="swipe-wrap relative w-full ${isLast ? '' : 'border-b border-pastel-border/50'} ${t._pending ? 'pending' : ''} ${t._new ? 'is-new' : ''}" data-id="${esc(t.txn_id)}">
+            <div class="swipe-bg absolute inset-0 flex items-center justify-between px-6 text-white font-bold text-sm opacity-0 bg-pastel-blue">
                 <span class="sw-edit flex items-center gap-2"><i class="fa-solid fa-pen"></i>編輯</span>
                 <span class="sw-void flex items-center gap-2">作廢<i class="fa-solid fa-trash"></i></span>
             </div>
-            <div class="swipe-inner bg-white p-4 rounded-card border border-pastel-border/60 flex justify-between items-center shadow-card relative">
-                <div class="flex items-center gap-4 min-w-0">
-                    <div class="w-12 h-12 rounded-tile flex items-center justify-center text-lg flex-shrink-0" style="background:${hexA(catColor(t.category), .16)};color:${catColor(t.category)}">
-                        <i class="fa-solid ${esc(t.category ? catIcon(t.category) : (isTr ? 'fa-right-left' : isExp ? 'fa-money-bill-transfer' : 'fa-sack-dollar'))}"></i></div>
+            <div class="swipe-inner bg-white px-4 py-3 flex justify-between items-center relative w-full">
+                <div class="flex items-center gap-3.5 min-w-0">
+                    <div class="w-10 h-10 rounded-full flex items-center justify-center text-base flex-shrink-0"
+                         style="background:${hexA(col, .12)};color:${col}"><i class="fa-solid ${esc(icon)}"></i></div>
                     <div class="min-w-0">
-                        <div class="font-bold text-stone-800 text-sm mb-1 truncate">${esc(t.note || t.category || '（無備註）')}${t.recurring_rule_id ? ' <i class="fa-solid fa-rotate text-[10px] text-pastel-muted"></i>' : ''}</div>
-                        <div class="text-xs text-pastel-muted flex items-center gap-2 truncate">
-                            <span>${esc(t.category || t.entry_type)}</span><span class="w-1 h-1 rounded-full bg-stone-300 flex-shrink-0"></span><span>${esc(t.tag)}</span></div>
+                        <div class="font-bold text-stone-800 text-[13px] truncate">${esc(t.note || t.category || '（無備註）')}${t.recurring_rule_id ? ' <i class="fa-solid fa-rotate text-[10px] text-pastel-muted"></i>' : ''}</div>
+                        <div class="text-[11px] text-pastel-muted flex items-center gap-1.5 truncate mt-0.5">
+                            <span>${esc(t.category || t.entry_type)}</span>
+                            ${t.tag ? `<span class="w-1 h-1 rounded-full bg-stone-300 flex-shrink-0"></span><span class="truncate">${esc(t.tag)}</span>` : ''}
+                        </div>
                     </div>
                 </div>
                 <div class="text-right flex-shrink-0 ml-2">
-                    <div class="font-bold font-rounded text-base mb-1 ${isTr ? 'text-pastel-blue' : isExp ? 'text-pastel-red' : 'text-pastel-green'}">${isTr ? '' : isExp ? '-' : '+'}${fmt(t.amount)}</div>
-                    <div class="text-[10px] text-stone-500 bg-pastel-bg px-2 py-0.5 rounded-md inline-block">${esc(t.nature || '')}</div>
+                    <div class="font-bold font-rounded text-[15px] ${amtCls}">${sign}${fmt(t.amount)}</div>
+                    ${t.nature && t.nature !== '純個人' && t.nature !== '家庭公帳'
+            ? `<div class="text-[9px] text-stone-500 bg-stone-100 px-1.5 py-0.5 rounded inline-block mt-1">${esc(t.nature)}</div>` : ''}
                 </div>
             </div>
         </div>`;
