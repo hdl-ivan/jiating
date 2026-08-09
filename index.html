@@ -173,6 +173,20 @@
             #appFrame  { display:none; }
         }
 
+        /* 主卡外殼：深色模式時白框轉為深色，彩色內卡不變，
+           嵌套關係在兩種主題下都成立 */
+        html.dark .hero-shell { background-color:#221F1D !important; }
+
+        /* ───────── 家庭模式的最小視覺區隔 ─────────
+           不改整體色相，只把導覽列的作用中色與加號按鈕換成主藍，
+           一眼就知道「我現在在哪一本帳」。 */
+        .mode-family .nav-active { color:#3090F8 !important; }
+        .mode-family #addBtnInner {
+            background:#3090F8 !important;
+            box-shadow:0 6px 20px rgba(48,144,248,.42) !important;
+        }
+        .mode-family #addBtnInner.ring-4 { --tw-ring-color:#D6E9FF !important; }
+
         /* 6. 觸覺感 UI：按下時輕微下沉 */
         /* 小型控制項：按下微微下沉 */
         .tactile { transition:transform .09s ease, box-shadow .09s ease; }
@@ -182,34 +196,41 @@
         .tactile-card:active { transform:scale(.985); box-shadow:0 2px 8px rgba(160,130,100,.10) !important; }
 
         /* ───────── 籌碼：帶厚度的實體硬幣 ─────────
-           左側偏移一層做出幣身厚度，並用重複漸層模擬滾花邊；
-           正面留一圈內環，中央是成員的角色頭像。 */
+           左側偏移一層做出幣身厚度。滾花邊是沿著幣緣一圈的直紋，
+           從側面看是「一條條橫線」，所以用 0deg 的重複漸層畫水平線，
+           並且直接用深色描邊的顏色，不用色塊相間。 */
         .coin3d { position:relative; flex-shrink:0; }
         .coin3d .edge {
             position:absolute; inset:0; border-radius:9999px;
             transform:translateX(-3px);
-            background:repeating-linear-gradient(90deg, var(--cDark) 0 1.6px, var(--cMid) 1.6px 3.2px);
-            box-shadow:0 2px 5px rgba(0,0,0,.28);
+            background:var(--cMid);
+            box-shadow:0 2px 5px rgba(0,0,0,.28), inset 0 0 0 1px var(--cDark);
+        }
+        .coin3d .edge::after {
+            content:''; position:absolute; inset:0; border-radius:9999px;
+            background:repeating-linear-gradient(0deg, var(--cDark) 0 1px, transparent 1px 3px);
+            opacity:.85;
         }
         .coin3d .face {
             position:absolute; inset:0; border-radius:9999px;
             background:var(--cFace); border:1.5px solid var(--cDark);
             display:flex; align-items:center; justify-content:center; overflow:hidden;
         }
+        /* 第二層圓框 */
         .coin3d .face::before {
-            content:''; position:absolute; inset:2px; border-radius:9999px;
-            border:1px solid rgba(255,255,255,.55);
+            content:''; position:absolute; inset:2.5px; border-radius:9999px;
+            border:1.5px solid var(--cDark); opacity:.65;
         }
-        .coin3d .face::after {
-            content:''; position:absolute; left:12%; top:8%; width:34%; height:26%;
-            border-radius:9999px; background:rgba(255,255,255,.45); filter:blur(1px);
+        /* 中央頭像：與第二層圓框同大小，把整個內圈填滿 */
+        .coin3d .pic {
+            position:absolute; inset:4px; width:auto; height:auto;
+            border-radius:9999px; object-fit:cover; background:#fff;
+            display:flex; align-items:center; justify-content:center;
         }
-        .coin3d .pic { width:58%; height:58%; border-radius:9999px; object-fit:cover;
-            border:1px solid var(--cDark); background:#fff; position:relative; z-index:1; }
         .coin-gold   { --cFace:radial-gradient(circle at 34% 28%,#FFF0BC,#F8C850 58%,#E0A81E);
-                       --cDark:#B07C0C; --cMid:#E8B93A; }
+                       --cDark:#8A6410; --cMid:#E8B93A; }
         .coin-silver { --cFace:radial-gradient(circle at 34% 28%,#FBFDFE,#D5DDE3 58%,#A9B4BD);
-                       --cDark:#78858F; --cMid:#BCC6CE; }
+                       --cDark:#5C6870; --cMid:#BCC6CE; }
 
         /* 8. 記帳完成微互動：金幣飛向大頭貼 */
         .coin { position:absolute; width:26px; height:26px; border-radius:9999px;
@@ -387,7 +408,7 @@
        ========================================================== */
 
     const CONFIG = {
-        VERSION: 'v4.9.3',
+        VERSION: 'v4.9.4',
         // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
         API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         DEMO: false
@@ -1275,12 +1296,13 @@ function hexA(hex, a) {
     function switchTab(tab) {
         currentTab = tab;
         document.querySelectorAll('.nav-btn').forEach(b => { if (b.id !== 'navAdd') b.className = 'flex flex-col items-center text-pastel-muted w-12 nav-btn'; });
+        document.getElementById('appFrame')?.classList.toggle('mode-family', currentMode === 'family');
         const ab = document.getElementById('addBtnInner');
         ab.classList.toggle('ring-4', tab === 'add');
         ab.classList.toggle('ring-pastel-accentLight', tab === 'add');
         if (tab !== 'add') {
             const el = document.getElementById('nav' + tab.charAt(0).toUpperCase() + tab.slice(1));
-            if (el) el.className = 'flex flex-col items-center text-pastel-accent w-12 nav-btn';
+            if (el) el.className = 'flex flex-col items-center text-pastel-accent nav-active w-12 nav-btn';
         }
         ['dashboardView', 'transactionsView', 'addView', 'statsView', 'settingsView'].forEach(v => document.getElementById(v).classList.add('hidden'));
         document.getElementById(tab + 'View').classList.remove('hidden');
@@ -1290,6 +1312,7 @@ function hexA(hex, a) {
 
     function switchViewMode(mode) {
         currentMode = mode;
+        document.getElementById('appFrame')?.classList.toggle('mode-family', mode === 'family');
         const on = 'px-3 py-1 rounded-full font-bold text-[11px] transition-all bg-white text-pastel-text shadow-sm';
         const off = 'px-3 py-1 rounded-full font-bold text-[11px] text-pastel-muted transition-all';
         document.getElementById('modePersonalBtn').className = mode === 'personal' ? on : off;
@@ -1453,6 +1476,9 @@ function hexA(hex, a) {
        中部（填色內分隔）：淨資產 · 本月收入
        下部（白底，同一張卡）：分類預算
        一張卡回答「我現在如何」，不再散成四張。 */
+    /* ---------- 第一層：唯一一張主卡（嵌套式） ----------
+       外層白卡只留很小的邊（p-1），內層是隨情緒變色的彩色卡。
+       兩個圓角必須同心：外圓角 = 內圓角 + 留白，否則轉角會看起來歪掉。 */
     function budgetHero(s) {
         const total = budgetFor(currentMode, '');
         const isFam = currentMode === 'family';
@@ -1461,7 +1487,7 @@ function hexA(hex, a) {
         const spentMap = Object.fromEntries(s.byCategory);
 
         const lower = catRows.length ? `
-            <div class="bg-white px-5 pt-3.5 pb-4 space-y-3">
+            <div class="px-4 pt-3 pb-3 space-y-3">
                 <div class="flex justify-between items-center">
                     <span class="text-xs font-bold text-stone-600">分類預算</span>
                     <button onclick="event.stopPropagation();openBudgetSheet()" class="text-xs font-bold text-pastel-accent">調整</button></div>
@@ -1476,11 +1502,13 @@ function hexA(hex, a) {
                             <div class="h-1.5 rounded-full transition-all duration-700" style="width:${pct2}%;background:${over2 ? '#F05838' : col}"></div></div>
                     </div>`;
         }).join('')}
-            </div>` : '';
+            </div>`
+            : `<button onclick="openBudgetSheet()" class="w-full flex items-center justify-center gap-2 py-3 text-xs font-bold text-pastel-accent tactile">
+                <i class="fa-solid fa-plus"></i>設定分類預算</button>`;
 
         if (!total) {
-            return `<div class="rounded-card shadow-card overflow-hidden border border-dashed border-pastel-accent/50 bg-white">
-                <button onclick="openBudgetSheet()" class="w-full text-left p-5 flex items-center gap-4 tactile-card">
+            return `<div class="bg-white rounded-[28px] shadow-card border border-pastel-border/60 p-1 hero-shell">
+                <button onclick="openBudgetSheet()" class="w-full text-left rounded-[24px] bg-pastel-accentLight p-5 flex items-center gap-4 tactile-card">
                     <img src="./av48.png" alt="" class="w-12 h-12 flex-shrink-0">
                     <div class="min-w-0"><div class="font-bold text-sm text-stone-800">設定${isFam ? '公帳' : '每月'}預算</div>
                     <div class="text-xs text-pastel-muted mt-0.5">知道「還能花多少」，比知道「花了多少」更有用</div></div>
@@ -1494,10 +1522,10 @@ function hexA(hex, a) {
         const daily = Math.max(left, 0) / Math.max(n - day + 1, 1);
         const mood = getMascotState(used / total * 100, s.monthlyExpense > 0 || s.monthlyIncome > 0);
 
-        return `<div class="rounded-card shadow-md overflow-hidden">
-            <div onclick="openBudgetSheet()" class="relative p-5 text-white"
+        return `<div class="bg-white rounded-[28px] shadow-card border border-pastel-border/60 p-1 hero-shell">
+            <div onclick="openBudgetSheet()" class="relative rounded-[24px] p-5 text-white overflow-hidden tactile-card"
                  style="background:linear-gradient(135deg, ${over ? '#F05838' : '#F8A048'} 0%, ${over ? '#D8452A' : '#F0863A'} 100%)">
-                <div class="absolute right-1 bottom-1 w-24 h-24 pointer-events-none">
+                <div class="absolute right-0 bottom-0 w-24 h-24 pointer-events-none">
                     <img src="./${mood.av}.png" alt="" class="w-full h-full opacity-90">
                     ${mascotBadge(mood)}
                 </div>
@@ -1755,6 +1783,8 @@ function hexA(hex, a) {
     /* ---------- 存錢罐 UI ---------- */
     /* 籌碼：外圈是有厚度的幣身（滾花邊 + 側面陰影），中央是投入者的角色頭像。
        金幣與銀幣只差在配色變數，結構完全相同。 */
+    /* 籌碼：外圈是有厚度的幣身（橫向滾花邊），中央頭像填滿第二層圓框。
+       金幣與銀幣只差在配色變數，結構完全相同。 */
     function coinSvg(c, size) {
         const px = size || 28;
         const m = STATE.members.find(x => x.member_id === c.member_id);
@@ -1762,7 +1792,7 @@ function hexA(hex, a) {
         const cls = c.kind === 'gold' ? 'coin-gold' : 'coin-silver';
         const inner = String(av).startsWith('av')
             ? `<img src="./${esc(av)}.png" alt="" class="pic">`
-            : `<span class="pic flex items-center justify-center" style="font-size:${Math.round(px * .3)}px;color:var(--cDark)"><i class="fa-solid ${esc(isFA(av) ? av : 'fa-user')}"></i></span>`;
+            : `<span class="pic" style="font-size:${Math.round(px * .38)}px;color:var(--cDark)"><i class="fa-solid ${esc(isFA(av) ? av : 'fa-user')}"></i></span>`;
         return `<div class="coin3d ${cls}" style="width:${px}px;height:${px}px" title="${esc(c.date)} ${fmt(c.total)}${c.kind === 'gold' ? ' · 金幣' : ' · 銀幣'}">
             <span class="edge"></span>
             <span class="face">${inner}</span>
@@ -2252,7 +2282,7 @@ function hexA(hex, a) {
         const main = diff === 0 ? '今天' : diff === 1 ? '昨天' : `星期${wk}`;
         const sum = filteredTxns().filter(t => t.date === iso && t.entry_type === '支出')
             .reduce((a, b) => a + Number(b.amount), 0);
-        return `<div class="flex items-baseline justify-between px-1.5 mt-4 mb-2">
+        return `<div class="flex items-baseline justify-between px-1.5 mt-6 mb-2.5">
             <div class="flex items-baseline gap-2 min-w-0">
                 <span class="text-[15px] font-bold text-stone-800">${main}</span>
                 <span class="text-[11px] text-pastel-muted">${d.getMonth() + 1} 月 ${d.getDate()} 日</span></div>
@@ -2342,6 +2372,24 @@ function hexA(hex, a) {
         return b;
     }
 
+    /* 把折點轉成平滑的三次貝茲曲線（Catmull-Rom 轉 Bezier）。
+       轉折處不再是硬角，讀起來像趨勢而不像折線統計圖。 */
+    function smoothPath(pts, yMin, yMax) {
+        if (pts.length < 2) return pts.length ? `M${pts[0][0]},${pts[0][1]}` : '';
+        const t = 0.22;                       // 張力：越大越彎，0.22 在這個尺寸最自然
+        // 貝茲的控制點可能落在資料範圍之外，導致曲線些微溢出繪圖區
+        // （累計線視覺上掉到基準線以下）。這裡把控制點夾在繪圖帶內。
+        const cy = v => (yMin == null ? v : Math.min(Math.max(v, yMin), yMax));
+        let d = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
+        for (let i = 0; i < pts.length - 1; i++) {
+            const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || pts[i + 1];
+            const c1x = p1[0] + (p2[0] - p0[0]) * t, c1y = cy(p1[1] + (p2[1] - p0[1]) * t);
+            const c2x = p2[0] - (p3[0] - p1[0]) * t, c2y = cy(p2[1] - (p3[1] - p1[1]) * t);
+            d += ` C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
+        }
+        return d;
+    }
+
     function comboChartHtml(ym) {
         const B = rangeBuckets(statsRange, ym);
         const { n, last } = B;
@@ -2360,12 +2408,13 @@ function hexA(hex, a) {
         const maxV = Math.max(totalI, totalE, budget, 1);
         const x = i => L + (n === 1 ? pw / 2 : (i / (n - 1)) * pw);
         const y = v => Bt - (Math.max(v, 0) / maxV) * ph;
-        const pts = a => a.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+        const pts = a => smoothPath(a.map((v, i) => [x(i), y(v)]), T, Bt);
         const maxBar = Math.max(...dayExp, 1);
         const bw = Math.max(pw / n - 1.2, 1.4);
         const bars = dayExp.map((v, i) => {
             const hh = v > 0 ? Math.max((v / maxBar) * ph * 0.26, 2) : 0;
-            return hh ? `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${(Bt - hh).toFixed(1)}" width="${bw.toFixed(1)}" height="${hh.toFixed(1)}" rx="${Math.min(bw / 2, 1.6).toFixed(1)}" fill="#F8A048" opacity=".55"/>` : '';
+            // 圓頭長條：圓角半徑取寬度的一半，柱頂就是半圓
+            return hh ? `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${(Bt - hh).toFixed(1)}" width="${bw.toFixed(1)}" height="${hh.toFixed(1)}" rx="${(bw / 2).toFixed(2)}" ry="${(bw / 2).toFixed(2)}" fill="#F8A048" opacity=".6"/>` : '';
         }).join('');
         let crossAt = 0;
         if (budget) for (let i = 0; i < remain.length; i++) if (remain[i] < cumE[i]) { crossAt = i + 1; break; }
@@ -2380,9 +2429,9 @@ function hexA(hex, a) {
             <line x1="${L}" y1="${Bt}" x2="${W - R}" y2="${Bt}" stroke="#E7D9C6" stroke-width="1.2"/>
             <line x1="${L}" y1="${T + ph / 2}" x2="${W - R}" y2="${T + ph / 2}" stroke="#F3E7D8" stroke-width="1" stroke-dasharray="3 4"/>
             ${crossMark}${bars}
-            ${budget ? `<polyline points="${pts(remain)}" fill="none" stroke="#3090F8" stroke-width="2" stroke-dasharray="5 3" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
-            <polyline points="${pts(cumI)}" fill="none" stroke="#40B868" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-            <polyline points="${pts(cumE)}" fill="none" stroke="#F05838" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+            ${budget ? `<path d="${pts(remain)}" fill="none" stroke="#3090F8" stroke-width="2" stroke-dasharray="5 3" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
+            <path d="${pts(cumI)}" fill="none" stroke="#40B868" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+            <path d="${pts(cumE)}" fill="none" stroke="#F05838" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
         </svg>
         <div class="flex justify-between text-[10px] text-pastel-muted px-1 mt-1">
             <span>${tick(0)}${B.labels ? '' : '日'}</span><span>${tick(Math.ceil(n / 2) - 1)}${B.labels ? '' : '日'}</span>
@@ -2454,7 +2503,7 @@ function hexA(hex, a) {
         // 同一天收進同一張大卡，列與列之間只用淡分隔線（iOS 群組清單的作法）
         let list = Object.keys(grouped).sort().reverse().map(date => `
             ${dateHeader(date)}
-            <div class="bg-white border border-pastel-border/60 rounded-card shadow-sm overflow-hidden">
+            <div class="bg-white border border-pastel-border/60 rounded-card shadow-sm overflow-hidden mb-1">
                 ${grouped[date].map((t, i, arr) => txnRow(t, i === arr.length - 1)).join('')}
             </div>`).join('');
         if (!rows.length) list = activeFilterCount() || filters.q
@@ -2557,7 +2606,7 @@ function hexA(hex, a) {
                 <span class="sw-edit flex items-center gap-2"><i class="fa-solid fa-pen"></i>編輯</span>
                 <span class="sw-void flex items-center gap-2">作廢<i class="fa-solid fa-trash"></i></span>
             </div>
-            <div class="swipe-inner bg-white px-4 py-3 flex justify-between items-center relative w-full">
+            <div class="swipe-inner bg-white px-4 py-3.5 flex justify-between items-center relative w-full">
                 <div class="flex items-center gap-3.5 min-w-0">
                     <div class="w-10 h-10 rounded-full flex items-center justify-center text-base flex-shrink-0"
                          style="background:${hexA(col, .12)};color:${col}"><i class="fa-solid ${esc(icon)}"></i></div>
