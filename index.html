@@ -373,6 +373,14 @@
         </button>
     </div>
 
+    <!-- 單據全螢幕檢視 -->
+    <div id="lightbox" onclick="closeLightbox()" class="js-hide opacity-0 absolute inset-0 z-[120] bg-black/85 flex items-center justify-center p-4 transition-opacity duration-200">
+        <img id="lightboxImg" alt="單據" class="max-w-full max-h-full object-contain rounded-tile">
+        <button onclick="event.stopPropagation();closeLightbox()" aria-label="關閉"
+                class="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/90 text-stone-700 flex items-center justify-center shadow-lg">
+            <i class="fa-solid fa-xmark"></i></button>
+    </div>
+
     <div id="toast" class="absolute left-0 right-0 bottom-24 z-[95] flex justify-center opacity-0 pointer-events-none transition-opacity duration-300"></div>
 
     <nav id="appNav" class="mt-auto shrink-0 bg-white border-t border-pastel-border px-6 pt-2.5 flex justify-between items-center z-30 shadow-[0_-10px_40px_rgba(160,130,100,0.06)] js-hide">
@@ -408,7 +416,7 @@
        ========================================================== */
 
     const CONFIG = {
-        VERSION: 'v5.0.0',
+        VERSION: 'v5.1.0',
         // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
         API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         DEMO: false
@@ -498,7 +506,7 @@
         }
     };
 
-    let STATE = { familyName: '', members: [], categories: [], tags: [], transactions: [], rules: [], budgets: [], intents: [], goals: [], achievements: [], cheers: [], me: null, poolInitial: 0 };
+    let STATE = { familyName: '', members: [], categories: [], tags: [], transactions: [], rules: [], budgets: [], intents: [], goals: [], achievements: [], cheers: [], memberStats: {}, me: null, poolInitial: 0 };
 
 /* 記住上次選擇：零記帳習慣的人，每次重選帳戶與歸屬是最容易讓人放棄的摩擦 */
 const PREF = {
@@ -557,7 +565,37 @@ function hexA(hex, a) {
 
     function monthKeys(n) { const o = []; let ym = currentYM(); for (let i = 0; i < n; i++) { o.push(ym); ym = shiftYM(ym, -1); } return o; }
 
+    /* 優先採用後端算好的元數據；後端若尚未部署新版就退回前端自算。
+       這一層是為了讓成就不再依賴「前端持有全部歷史」——
+       日後改成分頁載入時，成就邏輯不必重寫。 */
     function achievementStats() {
+        const meId = STATE.me?.member_id;
+        const srv = (STATE.memberStats || {})[meId];
+        if (srv) return {
+            streak: Number(STATE.me?.streak_days) || 0,
+            count: srv.totalTxns || 0,
+            receipts: srv.receipts || 0,
+            advances: srv.advances || 0,
+            settles: srv.settles || 0,
+            goalsDone: srv.goalsDone || 0,
+            surplusMonths: srv.surplusMonths || 0,
+            highSaveMonths: srv.highSaveMonths || 0,
+            activeDays: srv.activeDays || 0,
+            surplusStreak: srv.surplusStreak || 0,
+            funStreak: srv.funStreak || 0,
+            savingRate: localSavingRate()
+        };
+        return localAchievementStats();
+    }
+    /* 本月儲蓄率永遠在前端算：它只需要當月資料，而且要能即時反映剛記的那一筆 */
+    function localSavingRate() {
+        const meId = STATE.me?.member_id, ym = currentYM();
+        const mine = activeTxns().filter(t => t.payer_id === meId && inMonth(t.date, ym));
+        const inc = mine.filter(t => t.entry_type === '收入').reduce((a, b) => a + Number(b.amount), 0);
+        const exp = mine.filter(t => t.entry_type === '支出').reduce((a, b) => a + Number(b.amount), 0);
+        return inc > 0 ? Math.round((inc - exp) / inc * 100) : 0;
+    }
+    function localAchievementStats() {
         const meId = STATE.me?.member_id;
         const mine = activeTxns().filter(t => t.payer_id === meId);
         const per = {};
@@ -575,9 +613,13 @@ function hexA(hex, a) {
         const cur = per[currentYM()] || { inc: 0, exp: 0 };
         return {
             streak: Number(STATE.me?.streak_days) || 0,
-            count: mine.length,
+            // 與後端定義一致：只有收支才算「記帳一筆」，還款與劃撥是資金移動
+            count: mine.filter(t => t.entry_type === '支出' || t.entry_type === '收入').length,
             receipts: mine.filter(t => t.receipt_file_id).length,
-            advances: mine.filter(t => t.nature === '家庭代墊').length,
+            advances: mine.filter(t => t.nature === '家庭代墊' && t.entry_type === '支出').length,
+            settles: mine.filter(t => t.entry_type === '還款').length,
+            goalsDone: (STATE.goals || []).filter(g => g.status === '已結案' && g.owner_id === meId).length,
+            surplusMonths: 0, highSaveMonths: 0, activeDays: 0,
             surplusStreak, funStreak,
             savingRate: cur.inc > 0 ? Math.round((cur.inc - cur.exp) / cur.inc * 100) : 0
         };
@@ -1060,6 +1102,7 @@ function hexA(hex, a) {
     const STATE_ARRAYS = ['members', 'categories', 'tags', 'transactions', 'rules', 'budgets', 'intents', 'goals', 'achievements', 'cheers'];
     function normalizeState() {
         STATE_ARRAYS.forEach(k => { if (!Array.isArray(STATE[k])) STATE[k] = []; });
+        if (!STATE.memberStats || typeof STATE.memberStats !== 'object') STATE.memberStats = {};
         STATE.poolInitial = Number(STATE.poolInitial) || 0;
     }
 
@@ -1067,7 +1110,7 @@ function hexA(hex, a) {
         const d = await api.call('bootstrap');
         Object.assign(STATE, {
             familyName: d.familyName, members: d.members, categories: d.categories,
-            tags: d.tags, transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], goals: d.goals || [], achievements: d.achievements || [], cheers: d.cheers || [], poolInitial: d.poolInitial
+            tags: d.tags, transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], goals: d.goals || [], achievements: d.achievements || [], cheers: d.cheers || [], memberStats: d.memberStats || {}, poolInitial: d.poolInitial
         });
         normalizeState();
         STATE.me = STATE.members.find(m => m.member_id === AUTH.memberId);
@@ -1241,7 +1284,7 @@ function hexA(hex, a) {
     async function refreshData() {
         try {
             const d = await api.call('bootstrap');
-            Object.assign(STATE, { transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], goals: d.goals || [], achievements: d.achievements || [], cheers: d.cheers || [], categories: d.categories, tags: d.tags, members: d.members });
+            Object.assign(STATE, { transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], goals: d.goals || [], achievements: d.achievements || [], cheers: d.cheers || [], memberStats: d.memberStats || {}, categories: d.categories, tags: d.tags, members: d.members });
             normalizeState();
             STATE.me = STATE.members.find(m => m.member_id === AUTH.memberId) || STATE.me;
             renderDataViews(); renderSettings(); toast('已同步');
@@ -2847,6 +2890,14 @@ function hexA(hex, a) {
             <div class="text-3xl font-bold font-rounded mb-4 ${t.entry_type === '支出' ? 'text-pastel-red' : 'text-pastel-green'}">${t.entry_type === '支出' ? '-' : '+'}${fmt(t.amount)}</div>
             ${row('日期', t.date)}${row('類型', t.entry_type)}${row('分類', t.category || '—')}${row('帳戶', t.tag || '—')}
             ${row('費用歸屬', t.nature || '—')}${row('記帳者', nameOf(t.member_id))}${t.recurring_rule_id ? row('來源', '重複性收支自動產生') : ''}
+            ${t.receipt_file_id ? `
+            <div class="mt-4">
+                <div class="text-xs font-bold text-stone-600 mb-2"><i class="fa-solid fa-receipt mr-1.5 text-pastel-accent"></i>單據</div>
+                <div id="rcBox" class="rounded-tile border border-pastel-border bg-pastel-bg overflow-hidden">
+                    <button onclick="loadReceipt('${esc(id)}')" class="w-full py-8 flex flex-col items-center gap-2 text-pastel-muted tactile">
+                        <i class="fa-solid fa-image text-2xl"></i>
+                        <span class="text-xs font-bold">點擊檢視單據照片</span></button>
+                </div></div>` : ''}
             ${(t.nature === '家庭代墊' || t.nature === '私人拆帳') && t.payer_id === STATE.me?.member_id
                 ? `<button onclick="closeSheet();openEditSplit('${esc(id)}')" class="w-full mt-4 py-3 bg-pastel-accentLight text-pastel-accent font-bold rounded-tile text-sm tactile"><i class="fa-solid fa-users-between-lines mr-1"></i> 調整分攤設定</button>` : ''}
             <div class="grid grid-cols-2 gap-3 mt-3">
@@ -2937,6 +2988,44 @@ function hexA(hex, a) {
             if (i >= 0) STATE.transactions[i] = backup;
             renderDataViews(); toast('更新失敗：' + e.message, true);
         }
+    }
+
+    /* ---------- 單據檢視 ----------
+       透過 API 取回，Drive 檔案維持私有（不設公開連結）。
+       取回後快取在記憶體，同一張不會重複下載。 */
+    const _rcCache = {};
+    async function loadReceipt(id) {
+        const box = document.getElementById('rcBox'); if (!box) return;
+        if (_rcCache[id]) return paintReceipt(id, _rcCache[id]);
+        box.innerHTML = `<div class="py-8 flex flex-col items-center gap-2 text-pastel-muted">
+            <i class="fa-solid fa-circle-notch fa-spin text-xl"></i><span class="text-xs">載入單據中…</span></div>`;
+        try {
+            const r2 = await api.call('getReceipt', { txn_id: id });
+            _rcCache[id] = `data:${r2.mime};base64,${r2.base64}`;
+            paintReceipt(id, _rcCache[id]);
+        } catch (e) {
+            box.innerHTML = `<div class="py-6 px-4 text-center text-xs text-pastel-red">
+                <i class="fa-solid fa-triangle-exclamation mb-1.5 block text-lg"></i>${esc(e.message)}
+                <button onclick="loadReceipt('${esc(id)}')" class="block mx-auto mt-2 underline font-bold">重試</button></div>`;
+        }
+    }
+    function paintReceipt(id, src) {
+        const box = document.getElementById('rcBox'); if (!box) return;
+        box.innerHTML = `<button onclick="openLightbox('${esc(id)}')" class="block w-full">
+            <img src="${src}" alt="單據" class="w-full max-h-52 object-cover"></button>
+            <div class="px-3 py-2 text-[10px] text-pastel-muted text-center border-t border-pastel-border">點擊放大</div>`;
+    }
+    function openLightbox(id) {
+        const src = _rcCache[id]; if (!src) return;
+        const el = document.getElementById('lightbox');
+        document.getElementById('lightboxImg').src = src;
+        el.classList.remove('js-hide');
+        requestAnimationFrame(() => el.classList.remove('opacity-0'));
+    }
+    function closeLightbox() {
+        const el = document.getElementById('lightbox');
+        el.classList.add('opacity-0');
+        setTimeout(() => el.classList.add('js-hide'), 220);
     }
 
     async function voidTxn(id) {

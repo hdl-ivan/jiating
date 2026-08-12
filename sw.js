@@ -1,6 +1,6 @@
 /* 家庭記帳 Service Worker
    策略：network-first（確保 iOS 主畫面 App 一定拿得到最新版），離線時退回快取 */
-const CACHE = 'jiating-v5-0-0';
+const CACHE = 'jiating-v5-1-0';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('message', e => {
