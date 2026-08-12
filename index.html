@@ -327,7 +327,27 @@
             </div>
         </div>
         <div id="gateError" class="hidden mb-4 p-3 rounded-tile bg-pastel-redLight border border-pastel-red/30 text-pastel-red text-xs font-bold"></div>
-        <div id="gateStep1" class="bg-white p-6 rounded-sheet shadow-card border border-pastel-border space-y-4">
+
+        <!-- 步驟 0：後端（只有還沒設定過的裝置會看到） -->
+        <div id="gateStep0" class="hidden bg-white p-6 rounded-sheet shadow-card border border-pastel-border space-y-4">
+            <div>
+                <label class="block text-sm font-bold text-stone-700 mb-1">安裝碼</label>
+                <p class="text-[11px] text-pastel-muted leading-relaxed mb-2.5">
+                    在你的 Google 試算表上方選單「🏠 家庭記帳 → ② 顯示安裝碼」可以拿到。
+                    也可以直接貼完整的後端網址。</p>
+                <textarea id="gateBackend" rows="3" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false"
+                          placeholder="AKfycb… 或 https://script.google.com/macros/s/…/exec"
+                          class="w-full p-3 rounded-tile border-2 border-pastel-border bg-pastel-bg text-[11px] font-mono outline-none focus:border-pastel-accent break-all"></textarea>
+                <div class="flex items-center justify-center gap-3 mt-2">
+                    <button type="button" onclick="pasteBackend()" class="px-3 py-1.5 rounded-full bg-pastel-bg border border-pastel-border text-[11px] font-bold text-stone-600 tactile"><i class="fa-solid fa-paste mr-1"></i>貼上</button>
+                </div>
+            </div>
+            <button id="gateBackendBtn" onclick="gateSubmitBackend()" class="w-full py-3.5 bg-pastel-accent text-white font-bold rounded-tile shadow-md">連線</button>
+            <p class="text-[10px] text-pastel-muted leading-relaxed">
+                你的帳目存在自己的 Google 試算表裡，這個 App 只是介面，不會保存任何人的資料。</p>
+        </div>
+
+        <div id="gateStep1" class="hidden bg-white p-6 rounded-sheet shadow-card border border-pastel-border space-y-4">
             <div>
                 <label class="block text-sm font-bold text-stone-700 mb-2.5 text-center">家庭代碼</label>
                 <div class="relative" onclick="document.getElementById('gateCode').focus()">
@@ -347,6 +367,7 @@
                 </div>
             </div>
             <button id="gateCodeBtn" onclick="gateSubmitCode()" class="w-full py-3.5 bg-pastel-accent text-white font-bold rounded-tile shadow-md">下一步</button>
+            <button type="button" onclick="gateBackToBackend()" class="w-full text-[11px] font-bold text-pastel-muted pt-1">連到別的帳本 / 重新輸入安裝碼</button>
         </div>
         <div id="gateStep2" class="hidden bg-white p-6 rounded-sheet shadow-card border border-pastel-border space-y-4">
             <label class="block text-sm font-bold text-stone-700">你是誰？</label>
@@ -432,12 +453,71 @@
        家庭記帳 PWA  v4.2.0
        ========================================================== */
 
+    /* ==========================================================
+       v6.0.0：前端共用、後端分離
+       這一版之前「一份前端 = 一本帳」，後端網址寫死在這裡。
+       現在後端網址存在各自的裝置（localStorage.api），同一個網址可以服務任意多個家庭，
+       每個家庭的資料都留在自己的 Google 試算表裡。
+
+       DEFAULT_API_URL 是「沒設定時的退路」：既有使用者升級後無感，不會被踢回設定畫面。
+       要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
+       ========================================================== */
     const CONFIG = {
-        VERSION: 'v5.3.0',
-        // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
-        API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
+        VERSION: 'v6.0.0',
+        MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
+        DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
+        get API_URL() { return BACKEND.url; },
         DEMO: false
     };
+
+    const EXEC_RE = /^https:\/\/script\.google\.com\/macros\/s\/([\w-]{20,})\/exec$/;
+    const BACKEND = {
+        get url() { return localStorage.getItem('api') || CONFIG.DEFAULT_API_URL || ''; },
+        set url(v) { v ? localStorage.setItem('api', v) : localStorage.removeItem('api'); },
+        get isCustom() { return !!localStorage.getItem('api'); },
+        get id() { const m = EXEC_RE.exec(this.url); return m ? m[1] : ''; },
+        clear() { localStorage.removeItem('api'); }
+    };
+    let BACKEND_VERSION = '';        // 後端回報的 API 版本，握手用
+
+    /* 安裝碼：把「後端網址 + 家庭代碼」壓成一串可貼的字。
+       之所以需要它——iOS 把網頁加到主畫面後，儲存空間和 Safari 是分開的，
+       在 Safari 設定好的東西不會跟著進去，使用者必須在 App 裡再輸入一次。
+       /exec 網址長達 120 字元，跨 App 複製貼上很痛苦，所以壓成 ID.代碼 一次貼完。
+       同時接受完整網址、純 ID、ID.代碼 三種寫法。 */
+    function parseInstall(raw) {
+        const s = String(raw || '').trim().replace(/\s+/g, '');
+        if (!s) return null;
+        let id = '', code = '';
+        const m = /script\.google\.com\/macros\/s\/([\w-]{20,})/.exec(s);
+        if (m) {
+            id = m[1];
+            const tail = /[?&#](?:code|c)=([A-Za-z0-9]{8})/.exec(s);
+            if (tail) code = tail[1].toUpperCase();
+        } else {
+            const parts = s.split('.');
+            if (!/^[\w-]{20,}$/.test(parts[0])) return null;
+            id = parts[0];
+            if (parts[1] && /^[A-Za-z0-9]{8}$/.test(parts[1])) code = parts[1].toUpperCase();
+        }
+        return { url: `https://script.google.com/macros/s/${id}/exec`, code };
+    }
+    const installCode = () => BACKEND.id ? BACKEND.id + (AUTH.familyCode ? '.' + AUTH.familyCode : '') : '';
+
+    /** 版本比較：a < b 回傳 true。缺版本號（6.0 以前的後端）一律視為過舊。 */
+    function verLt(a, b) {
+        if (!a) return true;
+        const pa = String(a).split('.').map(Number), pb = String(b).split('.').map(Number);
+        for (let i = 0; i < 3; i++) {
+            const x = pa[i] || 0, y = pb[i] || 0;
+            if (x !== y) return x < y;
+        }
+        return false;
+    }
+    const backendOutdated = () => verLt(BACKEND_VERSION, CONFIG.MIN_BACKEND);
+    const outdatedMsg = () => `後端是舊版（${BACKEND_VERSION || '6.0 之前'}），這個介面需要 ${CONFIG.MIN_BACKEND}。`
+        + '請到 Google 試算表：擴充功能 → Apps Script → 貼上新的 Code.gs → 部署 → 管理部署作業 → 編輯 → 版本選「新版本」→ 部署。'
+        + '在那之前部分功能可能不正常。';
 
     const esc = s => String(s ?? '').replace(/[&<>"']/g,
         c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -519,6 +599,7 @@
             for (let n = 0; n < tries; n++) {
                 if (n) await new Promise(z => setTimeout(z, 250 * n));   // 250ms、500ms
                 try {
+                    if (!CONFIG.API_URL) throw new Error('尚未設定後端網址');
                     const res = await fetch(CONFIG.API_URL, {
                         method: 'POST',
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -528,6 +609,8 @@
                     if (!res.ok) throw new Error(`連線失敗 (HTTP ${res.status})`);
                     const j = await res.json();
                     if (!j.ok) throw new Error(j.error || '後端錯誤');
+                    // 任何一次回應都可能帶版本號，順手記下來做握手
+                    if (j.data && j.data.apiVersion) BACKEND_VERSION = j.data.apiVersion;
                     return j.data;
                 } catch (e) {
                     lastErr = e;
@@ -1062,11 +1145,29 @@ function hexA(hex, a) {
     /* ==========================================================
        開機
        ========================================================== */
+    /* 安裝連結：?api=<exec網址或ID>&code=XXXXXXXX
+       套用後把網址列清乾淨 —— 免得使用者把帶著代碼的連結分享出去。 */
+    function applyInstallLink() {
+        const q = new URLSearchParams(location.search + '&' + location.hash.replace(/^#/, ''));
+        const api = q.get('api'), code = (q.get('code') || '').toUpperCase();
+        if (!api && !code) return false;
+        let applied = false;
+        const p = api ? parseInstall(api) : null;
+        if (p) { BACKEND.url = p.url; applied = true; }
+        const c = (p && p.code) || (/^[A-Z0-9]{8}$/.test(code) ? code : '');
+        if (c) { AUTH.familyCode = c; applied = true; }
+        try { history.replaceState(null, '', location.pathname); } catch (e) { }
+        return applied;
+    }
+
     async function bootstrap() {
         document.getElementById('appVersion').innerText = CONFIG.VERSION;
-        if (CONFIG.API_URL.includes('PASTE_') && !CONFIG.DEMO) { showGateError('尚未設定 API_URL，請先完成 GAS 部署並填入網址。'); return showGate(); }
+        const fromLink = applyInstallLink();
         if (AUTH.familyCode && AUTH.memberId) { try { await loadAll(); return enterApp(); } catch (e) { AUTH.clear(); } }
-        showGate();
+        if (!CONFIG.API_URL && !CONFIG.DEMO) return showGate(0);
+        // 連結帶了代碼、還沒選成員：填好代碼，讓 paintOtp 自動送出（不要再手動呼叫一次）
+        if (fromLink && AUTH.familyCode) document.getElementById('gateCode').value = AUTH.familyCode;
+        showGate(1);
     }
     function paintOtp() {
         const el = document.getElementById('gateCode'); if (!el) return;
@@ -1103,11 +1204,53 @@ function hexA(hex, a) {
         el.innerHTML = esc(text);
     }
 
-    function showGate() {
+    function showGate(step) {
         paintOtp();
         const el = document.getElementById('gateCode');
-        if (el) { el.addEventListener('focus', paintOtp); el.addEventListener('blur', paintOtp); } document.getElementById('gateScreen').classList.remove('js-hide'); document.getElementById('splash').classList.add('js-hide'); }
+        if (el) { el.addEventListener('focus', paintOtp); el.addEventListener('blur', paintOtp); }
+        gateStep(step == null ? (CONFIG.API_URL ? 1 : 0) : step);
+        document.getElementById('gateScreen').classList.remove('js-hide');
+        document.getElementById('splash').classList.add('js-hide');
+    }
+    function gateStep(n) {
+        [0, 1, 2].forEach(i => document.getElementById('gateStep' + i).classList.toggle('hidden', i !== n));
+        gateSay(n === 0 ? '先連上你的帳本，貼上安裝碼吧！'
+            : n === 1 ? '請輸入 8 位家庭代碼，跟家人連線吧！'
+                : '太好了，你是哪一位呢？');
+    }
     function showGateError(m) { const e = document.getElementById('gateError'); e.innerText = m; e.classList.remove('hidden'); }
+
+    async function pasteBackend() {
+        const el = document.getElementById('gateBackend');
+        try { el.value = (await navigator.clipboard.readText() || '').trim(); buzz(); }
+        catch (e) { el.focus(); toast('請長按輸入框選擇「貼上」', true); }
+    }
+    function gateBackToBackend() {
+        document.getElementById('gateBackend').value = BACKEND.isCustom ? BACKEND.url : '';
+        document.getElementById('gateError').classList.add('hidden');
+        gateStep(0); buzz();
+    }
+    async function gateSubmitBackend() {
+        const raw = document.getElementById('gateBackend').value;
+        const p = parseInstall(raw);
+        if (!p) return showGateError('安裝碼看起來不完整。請貼上試算表選單「② 顯示安裝碼」給的那一整串，或結尾是 /exec 的完整網址。');
+        const b = document.getElementById('gateBackendBtn'); b.disabled = true; b.innerText = '連線中…';
+        const prev = BACKEND.isCustom ? BACKEND.url : '';
+        BACKEND.url = p.url;
+        try {
+            const d = await api.call('ping');
+            BACKEND_VERSION = d.apiVersion || '';
+            if (!d.ready) throw new Error('連上了，但這本帳還沒初始化。請在 Google 試算表的「🏠 家庭記帳」選單執行「① 初始化 / 升級系統」。');
+            document.getElementById('gateError').classList.add('hidden');
+            if (p.code) { AUTH.familyCode = p.code; document.getElementById('gateCode').value = p.code; }
+            gateStep(1); _otpAuto = false; paintOtp();   // 八碼齊全時 paintOtp 會自動送出
+        } catch (e) {
+            prev ? (BACKEND.url = prev) : BACKEND.clear();
+            gateSay('連不上這個後端，再確認一下？');
+            showGateError(/尚未初始化|初始化/.test(e.message) ? e.message
+                : '連不上。請確認：① 網址是否貼完整 ② 部署時「誰可以存取」有沒有選「所有人」。（' + e.message + '）');
+        } finally { b.disabled = false; b.innerText = '連線'; }
+    }
 
     async function gateSubmitCode() {
         const code = document.getElementById('gateCode').value.trim().toUpperCase();
@@ -1119,10 +1262,9 @@ function hexA(hex, a) {
             STATE.members = d.members; STATE.familyName = d.familyName;
             normalizeState();
             renderMemberPicker();
-            document.getElementById('gateStep1').classList.add('hidden');
-            document.getElementById('gateStep2').classList.remove('hidden');
             document.getElementById('gateError').classList.add('hidden');
-            gateSay('太好了，你是哪一位呢？');
+            gateStep(2);
+            if (backendOutdated()) showGateError(outdatedMsg());
         } catch (e) { AUTH.clear(); _otpAuto = false; gateSay('這組代碼好像不對，再確認一次？'); showGateError(e.message); }
         finally { b.disabled = false; b.innerText = '下一步'; }
     }
@@ -4122,7 +4264,7 @@ function hexA(hex, a) {
                     </div>`;
         }).join('')}
                 </div>
-                <p class="text-xs text-pastel-muted leading-relaxed pt-1">新增成員請在 Google Sheets 的 <b>Members</b> 分頁加一列，回到 App 按同步即生效。</p>
+                <p class="text-xs text-pastel-muted leading-relaxed pt-1">新增成員請在 Google Sheets 的 <b>Members</b> 分頁加一列（member_id 自取、不重複即可），回到 App 按同步即生效。家人要在自己手機上使用，用下方的「複製安裝碼」傳給他。</p>
             </div>
 
             <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-3">
@@ -4180,6 +4322,21 @@ function hexA(hex, a) {
                 <div class="flex gap-2">
                     ${THEMES.map(([v, label, ic]) => `<button onclick="setTheme('${v}')" class="flex-1 py-2.5 rounded-tile text-xs font-bold border tactile ${getTheme() === v ? 'bg-pastel-accent text-white border-pastel-accent' : 'bg-pastel-bg text-stone-600 border-pastel-border'}"><i class="fa-solid ${ic} mr-1"></i>${label}</button>`).join('')}
                 </div>
+            </div>
+
+            <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-3">
+                <div class="font-bold text-sm text-stone-800 flex items-center gap-2"><i class="fa-solid fa-plug text-pastel-blue"></i> 連線與帳本</div>
+                ${backendOutdated() ? `<div class="p-3 rounded-tile bg-pastel-redLight border border-pastel-red/30 text-pastel-red text-[11px] font-bold leading-relaxed">${esc(outdatedMsg())}</div>` : ''}
+                <div class="flex justify-between text-xs text-pastel-muted"><span>後端版本</span><span class="font-mono">${esc(BACKEND_VERSION || '未知')}</span></div>
+                <div class="text-xs text-pastel-muted">
+                    <div class="mb-1">後端網址</div>
+                    <div class="font-mono text-[10px] bg-pastel-bg rounded-lg p-2 break-all">${esc(BACKEND.url || '（未設定）')}</div>
+                </div>
+                <button id="btnCheck" onclick="actConnCheck()" class="w-full py-3 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border tactile active:bg-pastel-accentLight"><i class="fa-solid fa-stethoscope mr-1.5"></i>連線健檢</button>
+                <div id="connCheckBox" class="hidden space-y-2"></div>
+                <button onclick="shareInstall()" class="w-full py-3 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border tactile active:bg-pastel-accentLight"><i class="fa-solid fa-share-nodes mr-1.5"></i>複製安裝碼（給家人加入）</button>
+                <button onclick="changeBackend()" class="w-full py-3 bg-white text-pastel-muted font-bold rounded-tile text-xs border border-pastel-border tactile">更換後端（連到別的帳本）</button>
+                <p class="text-[10px] text-pastel-muted leading-relaxed">安裝碼包含家庭代碼，拿到的人就能看到這本帳的全部紀錄，只給家人。</p>
             </div>
 
             <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-3">
@@ -4351,6 +4508,92 @@ function hexA(hex, a) {
     function actExport() { buzz(); const done = btnBusy('btnExport', '匯出中…'); try { exportCSV(); } finally { setTimeout(done, 700); } }
     async function actSync() { buzz(); const done = btnBusy('btnSync', '同步中…'); await refreshData(); done(); }
     function actReload() { buzz(); btnBusy('btnReload', '重新載入中…'); toast('正在載入最新版本…'); setTimeout(() => location.reload(), 500); }
+
+    /* ---------- 連線健檢 ----------
+       目的是把使用者傳來的「它壞了」變成一句他自己看得懂、自己修得好的話。
+       四項各自對應一種完全不同的處置，所以不能合併成一個「連線正常/異常」。 */
+    async function actConnCheck() {
+        buzz();
+        const done = btnBusy('btnCheck', '檢查中…');
+        const box = document.getElementById('connCheckBox');
+        box.classList.remove('hidden');
+        const rows = [];
+        const paint = () => {
+            box.innerHTML = rows.map(r => `
+                <div class="flex gap-2 p-2.5 rounded-tile border ${r.ok ? 'bg-pastel-greenLight/40 border-pastel-green/30' : 'bg-pastel-redLight border-pastel-red/30'}">
+                    <i class="fa-solid ${r.ok ? 'fa-circle-check text-pastel-green' : 'fa-triangle-exclamation text-pastel-red'} text-xs mt-0.5"></i>
+                    <div class="min-w-0">
+                        <div class="text-[11px] font-bold ${r.ok ? 'text-stone-700' : 'text-pastel-red'}">${esc(r.name)}</div>
+                        <div class="text-[10px] text-pastel-muted leading-relaxed break-all">${esc(r.detail)}</div>
+                    </div></div>`).join('');
+        };
+
+        // ① 後端可達（不帶家庭代碼，才能跟「代碼錯」分開）
+        let reachable = false;
+        try {
+            const d = await api.call('ping');
+            BACKEND_VERSION = d.apiVersion || '';
+            reachable = true;
+            rows.push({ ok: true, name: '後端可達', detail: d.ready ? '連線正常，帳本已初始化' : '連得上，但還沒初始化 —— 請到試算表選單執行「① 初始化 / 升級系統」' });
+            if (!d.ready) rows[0].ok = false;
+        } catch (e) {
+            rows.push({
+                ok: false, name: '後端可達',
+                detail: '連不上。① 後端網址是否貼完整 ② 部署時「誰可以存取」是否選了「所有人」 ③ 改過程式碼後有沒有重新部署新版本。（' + e.message + '）'
+            });
+        }
+        paint();
+
+        // ② 家庭代碼
+        if (reachable) {
+            try {
+                await api.call('listMembers');
+                rows.push({ ok: true, name: '家庭代碼', detail: '代碼正確，成員讀取成功' });
+            } catch (e) {
+                rows.push({ ok: false, name: '家庭代碼', detail: /代碼/.test(e.message) ? '代碼不符。請到試算表選單「② 顯示安裝碼」核對後重新登入。' : e.message });
+            }
+            paint();
+        }
+
+        // ③ 版本握手
+        rows.push(backendOutdated()
+            ? { ok: false, name: '版本', detail: outdatedMsg() }
+            : { ok: true, name: '版本', detail: `介面 ${CONFIG.VERSION} ／ 後端 ${BACKEND_VERSION}，相容` });
+        paint();
+
+        // ④ 單據資料夾（含「初始化與部署不同人」這個最難自己看出來的狀況）
+        if (reachable) {
+            try {
+                const d = await api.call('diagnose');
+                (d.checks || []).filter(c => c.key === 'receipt' || c.key === 'identity' || c.key === 'sheets')
+                    .forEach(c => rows.push({ ok: c.ok, name: c.name, detail: c.detail }));
+            } catch (e) {
+                rows.push({ ok: false, name: '單據資料夾', detail: '無法檢查（後端可能是舊版，請先更新 Code.gs）' });
+            }
+            paint();
+        }
+
+        done();
+        toast(rows.every(r => r.ok) ? '一切正常' : '有項目需要處理', !rows.every(r => r.ok));
+    }
+
+    async function shareInstall() {
+        buzz();
+        const code = installCode();
+        if (!code) return toast('目前使用內建後端，沒有安裝碼', true);
+        const link = location.origin + location.pathname + '?api=' + BACKEND.id + '&code=' + AUTH.familyCode;
+        const text = `一起用家庭記帳吧！\n\n① 用 Safari 或 Chrome 開啟：\n${link}\n\n② 加入主畫面後，若需要重新設定，安裝碼是：\n${code}`;
+        try {
+            if (navigator.share) { await navigator.share({ text }); return; }
+            await navigator.clipboard.writeText(text);
+            toast('已複製，貼給家人即可');
+        } catch (e) { prompt('複製這段給家人：', text); }
+    }
+
+    function changeBackend() {
+        if (!confirm('要連到別的帳本嗎？\n\n目前這本帳的資料留在原本的 Google 試算表裡，不會被刪除，隨時可以用安裝碼連回來。')) return;
+        BACKEND.clear(); AUTH.clear(); location.reload();
+    }
 
     /* ---------- CSV 匯出 ---------- */
     function exportCSV() {
