@@ -416,7 +416,7 @@
        ========================================================== */
 
     const CONFIG = {
-        VERSION: 'v5.1.0',
+        VERSION: 'v5.2.0',
         // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
         API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         DEMO: false
@@ -490,23 +490,39 @@
         clear() { localStorage.removeItem('fc'); localStorage.removeItem('mid'); }
     };
 
+    /* GAS Web App 的 /exec 會 302 轉到 script.googleusercontent.com，
+       回應較大時（例如單據影像）第一次常拿到 404 —— 這是已知的重導向抖動。
+       因此對「唯讀」動作自動重試；寫入動作絕不重試，否則可能重複記帳。 */
+    const READ_ONLY = ['bootstrap', 'listMembers', 'listTransactions', 'getReceipt'];
     const api = {
         async call(action, payload = {}) {
             if (CONFIG.DEMO) return DEMO_API(action, payload);
-            const res = await fetch(CONFIG.API_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({ action, familyCode: AUTH.familyCode, memberId: AUTH.memberId, ...payload }),
-                redirect: 'follow'
-            });
-            if (!res.ok) throw new Error(`連線失敗 (HTTP ${res.status})`);
-            const j = await res.json();
-            if (!j.ok) throw new Error(j.error || '後端錯誤');
-            return j.data;
+            const tries = READ_ONLY.includes(action) ? 3 : 1;
+            let lastErr;
+            for (let n = 0; n < tries; n++) {
+                if (n) await new Promise(z => setTimeout(z, 250 * n));   // 250ms、500ms
+                try {
+                    const res = await fetch(CONFIG.API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({ action, familyCode: AUTH.familyCode, memberId: AUTH.memberId, ...payload }),
+                        redirect: 'follow'
+                    });
+                    if (!res.ok) throw new Error(`連線失敗 (HTTP ${res.status})`);
+                    const j = await res.json();
+                    if (!j.ok) throw new Error(j.error || '後端錯誤');
+                    return j.data;
+                } catch (e) {
+                    lastErr = e;
+                    // 後端明確回報的錯誤不需要重試，直接拋出
+                    if (!/HTTP|Failed to fetch|NetworkError|Load failed/i.test(e.message)) throw e;
+                }
+            }
+            throw lastErr;
         }
     };
 
-    let STATE = { familyName: '', members: [], categories: [], tags: [], transactions: [], rules: [], budgets: [], intents: [], goals: [], achievements: [], cheers: [], memberStats: {}, me: null, poolInitial: 0 };
+    let STATE = { familyName: '', members: [], categories: [], tags: [], transactions: [], rules: [], budgets: [], intents: [], goals: [], achievements: [], cheers: [], memberStats: {}, familyStats: {}, streakSaves: [], me: null, poolInitial: 0 };
 
 /* 記住上次選擇：零記帳習慣的人，每次重選帳戶與歸屬是最容易讓人放棄的摩擦 */
 const PREF = {
@@ -583,6 +599,8 @@ function hexA(hex, a) {
             activeDays: srv.activeDays || 0,
             surplusStreak: srv.surplusStreak || 0,
             funStreak: srv.funStreak || 0,
+            budgetKeptMonths: srv.budgetKeptMonths || 0,
+            disciplinedMonths: srv.disciplinedMonths || 0,
             savingRate: localSavingRate()
         };
         return localAchievementStats();
@@ -620,139 +638,134 @@ function hexA(hex, a) {
             settles: mine.filter(t => t.entry_type === '還款').length,
             goalsDone: (STATE.goals || []).filter(g => g.status === '已結案' && g.owner_id === meId).length,
             surplusMonths: 0, highSaveMonths: 0, activeDays: 0,
+            budgetKeptMonths: 0, disciplinedMonths: 0,
             surplusStreak, funStreak,
             savingRate: cur.inc > 0 ? Math.round((cur.inc - cur.exp) / cur.inc * 100) : 0
         };
     }
 
-    const ACHIEVEMENTS = [
-        { id: 's30', icon: 'fa-fire', name: '習慣養成', hue: 'accent', desc: '連續記帳 30 天', val: x => x.streak, goal: 30, unit: '天' },
-        { id: 'c100', icon: 'fa-pen-to-square', name: '百筆達人', hue: 'blue', desc: '累積記帳 100 筆', val: x => x.count, goal: 100, unit: '筆' },
-        { id: 'sp3', icon: 'fa-seedling', name: '存錢新芽', hue: 'green', desc: '連續 3 個月有結餘', val: x => x.surplusStreak, goal: 3, unit: '個月' },
-        { id: 'fun3', icon: 'fa-spa', name: '自律修行者', hue: 'sky', desc: '娛樂支出佔收入 10% 以下，連續 3 個月', val: x => x.funStreak, goal: 3, unit: '個月' },
-        { id: 'sr30', icon: 'fa-piggy-bank', name: '三成儲蓄率', hue: 'green', desc: '本月儲蓄率達 30%', val: x => x.savingRate, goal: 30, unit: '%' },
-        { id: 's100', icon: 'fa-gem', name: '百日堅持', hue: 'sky', desc: '連續記帳 100 天', val: x => x.streak, goal: 100, unit: '天' },
-        { id: 'adv10', icon: 'fa-handshake-angle', name: '家庭支柱', hue: 'pink', desc: '為公帳代墊 10 次', val: x => x.advances, goal: 10, unit: '次' },
-        { id: 'rec20', icon: 'fa-receipt', name: '單據魔人', hue: 'yellow', desc: '上傳 20 張單據', val: x => x.receipts, goal: 20, unit: '張' },
-        { id: 'sp6', icon: 'fa-tree', name: '存錢大樹', hue: 'green', desc: '連續 6 個月有結餘', val: x => x.surplusStreak, goal: 6, unit: '個月' },
-        { id: 'sr50', icon: 'fa-sack-dollar', name: '五成儲蓄率', hue: 'yellow', desc: '本月儲蓄率達 50%', val: x => x.savingRate, goal: 50, unit: '%' },
-        { id: 'fun6', icon: 'fa-dove', name: '清心寡慾', hue: 'sky', desc: '娛樂支出佔收入 10% 以下，連續 6 個月', val: x => x.funStreak, goal: 6, unit: '個月' },
-        { id: 'c500', icon: 'fa-book', name: '五百筆宗師', hue: 'blue', desc: '累積記帳 500 筆', val: x => x.count, goal: 500, unit: '筆' },
-        { id: 's365', icon: 'fa-crown', name: '一年不斷', hue: 'accent', desc: '連續記帳 365 天', val: x => x.streak, goal: 365, unit: '天' }
+    /* ---------- 六個進化徽章（銅→銀→金→鑽石）----------
+       指標刻意全部選「行為」而非「財務結果」：
+       收入高低不該決定誰拿得到徽章，否則在同一個家裡會變成傷害而不是激勵。 */
+    const TIERS = [
+        { key: 'bronze', name: '銅', color: '#B87333', bg: 'rgba(184,115,51,.12)' },
+        { key: 'silver', name: '銀', color: '#8E9BA6', bg: 'rgba(142,155,166,.14)' },
+        { key: 'gold', name: '金', color: '#D9A216', bg: 'rgba(248,200,80,.16)' },
+        { key: 'diamond', name: '鑽石', color: '#3FB6D8', bg: 'rgba(63,182,216,.14)' }
+    ];
+    const BADGES = [
+        { id: 'budget', icon: 'fa-shield-halved', name: '預算守門員', desc: '未超出自己設定的預算的月數',
+          val: x => x.budgetKeptMonths, goals: [3, 6, 12, 24], unit: '個月',
+          hint: '比的是有沒有守住自己訂的目標，不是賺多少' },
+        { id: 'habit', icon: 'fa-hammer', name: '習慣建築師', desc: '當月記帳達 20 天的月數',
+          val: x => x.disciplinedMonths, goals: [3, 6, 12, 24], unit: '個月',
+          hint: '每個人都在同一條起跑線上' },
+        { id: 'audit', icon: 'fa-receipt', name: '數位查帳員', desc: '上傳單據張數',
+          val: x => x.receipts, goals: [20, 50, 150, 500], unit: '張',
+          hint: '有憑證的帳才查得回去' },
+        { id: 'ally', icon: 'fa-handshake-angle', name: '家庭神隊友', desc: '為家人或公帳代墊的次數',
+          val: x => x.advances, goals: [10, 50, 150, 300], unit: '次',
+          hint: '願意先墊，家裡才轉得動' },
+        { id: 'settle', icon: 'fa-money-bill-transfer', name: '結算特攻', desc: '結清的代墊筆數',
+          val: x => x.settles, goals: [10, 30, 80, 200], unit: '筆',
+          hint: '同一筆還幾次都只算一次，拆單無效' },
+        { id: 'dream', icon: 'fa-star', name: '夢想推手', desc: '完成存錢罐目標的次數',
+          val: x => x.goalsDone, goals: [3, 6, 12, 20], unit: '個',
+          hint: '把記帳變成一起完成的事' }
     ];
 
-    /* ---------- 成長軌跡：把「連續記帳」翻譯成看得見的成長 ---------- */
-    const GROWTH = [
-        { id: 0, name: '種子', icon: 'fa-seedling', min: 0, next: 14, color: '#9A918A', word: '剛播下，先連記兩週看看' },
-        { id: 1, name: '新芽', icon: 'fa-leaf', min: 14, next: 45, color: '#40B868', word: '冒出頭了，習慣正在形成' },
-        { id: 2, name: '小樹', icon: 'fa-tree', min: 45, next: 120, color: '#3090F8', word: '站穩了，繼續往上長' },
-        { id: 3, name: '大樹', icon: 'fa-tree-city', min: 120, next: 365, color: '#F8A048', word: '枝葉茂盛，全家都看得到' },
-        { id: 4, name: '森林', icon: 'fa-mountain-sun', min: 365, next: null, color: '#F8C850', word: '你已經是家裡的記帳支柱' }
-    ];
-    function growthStage(days) {
-        days = Number(days) || 0;
-        let g = GROWTH[0];
-        for (const x of GROWTH) if (days >= x.min) g = x;
-        const prog = g.next ? Math.min((days - g.min) / (g.next - g.min) * 100, 100) : 100;
-        return { ...g, days, progress: prog, remain: g.next ? Math.max(g.next - days, 0) : 0 };
+    /** 回傳徽章當前階級、下一階目標、以及往下一階的進度 */
+    function badgeState(b, st) {
+        const v = b.val(st) || 0;
+        let tier = -1;
+        for (let i = 0; i < b.goals.length; i++) if (v >= b.goals[i]) tier = i;
+        const nextGoal = tier + 1 < b.goals.length ? b.goals[tier + 1] : null;
+        const prevGoal = tier >= 0 ? b.goals[tier] : 0;
+        const progress = nextGoal ? Math.min((v - prevGoal) / (nextGoal - prevGoal) * 100, 100) : 100;
+        return { ...b, value: v, tier, nextGoal, prevGoal, progress, max: tier === b.goals.length - 1 };
+    }
+    function badgeList() {
+        const st = achievementStats();
+        return BADGES.map(b => badgeState(b, st));
     }
 
-    /* ---------- 任務分級：日常 / 每週 / 長期 ----------
-       日常與每週是「會重置」的短週期任務，跟長期累積成就的計算方式完全不同，
-       因此分開實作，不與 achievementList() 混在一起。 */
-    function weekStartISO() {
-        const d = new Date(todayISO() + 'T00:00:00');
-        d.setDate(d.getDate() - ((d.getDay() + 6) % 7));   // 以週一為起點
-        return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-    }
-    function myTxns() {
-        const meId = STATE.me?.member_id;
-        return activeTxns().filter(t => t.payer_id === meId);
-    }
-    function dailyTasks() {
-        const t = todayISO(), mine = myTxns().filter(x => x.date === t);
-        const total = computeSummary('personal').monthlyExpense;
-        const budget = budgetFor('personal', '');
-        const n = daysInYM(currentYM()), day = Number(t.slice(8, 10));
-        const dailyQuota = budget ? budget / n : 0;
-        const todayExp = mine.filter(x => x.entry_type === '支出').reduce((a, b) => a + Number(b.amount), 0);
-        return [
-            { icon: 'fa-pen', name: '今天記一筆', done: mine.length > 0, hint: mine.length ? `已記 ${mine.length} 筆` : '還沒開張' },
-            { icon: 'fa-receipt', name: '今天附一張單據', done: mine.some(x => x.receipt_file_id), hint: '拍發票更好對帳' },
-            { icon: 'fa-gauge-high', name: '今天不超過每日額度', done: !!dailyQuota && todayExp <= dailyQuota,
-              hint: dailyQuota ? `${fmt(todayExp)} / ${fmt(dailyQuota)}` : '尚未設定預算' }
-        ];
-    }
-    function weeklyTasks() {
-        const ws = weekStartISO(), mine = myTxns().filter(x => x.date >= ws);
-        const days = new Set(mine.map(x => x.date)).size;
-        const budget = budgetFor('personal', '');
-        const n = daysInYM(currentYM());
-        const weekQuota = budget ? budget / n * 7 : 0;      // 用「總預算的週配額」而非分類預算，
-        const weekExp = mine.filter(x => x.entry_type === '支出').reduce((a, b) => a + Number(b.amount), 0);
-        return [
-            { icon: 'fa-calendar-check', name: '本週記帳 5 天', done: days >= 5, hint: `${days}/5 天` },
-            { icon: 'fa-wallet', name: '本週不超過週配額', done: !!weekQuota && weekExp <= weekQuota,
-              hint: weekQuota ? `${fmt(weekExp)} / ${fmt(weekQuota)}` : '尚未設定預算' },
-            { icon: 'fa-arrow-trend-down', name: '本週有一天零支出', done: hasZeroSpendDay(ws), hint: '給錢包放個假' }
-        ];
-    }
-    function hasZeroSpendDay(ws) {
-        const spent = new Set(myTxns().filter(x => x.date >= ws && x.entry_type === '支出').map(x => x.date));
-        const t = todayISO();
-        for (let d = new Date(ws + 'T00:00:00'); ; d.setDate(d.getDate() + 1)) {
-            const iso = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-            if (iso > t) break;
-            if (iso < t && !spent.has(iso)) return true;      // 今天還沒過完不算
-        }
-        return false;
+    /* 環形進度條。金→鑽石之間可能長達兩三年，
+       在 25/50/75% 插入碎鑽節點填補「多巴胺沙漠」。 */
+    function ringSvg(bs, size) {
+        const R = 26, C = 2 * Math.PI * R, px = size || 76;
+        const col = bs.tier >= 0 ? TIERS[bs.tier].color : '#C9BFB2';
+        const nodes = bs.max ? '' : [25, 50, 75].map(p => {
+            const ang = (p / 100) * 2 * Math.PI - Math.PI / 2;
+            const on = bs.progress >= p;
+            return `<circle cx="${(32 + R * Math.cos(ang)).toFixed(1)}" cy="${(32 + R * Math.sin(ang)).toFixed(1)}"
+                r="${on ? 2.6 : 1.8}" fill="${on ? col : '#E7D9C6'}"/>`;
+        }).join('');
+        return `<svg viewBox="0 0 64 64" style="width:${px}px;height:${px}px">
+            <circle cx="32" cy="32" r="${R}" fill="none" stroke="#F3E7D8" stroke-width="4"/>
+            <circle cx="32" cy="32" r="${R}" fill="none" stroke="${col}" stroke-width="4" stroke-linecap="round"
+                stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${(C * (1 - bs.progress / 100)).toFixed(1)}"
+                transform="rotate(-90 32 32)" style="transition:stroke-dashoffset .8s ease"/>
+            ${nodes}
+        </svg>`;
     }
 
-    /* ---------- 「僅提醒」的重複性收支：到期待確認清單 ---------- */
-    function dueReminders() {
-        const t = todayISO(), meId = STATE.me?.member_id;
-        return (STATE.rules || []).filter(r => r.status === '啟用' && r.auto_mode === '僅提醒' &&
-            r.next_run && String(r.next_run) <= t &&
-            (r.scope === 'family' ? currentMode === 'family' : r.member_id === meId) &&
-            (!r.end_date || String(r.next_run) <= String(r.end_date)));
-    }
-    function reminderSection() {
-        const due = dueReminders();
-        if (!due.length) return '';
-        return `<div class="space-y-2.5">
-            <div class="flex items-center gap-2 text-xs font-bold text-stone-600">
-                <i class="fa-solid fa-bell fa-shake text-pastel-yellow"></i> 待確認的重複性收支
-                <span class="text-[10px] bg-pastel-yellowLight text-[#D9A216] px-2 py-0.5 rounded-full">${due.length}</span></div>
-            ${due.map(r => `
-                <div class="bg-pastel-bg rounded-tile p-3 border border-pastel-border">
-                    <div class="flex justify-between items-center gap-2 mb-2">
-                        <div class="min-w-0">
-                            <div class="font-bold text-sm text-stone-800 truncate">${esc(r.name)}</div>
-                            <div class="text-[10px] text-pastel-muted">應於 ${esc(r.next_run)} ・ ${esc(r.freq)}</div></div>
-                        <div class="font-bold font-rounded ${r.entry_type === '收入' ? 'text-pastel-green' : 'text-stone-800'} flex-shrink-0">${fmt(r.amount)}</div></div>
-                    <div class="grid grid-cols-2 gap-2">
-                        <button onclick="confirmReminder('${esc(r.rule_id)}')" class="py-2 bg-pastel-accent text-white rounded-lg text-xs font-bold tactile">記這一筆</button>
-                        <button onclick="skipReminder('${esc(r.rule_id)}')" class="py-2 bg-white border border-pastel-border text-stone-600 rounded-lg text-xs font-bold tactile">這期略過</button>
-                    </div></div>`).join('')}
+    function badgeGrid() {
+        const list = badgeList();
+        return `<div class="grid grid-cols-3 gap-3">
+            ${list.map(bs => {
+            const col = bs.tier >= 0 ? TIERS[bs.tier].color : '#9A918A';
+            return `<button onclick="openBadgeSheet('${esc(bs.id)}')" class="flex flex-col items-center gap-1.5 tactile">
+                <div class="relative">
+                    ${ringSvg(bs, 72)}
+                    <div class="absolute inset-0 flex items-center justify-center">
+                        <div class="w-11 h-11 rounded-full flex items-center justify-center text-lg"
+                             style="background:${bs.tier >= 0 ? TIERS[bs.tier].bg : '#F5EFE6'};color:${col}">
+                            <i class="fa-solid ${bs.icon}"></i></div></div>
+                    ${bs.tier >= 0 ? `<span class="absolute -bottom-0.5 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded-full text-[9px] font-bold text-white shadow-sm" style="background:${col}">${TIERS[bs.tier].name}</span>` : ''}
+                </div>
+                <div class="text-[11px] font-bold text-stone-700 leading-tight text-center">${esc(bs.name)}</div>
+                <div class="text-[10px] text-pastel-muted">${bs.max ? '已滿階' : `${bs.value} / ${bs.nextGoal}`}</div>
+            </button>`;
+        }).join('')}
         </div>`;
     }
-    async function confirmReminder(id) {
-        const r = STATE.rules.find(x => x.rule_id === id); if (!r) return;
-        buzz(12);
-        try {
-            const res = await api.call('confirmReminder', { rule_id: id });
-            STATE.transactions.push({ ...res.txn, _new: true });
-            r.next_run = res.next_run;
-            renderDataViews(); renderSettings(); toast('已記錄'); coinFly();
-        } catch (e) { toast('失敗：' + e.message, true); }
-    }
-    async function skipReminder(id) {
-        const r = STATE.rules.find(x => x.rule_id === id); if (!r) return;
-        const backup = r.next_run;
-        try {
-            const res = await api.call('skipReminder', { rule_id: id });
-            r.next_run = res.next_run; renderDataViews(); renderSettings(); toast('已略過本期');
-        } catch (e) { r.next_run = backup; renderDataViews(); toast('失敗：' + e.message, true); }
+
+    function openBadgeSheet(id) {
+        const bs = badgeList().find(b => b.id === id); if (!bs) return;
+        const mine = (STATE.achievements || []).filter(a => a.member_id === STATE.me?.member_id &&
+            String(a.ach_id).indexOf(id + '_') === 0).sort((a, b) => String(b.unlocked_at).localeCompare(String(a.unlocked_at)));
+        openSheet(`
+            <div class="flex items-center gap-4 mb-4">
+                <div class="relative flex-shrink-0">${ringSvg(bs, 84)}
+                    <div class="absolute inset-0 flex items-center justify-center">
+                        <div class="w-12 h-12 rounded-full flex items-center justify-center text-xl"
+                             style="background:${bs.tier >= 0 ? TIERS[bs.tier].bg : '#F5EFE6'};color:${bs.tier >= 0 ? TIERS[bs.tier].color : '#9A918A'}">
+                            <i class="fa-solid ${bs.icon}"></i></div></div></div>
+                <div class="min-w-0">
+                    <div class="text-lg font-bold text-stone-800">${esc(bs.name)}</div>
+                    <div class="text-xs text-pastel-muted">${esc(bs.desc)}</div>
+                    <div class="text-2xl font-bold font-rounded text-stone-800 mt-1">${bs.value}<span class="text-sm text-pastel-muted ml-1">${esc(bs.unit)}</span></div>
+                </div></div>
+            <p class="text-[11px] text-pastel-muted bg-pastel-bg rounded-tile p-3 mb-4">${esc(bs.hint)}</p>
+            <div class="space-y-2 mb-5">
+                ${bs.goals.map((g, i) => {
+            const got = bs.value >= g, cur = i === bs.tier + 1;
+            return `<div class="flex items-center gap-3 p-2.5 rounded-tile border ${got ? 'border-transparent' : cur ? 'border-pastel-accent/40 bg-white' : 'border-pastel-border bg-pastel-bg'}"
+                        style="${got ? `background:${TIERS[i].bg}` : ''}">
+                        <div class="w-8 h-8 rounded-full flex items-center justify-center text-xs flex-shrink-0"
+                             style="background:${got ? TIERS[i].color : '#EDE4D8'};color:${got ? '#fff' : '#9A918A'}">
+                            <i class="fa-solid ${got ? 'fa-check' : bs.icon}"></i></div>
+                        <div class="flex-1 min-w-0">
+                            <div class="text-sm font-bold ${got ? 'text-stone-800' : 'text-stone-600'}">${TIERS[i].name}級 · ${g} ${esc(bs.unit)}</div>
+                            ${cur ? `<div class="text-[10px] text-pastel-accent">還差 ${g - bs.value} ${esc(bs.unit)}</div>` : ''}</div>
+                        ${got ? `<i class="fa-solid fa-circle-check" style="color:${TIERS[i].color}"></i>` : ''}
+                    </div>`;
+        }).join('')}
+            </div>
+            ${mine.length ? `<div>
+                <div class="text-xs font-bold text-stone-600 mb-2">解鎖時間軸</div>
+                <div class="space-y-1.5">${mine.map(a => `<div class="flex justify-between text-[11px] text-pastel-muted">
+                    <span>${esc(a.ach_name || a.ach_id)}</span><span>${esc(String(a.unlocked_at).slice(0, 10))}</span></div>`).join('')}</div></div>` : ''}`);
     }
 
     const HUE = {
@@ -761,15 +774,25 @@ function hexA(hex, a) {
         pink: ['bg-pastel-pinkLight', 'text-pastel-pink'], yellow: ['bg-pastel-yellowLight', 'text-[#D9A216]']
     };
 
-    /** 回傳 [{...成就, done, cur}]，並依定義順序排列（越後面越難） */
+    /** 把 6 個徽章的每一階展開成「可解鎖項目」，供慶祝與稱號使用。
+        id 格式 badgeId_tierIndex，例如 audit_2 = 數位查帳員（金）。 */
     function achievementList() {
-        const x = achievementStats();
-        return ACHIEVEMENTS.map(a => { const cur = a.val(x); return { ...a, cur, done: cur >= a.goal }; });
+        const st = achievementStats(), out = [];
+        BADGES.forEach(b => {
+            const v = b.val(st) || 0;
+            b.goals.forEach((g, i) => out.push({
+                id: `${b.id}_${i}`, badgeId: b.id, tier: i, icon: b.icon,
+                name: `${b.name}（${TIERS[i].name}）`, hue: 'accent',
+                desc: `${b.desc} ${g} ${b.unit}`, cur: v, goal: g, unit: b.unit, done: v >= g
+            }));
+        });
+        return out;
     }
-    /** 稱號＝已解鎖中最後（最難）的那個 */
+    /** 稱號＝已解鎖中階級最高的那一個（同階取排序較後的） */
     function currentTitle(list) {
         const done = (list || achievementList()).filter(a => a.done);
-        return done.length ? done[done.length - 1] : null;
+        if (!done.length) return null;
+        return done.reduce((best, a) => (a.tier > best.tier ? a : best), done[0]);
     }
 
     /* ==========================================================
@@ -1099,10 +1122,11 @@ function hexA(hex, a) {
     /* 統一正規化：只要有任何一個陣列欄位是 undefined（例如後端尚未部署新版），
        整個 App 就會在渲染時崩潰。與其在 17 個取用點各加防護，
        不如在資料進入的唯一入口一次補齊。 */
-    const STATE_ARRAYS = ['members', 'categories', 'tags', 'transactions', 'rules', 'budgets', 'intents', 'goals', 'achievements', 'cheers'];
+    const STATE_ARRAYS = ['members', 'categories', 'tags', 'transactions', 'rules', 'budgets', 'intents', 'goals', 'achievements', 'cheers', 'streakSaves'];
     function normalizeState() {
         STATE_ARRAYS.forEach(k => { if (!Array.isArray(STATE[k])) STATE[k] = []; });
         if (!STATE.memberStats || typeof STATE.memberStats !== 'object') STATE.memberStats = {};
+        if (!STATE.familyStats || typeof STATE.familyStats !== 'object') STATE.familyStats = {};
         STATE.poolInitial = Number(STATE.poolInitial) || 0;
     }
 
@@ -1110,7 +1134,7 @@ function hexA(hex, a) {
         const d = await api.call('bootstrap');
         Object.assign(STATE, {
             familyName: d.familyName, members: d.members, categories: d.categories,
-            tags: d.tags, transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], goals: d.goals || [], achievements: d.achievements || [], cheers: d.cheers || [], memberStats: d.memberStats || {}, poolInitial: d.poolInitial
+            tags: d.tags, transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], goals: d.goals || [], achievements: d.achievements || [], cheers: d.cheers || [], memberStats: d.memberStats || {}, familyStats: d.familyStats || {}, streakSaves: d.streakSaves || [], poolInitial: d.poolInitial
         });
         normalizeState();
         STATE.me = STATE.members.find(m => m.member_id === AUTH.memberId);
@@ -1174,6 +1198,10 @@ function hexA(hex, a) {
             kind: 'ach', at: String(a.unlocked_at || ''), member: a.member_id,
             icon: a.ach_icon || 'fa-trophy', text: `解鎖了「${a.ach_name || a.ach_id}」成就`
         }));
+        (STATE.streakSaves || []).forEach(x => feed.push({
+            kind: 'save', at: String(x.created_at || ''), member: x.from_member,
+            icon: 'fa-heart-pulse', text: `幫 ${nameOf(x.to_member)} 保住了連續紀錄`
+        }));
         (STATE.cheers || []).forEach(c => feed.push({
             kind: 'cheer', at: String(c.created_at || ''), member: c.from_member,
             icon: 'fa-hand-fist', text: `幫 ${nameOf(c.to_member)} 加油：${c.message || ''}`
@@ -1193,7 +1221,7 @@ function hexA(hex, a) {
                     <div class="min-w-0 flex-1">
                         <div class="text-sm text-stone-700 truncate"><b class="text-stone-800">${esc(nameOf(f.member))}</b> ${esc(f.text)}</div>
                         <div class="text-[10px] text-pastel-muted">${esc(String(f.at).slice(0, 10))}</div></div>
-                    <div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${f.kind === 'ach' ? 'bg-pastel-yellowLight text-[#D9A216]' : 'bg-pastel-accentLight text-pastel-accent'}">
+                    <div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${f.kind === 'ach' ? 'bg-pastel-yellowLight text-[#D9A216]' : f.kind === 'save' ? 'bg-pastel-blueLight text-pastel-blue' : 'bg-pastel-accentLight text-pastel-accent'}">
                         <i class="fa-solid ${esc(f.icon)} text-xs"></i></div>
                 </div>`;
         }).join('')}
@@ -1223,6 +1251,171 @@ function hexA(hex, a) {
                 .onfinish = () => c.remove();
         }
         buzz(12);
+    }
+
+    function weekStartISO() {
+        const d = new Date(todayISO() + 'T00:00:00');
+        d.setDate(d.getDate() - ((d.getDay() + 6) % 7));   // 以週一為起點
+        return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    }
+    function myTxns() {
+        const meId = STATE.me?.member_id;
+        return activeTxns().filter(t => t.payer_id === meId);
+    }
+    function dailyTasks() {
+        const t = todayISO(), mine = myTxns().filter(x => x.date === t);
+        const total = computeSummary('personal').monthlyExpense;
+        const budget = budgetFor('personal', '');
+        const n = daysInYM(currentYM()), day = Number(t.slice(8, 10));
+        const dailyQuota = budget ? budget / n : 0;
+        const todayExp = mine.filter(x => x.entry_type === '支出').reduce((a, b) => a + Number(b.amount), 0);
+        return [
+            { icon: 'fa-pen', name: '今天記一筆', done: mine.length > 0, hint: mine.length ? `已記 ${mine.length} 筆` : '還沒開張' },
+            { icon: 'fa-receipt', name: '今天附一張單據', done: mine.some(x => x.receipt_file_id), hint: '拍發票更好對帳' },
+            { icon: 'fa-gauge-high', name: '今天不超過每日額度', done: !!dailyQuota && todayExp <= dailyQuota,
+              hint: dailyQuota ? `${fmt(todayExp)} / ${fmt(dailyQuota)}` : '尚未設定預算' }
+        ];
+    }
+    function weeklyTasks() {
+        const ws = weekStartISO(), mine = myTxns().filter(x => x.date >= ws);
+        const days = new Set(mine.map(x => x.date)).size;
+        const budget = budgetFor('personal', '');
+        const n = daysInYM(currentYM());
+        const weekQuota = budget ? budget / n * 7 : 0;      // 用「總預算的週配額」而非分類預算，
+        const weekExp = mine.filter(x => x.entry_type === '支出').reduce((a, b) => a + Number(b.amount), 0);
+        return [
+            { icon: 'fa-calendar-check', name: '本週記帳 5 天', done: days >= 5, hint: `${days}/5 天` },
+            { icon: 'fa-wallet', name: '本週不超過週配額', done: !!weekQuota && weekExp <= weekQuota,
+              hint: weekQuota ? `${fmt(weekExp)} / ${fmt(weekQuota)}` : '尚未設定預算' },
+            { icon: 'fa-arrow-trend-down', name: '本週有一天零支出', done: hasZeroSpendDay(ws), hint: '給錢包放個假' }
+        ];
+    }
+    function hasZeroSpendDay(ws) {
+        const spent = new Set(myTxns().filter(x => x.date >= ws && x.entry_type === '支出').map(x => x.date));
+        const t = todayISO();
+        for (let d = new Date(ws + 'T00:00:00'); ; d.setDate(d.getDate() + 1)) {
+            const iso = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+            if (iso > t) break;
+            if (iso < t && !spent.has(iso)) return true;      // 今天還沒過完不算
+        }
+        return false;
+    }
+    function dueReminders() {
+        const t = todayISO(), meId = STATE.me?.member_id;
+        return (STATE.rules || []).filter(r => r.status === '啟用' && r.auto_mode === '僅提醒' &&
+            r.next_run && String(r.next_run) <= t &&
+            (r.scope === 'family' ? currentMode === 'family' : r.member_id === meId) &&
+            (!r.end_date || String(r.next_run) <= String(r.end_date)));
+    }
+    function reminderSection() {
+        const due = dueReminders();
+        if (!due.length) return '';
+        return `<div class="space-y-2.5">
+            <div class="flex items-center gap-2 text-xs font-bold text-stone-600">
+                <i class="fa-solid fa-bell fa-shake text-pastel-yellow"></i> 待確認的重複性收支
+                <span class="text-[10px] bg-pastel-yellowLight text-[#D9A216] px-2 py-0.5 rounded-full">${due.length}</span></div>
+            ${due.map(r => `
+                <div class="bg-pastel-bg rounded-tile p-3 border border-pastel-border">
+                    <div class="flex justify-between items-center gap-2 mb-2">
+                        <div class="min-w-0">
+                            <div class="font-bold text-sm text-stone-800 truncate">${esc(r.name)}</div>
+                            <div class="text-[10px] text-pastel-muted">應於 ${esc(r.next_run)} ・ ${esc(r.freq)}</div></div>
+                        <div class="font-bold font-rounded ${r.entry_type === '收入' ? 'text-pastel-green' : 'text-stone-800'} flex-shrink-0">${fmt(r.amount)}</div></div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="confirmReminder('${esc(r.rule_id)}')" class="py-2 bg-pastel-accent text-white rounded-lg text-xs font-bold tactile">記這一筆</button>
+                        <button onclick="skipReminder('${esc(r.rule_id)}')" class="py-2 bg-white border border-pastel-border text-stone-600 rounded-lg text-xs font-bold tactile">這期略過</button>
+                    </div></div>`).join('')}
+        </div>`;
+    }
+    async function confirmReminder(id) {
+        const r = STATE.rules.find(x => x.rule_id === id); if (!r) return;
+        buzz(12);
+        try {
+            const res = await api.call('confirmReminder', { rule_id: id });
+            STATE.transactions.push({ ...res.txn, _new: true });
+            r.next_run = res.next_run;
+            renderDataViews(); renderSettings(); toast('已記錄'); coinFly();
+        } catch (e) { toast('失敗：' + e.message, true); }
+    }
+    async function skipReminder(id) {
+        const r = STATE.rules.find(x => x.rule_id === id); if (!r) return;
+        const backup = r.next_run;
+        try {
+            const res = await api.call('skipReminder', { rule_id: id });
+            r.next_run = res.next_run; renderDataViews(); renderSettings(); toast('已略過本期');
+        } catch (e) { r.next_run = backup; renderDataViews(); toast('失敗：' + e.message, true); }
+    }
+
+    /* ---------- 家庭共鬥成就 ----------
+       指標刻意選「全家一起做到才算」的行為，而不是淨資產這類財富指標——
+       財富達不成的家庭永遠達不成，而且不是靠努力可以改變的。 */
+    const COOP = [
+        { id: 'co_days', icon: 'fa-people-group', name: '全家不斷線', unit: '天',
+          desc: '連續每天都有人記帳', goals: [7, 30, 100],
+          val: () => Number((STATE.familyStats || {}).activeDayStreak) || 0 },
+        { id: 'co_clear', icon: 'fa-handshake', name: '零掛帳之家', unit: '筆',
+          desc: '全家沒有任何待清償項目', goals: [1],
+          val: () => allPendingCount() === 0 ? 1 : 0 },
+        { id: 'co_budget', icon: 'fa-shield-heart', name: '家庭守成', unit: '個月',
+          desc: '家庭預算連續未超支', goals: [3, 6, 12],
+          val: () => Number((STATE.familyStats || {}).budgetKeptStreak) || 0 }
+    ];
+    /** 全家還沒結清的分攤筆數 */
+    function allPendingCount() {
+        let n = 0;
+        activeTxns().filter(t => (t.nature === '家庭代墊' || t.nature === '私人拆帳') && t.entry_type === '支出')
+            .forEach(src => parseSplit(src).forEach(x => {
+                if (x.amount - paidFor(src.txn_id, x.member_id) > 0.01) n++;
+            }));
+        return n;
+    }
+    function coopSection() {
+        return `<div class="flex justify-between items-center mb-3">
+            <h3 class="text-sm font-bold text-stone-800"><i class="fa-solid fa-house-chimney-user text-pastel-blue mr-1.5"></i>家庭共鬥</h3>
+            <span class="text-xs text-pastel-muted">需要全家一起達成</span></div>
+        <div class="space-y-2.5">
+            ${COOP.map(c => {
+            const v = c.val();
+            let tier = -1;
+            for (let i = 0; i < c.goals.length; i++) if (v >= c.goals[i]) tier = i;
+            const next = tier + 1 < c.goals.length ? c.goals[tier + 1] : null;
+            const pct = next ? Math.min(v / next * 100, 100) : 100;
+            const done = tier >= 0;
+            return `<div class="flex items-center gap-3 p-3 rounded-tile border ${done ? 'bg-pastel-blueLight border-transparent' : 'bg-white border-pastel-border'}">
+                    <div class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${done ? 'bg-white/70 text-pastel-blue' : 'bg-pastel-bg text-pastel-muted'}">
+                        <i class="fa-solid ${c.icon}"></i></div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex justify-between items-center gap-2">
+                            <span class="font-bold text-sm truncate ${done ? 'text-pastel-blue' : 'text-stone-700'}">${esc(c.name)}${tier >= 0 && c.goals.length > 1 ? ` · ${c.goals[tier]}${esc(c.unit)}` : ''}</span>
+                            <span class="text-[10px] font-bold flex-shrink-0 ${done ? 'text-pastel-blue' : 'text-pastel-muted'}">${next ? `${v}/${next}${esc(c.unit)}` : '已達成'}</span></div>
+                        <div class="text-[10px] text-pastel-muted mt-0.5 truncate">${esc(c.desc)}</div>
+                        ${next ? `<div class="w-full bg-pastel-bg rounded-full h-1.5 mt-1.5 overflow-hidden"><div class="bg-pastel-blue h-1.5 rounded-full transition-all duration-700" style="width:${pct}%"></div></div>` : ''}
+                    </div></div>`;
+        }).join('')}
+        </div>`;
+    }
+
+    /* ---------- 續命：幫家人保住連續紀錄 ---------- */
+    function savedThisMonth() {
+        const ym = currentYM();
+        return (STATE.streakSaves || []).some(x => x.from_member === STATE.me?.member_id && String(x.ym) === ym);
+    }
+    function streakAtRisk(m) {
+        return m.member_id !== 'family_pool' && m.member_id !== STATE.me?.member_id &&
+            m.status !== '停用' && (Number(m.streak_days) || 0) > 0 && daysSince(m.last_entry_date) >= 2;
+    }
+    async function saveStreak(toId) {
+        const m = STATE.members.find(x => x.member_id === toId); if (!m) return;
+        if (!confirm(`幫 ${m.nickname} 保住 ${m.streak_days} 天的連續紀錄？\n你這個月只有一次機會。`)) return;
+        buzz(14);
+        try {
+            const r2 = await api.call('saveStreak', { to_member: toId });
+            m.last_entry_date = r2.bridged_to;
+            STATE.streakSaves.push({ save_id: 'tmp' + Math.random(), from_member: STATE.me.member_id,
+                to_member: toId, ym: currentYM(), bridged_to: r2.bridged_to, created_at: localStamp() });
+            renderSettings(); renderDashboard();
+            toast(`已幫 ${m.nickname} 保住 ${r2.streak_days} 天紀錄`);
+        } catch (e) { toast(e.message, true); }
     }
 
     /* ---------- 成就解鎖慶祝 ---------- */
@@ -1284,7 +1477,7 @@ function hexA(hex, a) {
     async function refreshData() {
         try {
             const d = await api.call('bootstrap');
-            Object.assign(STATE, { transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], goals: d.goals || [], achievements: d.achievements || [], cheers: d.cheers || [], memberStats: d.memberStats || {}, categories: d.categories, tags: d.tags, members: d.members });
+            Object.assign(STATE, { transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], goals: d.goals || [], achievements: d.achievements || [], cheers: d.cheers || [], memberStats: d.memberStats || {}, familyStats: d.familyStats || {}, streakSaves: d.streakSaves || [], categories: d.categories, tags: d.tags, members: d.members });
             normalizeState();
             STATE.me = STATE.members.find(m => m.member_id === AUTH.memberId) || STATE.me;
             renderDataViews(); renderSettings(); toast('已同步');
@@ -3686,36 +3879,44 @@ function hexA(hex, a) {
             ${taskGroup('本週任務', 'fa-calendar-week', weeklyTasks())}
 
             <div class="flex justify-between items-center mb-3 mt-6">
-                <h3 class="text-sm font-bold text-stone-800">長期成就</h3>
-                <span class="text-xs text-pastel-muted">已解鎖 ${got.length} / ${list.length}</span></div>
-            <div class="space-y-2.5 mb-4">
-                ${list.map(a => {
-            const pct = Math.min(a.cur / a.goal * 100, 100);
-            return `<div class="flex items-center gap-3 p-3 rounded-tile border ${a.done ? `${HUE[a.hue][0]} border-transparent` : 'bg-white border-pastel-border'}">
-                    <div class="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${a.done ? 'bg-white/70' : 'bg-pastel-bg'}">
-                        <i class="fa-solid ${a.icon} ${a.done ? HUE[a.hue][1] : 'text-pastel-muted'}"></i></div>
-                    <div class="flex-1 min-w-0">
-                        <div class="flex justify-between items-center gap-2">
-                            <span class="font-bold text-sm truncate ${a.done ? HUE[a.hue][1] : 'text-stone-700'}">${esc(a.name)}</span>
-                            <span class="text-[10px] font-bold flex-shrink-0 ${a.done ? HUE[a.hue][1] : 'text-pastel-muted'}">${a.done ? '已達成' : `${Math.min(a.cur, a.goal)}/${a.goal}${a.unit}`}</span></div>
-                        <div class="text-[10px] text-pastel-muted mt-0.5 truncate">${esc(a.desc)}</div>
-                        ${a.done ? '' : `<div class="w-full bg-pastel-bg rounded-full h-1.5 mt-1.5 overflow-hidden"><div class="bg-pastel-accent h-1.5 rounded-full" style="width:${pct}%"></div></div>`}
-                    </div></div>`;
-        }).join('')}
-            </div>
+                <h3 class="text-sm font-bold text-stone-800"><i class="fa-solid fa-user text-pastel-accent mr-1.5"></i>個人徽章</h3>
+                <span class="text-xs text-pastel-muted">已解鎖 ${got.length} / ${list.length} 階</span></div>
+            ${badgeGrid()}
+            <div class="mt-6">${coopSection()}</div>
+            <div class="h-4"></div>
             <button onclick="closeProfileModal()" class="w-full py-3 bg-pastel-bg text-stone-700 font-bold rounded-tile text-sm border border-pastel-border">關閉</button>`;
         m.classList.remove('js-hide'); void m.offsetWidth;
         m.classList.remove('opacity-0');
         document.getElementById('profileModalContent').classList.remove('translate-y-full');
     }
+    /* 綁累積筆數：只進不退，即使連續紀錄斷掉，植物依然穩穩長大 */
+    const GROWTH = [
+        { id: 0, name: '種子', icon: 'fa-seedling', min: 0, next: 50, color: '#9A918A', word: '剛播下，先記個 50 筆看看' },
+        { id: 1, name: '新芽', icon: 'fa-leaf', min: 50, next: 100, color: '#40B868', word: '冒出頭了，習慣正在形成' },
+        { id: 2, name: '小樹', icon: 'fa-tree', min: 100, next: 300, color: '#3090F8', word: '站穩了，繼續往上長' },
+        { id: 3, name: '大樹', icon: 'fa-tree-city', min: 300, next: 500, color: '#F8A048', word: '枝葉茂盛，全家都看得到' },
+        { id: 4, name: '森林', icon: 'fa-mountain-sun', min: 500, next: null, color: '#F8C850', word: '你已經是家裡的記帳支柱' }
+    ];
+
+    /* 成長軌跡改綁「累積筆數」而非連續天數。
+       光環負責製造緊張感（斷了會掉），成長軌跡負責提供安全網（只進不退）。
+       兩者原本都吃 streak_days，等於同一件事畫兩次。 */
+    function growthStage(count) {
+        count = Number(count) || 0;
+        let g = GROWTH[0];
+        for (const x of GROWTH) if (count >= x.min) g = x;
+        const prog = g.next ? Math.min((count - g.min) / (g.next - g.min) * 100, 100) : 100;
+        return { ...g, count, days: count, progress: prog, remain: g.next ? Math.max(g.next - count, 0) : 0 };
+    }
+
     function growthCard() {
-        const g = growthStage(STATE.me?.streak_days);
+        const g = growthStage(achievementStats().count);
         return `<div class="rounded-tile p-4 mb-5 border" style="background:${hexA(g.color, .1)};border-color:${hexA(g.color, .3)}">
             <div class="flex items-center gap-3 mb-3">
                 <div class="w-12 h-12 rounded-full bg-white shadow-sm flex items-center justify-center text-xl" style="color:${g.color}">
                     <i class="fa-solid ${g.icon}"></i></div>
                 <div class="min-w-0 flex-1">
-                    <div class="font-bold text-sm text-stone-800">成長階段 · ${esc(g.name)}</div>
+                    <div class="font-bold text-sm text-stone-800">成長階段 · ${esc(g.name)} <span class="font-normal text-pastel-muted">累積 ${g.count} 筆</span></div>
                     <div class="text-[11px] text-pastel-muted truncate">${esc(g.word)}</div></div>
             </div>
             <div class="flex gap-1.5 mb-2">
@@ -3723,7 +3924,7 @@ function hexA(hex, a) {
             </div>
             <div class="flex justify-between text-[10px] text-pastel-muted">
                 <span>${GROWTH.map(x => x.id === g.id ? `<b style="color:${g.color}">${x.name}</b>` : '').join('')}</span>
-                <span>${g.next ? `再 ${g.remain} 天成為「${GROWTH[g.id + 1].name}」` : '已達最高階段'}</span></div>
+                <span>${g.next ? `再 ${g.remain} 筆成為「${GROWTH[g.id + 1].name}」` : '已達最高階段'}</span></div>
         </div>`;
     }
 
@@ -3827,9 +4028,11 @@ function hexA(hex, a) {
                         <div class="text-[11px] font-bold text-stone-700 truncate w-full text-center mt-1">${esc(m.nickname)}${isMe ? ' ·我' : ''}</div>
                         <div class="text-[10px] ${i.color} font-bold truncate w-full text-center leading-tight">${esc(i.name)}</div>
                         <div class="text-[10px] text-pastel-muted"><i class="fa-solid fa-fire"></i> ${Number(m.streak_days) || 0}</div>
-                        ${needsCheer(m) ? (cheeredToday(m.member_id)
-                    ? `<span class="mt-1 text-[9px] text-pastel-muted">已加油</span>`
-                    : `<button onclick="sendCheer('${esc(m.member_id)}')" class="mt-1 px-2 py-1 rounded-full bg-pastel-accentLight text-pastel-accent text-[9px] font-bold tactile"><i class="fa-solid fa-hand-fist mr-0.5"></i>加油</button>`) : ''}
+                        ${streakAtRisk(m) && !savedThisMonth()
+                    ? `<button onclick="saveStreak('${esc(m.member_id)}')" class="mt-1 px-2 py-1 rounded-full bg-pastel-blueLight text-pastel-blue text-[9px] font-bold tactile" title="幫他保住連續紀錄"><i class="fa-solid fa-heart-pulse mr-0.5"></i>續命</button>`
+                    : needsCheer(m) ? (cheeredToday(m.member_id)
+                        ? `<span class="mt-1 text-[9px] text-pastel-muted">已加油</span>`
+                        : `<button onclick="sendCheer('${esc(m.member_id)}')" class="mt-1 px-2 py-1 rounded-full bg-pastel-accentLight text-pastel-accent text-[9px] font-bold tactile"><i class="fa-solid fa-hand-fist mr-0.5"></i>加油</button>`) : ''}
                     </div>`;
         }).join('')}
                 </div>
