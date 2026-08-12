@@ -187,6 +187,21 @@
         }
         .mode-family #addBtnInner.ring-4 { --tw-ring-color:#D6E9FF !important; }
 
+        /* 光環進階：脈衝發光 */
+        @keyframes auraPulse {
+            0%   { box-shadow:0 0 0 0 rgba(248,200,80,.75); transform:scale(1); }
+            35%  { box-shadow:0 0 0 14px rgba(248,200,80,0); transform:scale(1.08); }
+            70%  { box-shadow:0 0 0 0 rgba(248,200,80,.55); transform:scale(1); }
+            100% { box-shadow:0 0 0 14px rgba(248,200,80,0); transform:scale(1); }
+        }
+        .aura-pulse { animation:auraPulse 1.3s ease-out 2; }
+
+        /* 短週期任務：橫向微型方塊 */
+        .task-rail { scroll-snap-type:x proximity; -webkit-overflow-scrolling:touch; }
+        .task-card { scroll-snap-align:start; }
+        @keyframes taskDone { 0%{transform:scale(1)} 45%{transform:scale(1.16)} 100%{transform:scale(1)} }
+        .task-tick { animation:taskDone .42s cubic-bezier(.3,.8,.4,1); }
+
         /* 6. 觸覺感 UI：按下時輕微下沉 */
         /* 小型控制項：按下微微下沉 */
         .tactile { transition:transform .09s ease, box-shadow .09s ease; }
@@ -376,6 +391,8 @@
     <!-- 單據全螢幕檢視 -->
     <div id="lightbox" onclick="closeLightbox()" class="js-hide opacity-0 absolute inset-0 z-[120] bg-black/85 flex items-center justify-center p-4 transition-opacity duration-200">
         <img id="lightboxImg" alt="單據" class="max-w-full max-h-full object-contain rounded-tile">
+        <div id="lightboxHint" class="js-hide absolute bottom-8 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-full bg-black/60 text-white text-[11px] font-bold">
+            <i class="fa-solid fa-circle-notch fa-spin mr-1.5"></i>載入原圖中…</div>
         <button onclick="event.stopPropagation();closeLightbox()" aria-label="關閉"
                 class="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/90 text-stone-700 flex items-center justify-center shadow-lg">
             <i class="fa-solid fa-xmark"></i></button>
@@ -416,7 +433,7 @@
        ========================================================== */
 
     const CONFIG = {
-        VERSION: 'v5.2.0',
+        VERSION: 'v5.3.0',
         // ↓↓↓ 部署 GAS 後把網址貼在這裡（結尾必須是 /exec） ↓↓↓
         API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         DEMO: false
@@ -562,16 +579,33 @@ function hexA(hex, a) {
     /* ==========================================================
        等級光環（連續記帳天數）
        ========================================================== */
+    /* 等級光環＝「當前」連續天數，斷了就掉回基礎階。
+       門檻密集在前段（21 天是習慣養成的門檻），讓新手兩三週就能看到第一次進階，
+       而不是等 100 天才有第一個回饋。 */
+    const AURA = [
+        { tier: 1, min: 0, name: '奶油米', color: 'text-stone-500', border: 'border-[#F3E7D8]', bg: 'bg-[#FDF7EF]', badge: 'bg-stone-400', ring: '#F3E7D8' },
+        { tier: 2, min: 21, name: '暖陽橘', color: 'text-[#F8A048]', border: 'border-[#F8A048]', bg: 'bg-[#FFEEDA]', badge: 'bg-[#F8A048]', ring: '#F8A048' },
+        { tier: 3, min: 50, name: '森林薄荷綠', color: 'text-[#40B868]', border: 'border-[#40B868]', bg: 'bg-[#E2F6E9]', badge: 'bg-[#40B868]', ring: '#40B868' },
+        { tier: 4, min: 100, name: '海洋天空藍', color: 'text-[#3090F8]', border: 'border-[#88D8F8]', bg: 'bg-[#E9F7FE]', badge: 'bg-[#3090F8]', ring: '#88D8F8' },
+        { tier: 5, min: 200, name: '紫水晶', color: 'text-[#A084E8]', border: 'border-[#A084E8]', bg: 'bg-[#F1ECFD]', badge: 'bg-[#A084E8]', ring: '#A084E8' },
+        { tier: 6, min: 365, name: '耀眼星光金', color: 'text-[#D9A216]', border: 'border-[#F8C850] shadow-glow-gold', bg: 'bg-[#FFF4D8]', badge: 'bg-[#F8C850]', ring: '#F8C850' }
+    ];
     function getLevelInfo(days) {
         days = Number(days) || 0;
         const level = Math.floor(days / 10) + 1;
-        let t;
-        if (days < 100) t = { tier: 1, name: '奶油米', next: 100, prev: 0, color: 'text-stone-500', border: 'border-[#F3E7D8]', bg: 'bg-[#FDF7EF]', badge: 'bg-stone-400', ring: '#F3E7D8' };
-        else if (days < 200) t = { tier: 2, name: '暖陽橘', next: 200, prev: 100, color: 'text-[#F8A048]', border: 'border-[#F8A048]', bg: 'bg-[#FFEEDA]', badge: 'bg-[#F8A048]', ring: '#F8A048' };
-        else if (days < 300) t = { tier: 3, name: '森林薄荷綠', next: 300, prev: 200, color: 'text-[#40B868]', border: 'border-[#40B868]', bg: 'bg-[#E2F6E9]', badge: 'bg-[#40B868]', ring: '#40B868' };
-        else if (days < 500) t = { tier: 4, name: '海洋天空藍', next: 500, prev: 300, color: 'text-[#3090F8]', border: 'border-[#88D8F8]', bg: 'bg-[#E9F7FE]', badge: 'bg-[#3090F8]', ring: '#88D8F8' };
-        else t = { tier: 5, name: '耀眼星光金', next: days, prev: 500, color: 'text-[#D9A216]', border: 'border-[#F8C850] shadow-glow-gold', bg: 'bg-[#FFF4D8]', badge: 'bg-[#F8C850]', ring: '#F8C850' };
-        return { ...t, level, days, progress: t.tier === 5 ? 100 : ((days - t.prev) / (t.next - t.prev)) * 100 };
+        let i = 0;
+        for (let k = 0; k < AURA.length; k++) if (days >= AURA[k].min) i = k;
+        const t = AURA[i], nx = AURA[i + 1];
+        const next = nx ? nx.min : days, prev = t.min;
+        return {
+            ...t, level, days, next, prev,
+            progress: nx ? ((days - prev) / (next - prev)) * 100 : 100,
+            isMax: !nx
+        };
+    }
+    /** 歷史最高連續天數：光環會掉，但這個永久保留 */
+    function bestStreak() {
+        return Math.max(Number(STATE.me?.best_streak) || 0, Number(STATE.me?.streak_days) || 0);
     }
 
     /* ==========================================================
@@ -1156,7 +1190,7 @@ function hexA(hex, a) {
     }
 
     function renderAll() { renderDashboard(); renderTransactions(); initAddForm(); renderStats(); renderSettings(); }
-    function renderDataViews() { renderDashboard(); renderTransactions(); renderStats(); updateLevelDisplays(); checkNewAchievements(); }
+    function renderDataViews() { renderDashboard(); renderTransactions(); renderStats(); updateLevelDisplays(); checkNewAchievements(); checkAuraUp(); }
 
     /* ==========================================================
        家庭互動：打氣 + 動態廣播
@@ -1270,9 +1304,10 @@ function hexA(hex, a) {
         const dailyQuota = budget ? budget / n : 0;
         const todayExp = mine.filter(x => x.entry_type === '支出').reduce((a, b) => a + Number(b.amount), 0);
         return [
-            { icon: 'fa-pen', name: '今天記一筆', done: mine.length > 0, hint: mine.length ? `已記 ${mine.length} 筆` : '還沒開張' },
-            { icon: 'fa-receipt', name: '今天附一張單據', done: mine.some(x => x.receipt_file_id), hint: '拍發票更好對帳' },
+            { icon: 'fa-pen', name: '今天記一筆', done: mine.length > 0, go: 'add', hint: mine.length ? `已記 ${mine.length} 筆` : '還沒開張' },
+            { icon: 'fa-receipt', name: '今天附一張單據', done: mine.some(x => x.receipt_file_id), go: 'add', hint: '拍發票更好對帳' },
             { icon: 'fa-gauge-high', name: '今天不超過每日額度', done: !!dailyQuota && todayExp <= dailyQuota,
+              go: dailyQuota ? 'list' : 'budget',
               hint: dailyQuota ? `${fmt(todayExp)} / ${fmt(dailyQuota)}` : '尚未設定預算' }
         ];
     }
@@ -1284,10 +1319,11 @@ function hexA(hex, a) {
         const weekQuota = budget ? budget / n * 7 : 0;      // 用「總預算的週配額」而非分類預算，
         const weekExp = mine.filter(x => x.entry_type === '支出').reduce((a, b) => a + Number(b.amount), 0);
         return [
-            { icon: 'fa-calendar-check', name: '本週記帳 5 天', done: days >= 5, hint: `${days}/5 天` },
+            { icon: 'fa-calendar-check', name: '本週記帳 5 天', done: days >= 5, go: 'add', hint: `${days}/5 天` },
             { icon: 'fa-wallet', name: '本週不超過週配額', done: !!weekQuota && weekExp <= weekQuota,
+              go: weekQuota ? 'list' : 'budget',
               hint: weekQuota ? `${fmt(weekExp)} / ${fmt(weekQuota)}` : '尚未設定預算' },
-            { icon: 'fa-arrow-trend-down', name: '本週有一天零支出', done: hasZeroSpendDay(ws), hint: '給錢包放個假' }
+            { icon: 'fa-arrow-trend-down', name: '本週有一天零支出', done: hasZeroSpendDay(ws), go: 'list', hint: '給錢包放個假' }
         ];
     }
     function hasZeroSpendDay(ws) {
@@ -1416,6 +1452,22 @@ function hexA(hex, a) {
             renderSettings(); renderDashboard();
             toast(`已幫 ${m.nickname} 保住 ${r2.streak_days} 天紀錄`);
         } catch (e) { toast(e.message, true); }
+    }
+
+    /* ---------- 光環進階：脈衝發光 ---------- */
+    function auraKey() { return 'aura_' + AUTH.memberId; }
+    function checkAuraUp() {
+        if (!STATE.me) return;
+        const now = getLevelInfo(STATE.me.streak_days).tier;
+        let seen = 0;
+        try { seen = Number(localStorage.getItem(auraKey()) || 0); } catch (e) { }
+        localStorage.setItem(auraKey(), String(now));
+        if (!seen || now <= seen) return;             // 首次載入或掉階都不慶祝
+        const el = document.getElementById('userAvatar');
+        if (el) { el.classList.add('aura-pulse'); setTimeout(() => el.classList.remove('aura-pulse'), 2600); }
+        const t = getLevelInfo(STATE.me.streak_days);
+        toast(`光環進階：${t.name}（連續 ${t.days} 天）`);
+        buzz(18);
     }
 
     /* ---------- 成就解鎖慶祝 ---------- */
@@ -3187,33 +3239,53 @@ function hexA(hex, a) {
        透過 API 取回，Drive 檔案維持私有（不設公開連結）。
        取回後快取在記憶體，同一張不會重複下載。 */
     const _rcCache = {};
-    async function loadReceipt(id) {
+    async function loadReceipt(id, full) {
         const box = document.getElementById('rcBox'); if (!box) return;
-        if (_rcCache[id]) return paintReceipt(id, _rcCache[id]);
-        box.innerHTML = `<div class="py-8 flex flex-col items-center gap-2 text-pastel-muted">
+        const key = id + (full ? '_full' : '_thumb');
+        if (_rcCache[key]) return paintReceipt(id, _rcCache[key], full);
+        if (!full) box.innerHTML = `<div class="py-8 flex flex-col items-center gap-2 text-pastel-muted">
             <i class="fa-solid fa-circle-notch fa-spin text-xl"></i><span class="text-xs">載入單據中…</span></div>`;
         try {
-            const r2 = await api.call('getReceipt', { txn_id: id });
-            _rcCache[id] = `data:${r2.mime};base64,${r2.base64}`;
-            paintReceipt(id, _rcCache[id]);
+            // 預覽先抓縮圖（約 10-30KB），放大時才抓原圖——快很多，也不容易傳輸失敗
+            const r2 = await api.call('getReceipt', { txn_id: id, thumb: !full });
+            if (!r2.base64) throw new Error('單據內容是空的');
+            _rcCache[key] = `data:${r2.mime || 'image/jpeg'};base64,${r2.base64}`;
+            if (full) return _rcCache[key];
+            paintReceipt(id, _rcCache[key], false);
         } catch (e) {
-            box.innerHTML = `<div class="py-6 px-4 text-center text-xs text-pastel-red">
-                <i class="fa-solid fa-triangle-exclamation mb-1.5 block text-lg"></i>${esc(e.message)}
-                <button onclick="loadReceipt('${esc(id)}')" class="block mx-auto mt-2 underline font-bold">重試</button></div>`;
+            if (full) throw e;
+            receiptError(id, e.message);
         }
     }
     function paintReceipt(id, src) {
         const box = document.getElementById('rcBox'); if (!box) return;
         box.innerHTML = `<button onclick="openLightbox('${esc(id)}')" class="block w-full">
-            <img src="${src}" alt="單據" class="w-full max-h-52 object-cover"></button>
+            <img src="${src}" alt="單據" class="w-full max-h-52 object-cover"
+                 onerror="receiptError('${esc(id)}','影像無法顯示')"></button>
             <div class="px-3 py-2 text-[10px] text-pastel-muted text-center border-t border-pastel-border">點擊放大</div>`;
     }
-    function openLightbox(id) {
-        const src = _rcCache[id]; if (!src) return;
-        const el = document.getElementById('lightbox');
-        document.getElementById('lightboxImg').src = src;
+    /* 影像本身載入失敗時（例如 base64 不完整）也要有出口，
+       而不是留一個破圖給使用者 */
+    function receiptError(id, msg) {
+        const box = document.getElementById('rcBox'); if (!box) return;
+        delete _rcCache[id + '_thumb']; delete _rcCache[id + '_full'];
+        box.innerHTML = `<div class="py-6 px-4 text-center text-xs text-pastel-red">
+            <i class="fa-solid fa-triangle-exclamation mb-1.5 block text-lg"></i>${esc(msg || '載入失敗')}
+            <button onclick="loadReceipt('${esc(id)}')" class="block mx-auto mt-2 underline font-bold">重試</button></div>`;
+    }
+    async function openLightbox(id) {
+        const el = document.getElementById('lightbox'), img = document.getElementById('lightboxImg');
+        const hint = document.getElementById('lightboxHint');
+        img.src = _rcCache[id + '_thumb'] || '';        // 先顯示縮圖，避免空白等待
         el.classList.remove('js-hide');
         requestAnimationFrame(() => el.classList.remove('opacity-0'));
+        if (_rcCache[id + '_full']) { img.src = _rcCache[id + '_full']; hint.classList.add('js-hide'); return; }
+        hint.classList.remove('js-hide');
+        try {
+            const full = await loadReceipt(id, true);
+            if (full) img.src = full;
+        } catch (e) { toast('原圖載入失敗，顯示的是預覽圖', true); }
+        hint.classList.add('js-hide');
     }
     function closeLightbox() {
         const el = document.getElementById('lightbox');
@@ -3867,7 +3939,7 @@ function hexA(hex, a) {
 
             <div class="bg-pastel-bg rounded-tile p-4 border border-pastel-border mb-5">
                 <div class="flex justify-between items-center mb-2">
-                    <span class="text-sm font-bold text-stone-700"><i class="fa-solid fa-fire mr-1.5 text-pastel-accent"></i>連續記帳天數</span>
+                    <span class="text-sm font-bold text-stone-700"><i class="fa-solid fa-fire mr-1.5 text-pastel-accent"></i>連續記帳天數${bestStreak() > (Number(STATE.me?.streak_days) || 0) ? `<span class="ml-2 text-[10px] font-normal text-pastel-muted">歷史最高 ${bestStreak()} 天</span>` : ''}</span>
                     <span class="text-lg font-bold text-pastel-accent">${i.days} 天</span></div>
                 <div class="w-full bg-white rounded-full h-2 mb-2 overflow-hidden border border-pastel-border">
                     <div class="h-2 rounded-full transition-all duration-500" style="width:${i.progress}%;background:${i.ring}"></div></div>
@@ -3927,23 +3999,37 @@ function hexA(hex, a) {
                 <span>${g.next ? `再 ${g.remain} 筆成為「${GROWTH[g.id + 1].name}」` : '已達最高階段'}</span></div>
         </div>`;
     }
-
+    /* 短週期任務改為橫向微型方塊。
+       注意：這些任務是由資料自動判定的（例如「今天記一筆」看的是有沒有紀錄），
+       不是待辦清單那種手動打勾——所以點擊不是「完成」，而是「跳到能完成它的地方」。
+       達成的瞬間會播放打勾彈跳動畫，那才是真正的「劃掉清單」回饋。 */
     function taskGroup(title, icon, tasks) {
         const done = tasks.filter(t => t.done).length;
         return `<div class="mb-5">
             <div class="flex justify-between items-center mb-2">
                 <h3 class="text-sm font-bold text-stone-800"><i class="fa-solid ${icon} mr-1.5 text-pastel-accent"></i>${esc(title)}</h3>
                 <span class="text-xs text-pastel-muted">${done}/${tasks.length}</span></div>
-            <div class="space-y-2">
-                ${tasks.map(t => `
-                    <div class="flex items-center gap-3 p-3 rounded-tile border ${t.done ? 'bg-pastel-greenLight border-transparent' : 'bg-white border-pastel-border'}">
-                        <div class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${t.done ? 'bg-white/70 text-pastel-green' : 'bg-pastel-bg text-pastel-muted'}">
-                            <i class="fa-solid ${t.done ? 'fa-check' : t.icon} text-xs"></i></div>
-                        <div class="flex-1 min-w-0">
-                            <div class="text-sm font-bold truncate ${t.done ? 'text-pastel-green' : 'text-stone-700'}">${esc(t.name)}</div>
-                            <div class="text-[10px] text-pastel-muted truncate">${esc(t.hint)}</div></div>
-                    </div>`).join('')}
+            <div class="task-rail flex gap-2.5 overflow-x-auto hide-scrollbar -mx-1 px-1 pb-1">
+                ${tasks.map((t, i) => `
+                    <button onclick="${t.done ? `buzz(6)` : `goTask('${esc(t.go || '')}')`}"
+                        class="task-card flex-shrink-0 w-[132px] rounded-tile border p-3 text-left transition-all tactile
+                               ${t.done ? 'bg-pastel-greenLight border-transparent' : 'bg-white border-pastel-border'}">
+                        <div class="w-8 h-8 rounded-full flex items-center justify-center mb-2 ${t.done ? 'bg-white/70 text-pastel-green task-tick' : 'bg-pastel-bg text-pastel-muted'}">
+                            <i class="fa-solid ${t.done ? 'fa-circle-check' : t.icon} text-sm"></i></div>
+                        <div class="text-[12px] font-bold leading-tight mb-1 ${t.done ? 'text-pastel-green' : 'text-stone-700'}">${esc(t.name)}</div>
+                        <div class="text-[10px] text-pastel-muted leading-tight line-clamp-2">${esc(t.hint)}</div>
+                    </button>`).join('')}
             </div></div>`;
+    }
+    /** 點未完成的任務 → 直接帶到能完成它的地方 */
+    function goTask(go) {
+        buzz();
+        closeProfileModal();
+        setTimeout(() => {
+            if (go === 'budget') return openBudgetSheet();
+            if (go === 'list') return switchTab('transactions');
+            switchTab('add');
+        }, 260);
     }
 
     function closeProfileModal() {
