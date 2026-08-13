@@ -463,7 +463,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.0.0',
+        VERSION: 'v6.0.3',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -488,6 +488,10 @@
     function parseInstall(raw) {
         const s = String(raw || '').trim().replace(/\s+/g, '');
         if (!s) return null;
+        /* /dev 是開發網址：只有腳本擁有者登入時能用，而且它的部署 ID 和正式部署不同。
+           靜靜地把它改寫成 /exec 會給出一個看起來合理、實際上連不上的網址，
+           所以寧可擋下來並說清楚。 */
+        if (/\/dev(?![\w-])/.test(s)) return { dev: true };
         let id = '', code = '';
         const m = /script\.google\.com\/macros\/s\/([\w-]{20,})/.exec(s);
         if (m) {
@@ -643,9 +647,15 @@ let addState = { mode: 'expense', expr: '0', cat: '', tag: '', nature: '', date:
     let statsRange = 'month';        // 'week' | 'month' | 'year'
 
 /* 分類顏色：讓每個分類有自己的識別色，明細與圖表一致 */
-const FALLBACK_HEX = ['#F8A048', '#3090F8', '#40B868', '#F0A8B0', '#F8C850', '#88D8F8', '#A084E8', '#F05838'];
+const CAT_PALETTE = ['#F8A048', '#3090F8', '#40B868', '#F0A8B0', '#F8C850', '#88D8F8', '#A084E8', '#F05838'];
+const FALLBACK_HEX = CAT_PALETTE;
+function findItem(name) {
+    return STATE.categories.find(x => x.item_name === name)
+        || STATE.tags.find(x => x.item_name === name)
+        || (STATE.archivedItems || []).find(x => x.item_name === name);   // 停用的舊分類也要查得到
+}
 function catColor(name) {
-    const c = STATE.categories.find(x => x.item_name === name) || STATE.tags.find(x => x.item_name === name);
+    const c = findItem(name);
     if (c && c.hex_color) return c.hex_color;
     // 沒設顏色的自訂項目（例如手動新增的「富邦-信用卡」）用名稱雜湊，
     // 保證同名永遠同色、不同名盡量不同色
@@ -959,7 +969,7 @@ function hexA(hex, a) {
     function inMonth(d, ym) { return String(d).slice(0, 7) === ym; }
     function nameOf(id) { const m = STATE.members.find(x => x.member_id === id); return m ? m.nickname : id; }
     function catIcon(name) {
-        const c = STATE.categories.find(x => x.item_name === name) || STATE.tags.find(x => x.item_name === name);
+        const c = findItem(name);
         return normIcon(c ? c.icon_emoji : '', c ? c.item_group : '');
     }
 
@@ -1233,7 +1243,8 @@ function hexA(hex, a) {
     async function gateSubmitBackend() {
         const raw = document.getElementById('gateBackend').value;
         const p = parseInstall(raw);
-        if (!p) return showGateError('安裝碼看起來不完整。請貼上試算表選單「② 顯示安裝碼」給的那一整串，或結尾是 /exec 的完整網址。');
+        if (p && p.dev) return showGateError('這是 /dev 開發網址，只有腳本擁有者登入時能用。請到 Apps Script 的「部署 → 管理部署作業」，複製結尾為 /exec 的那一個。');
+        if (!p) return showGateError('安裝碼看起來不完整。可以直接貼「管理部署作業」裡結尾為 /exec 的完整網址，或試算表選單「② 顯示安裝碼」給的那一整串（前後不要夾到其他文字）。');
         const b = document.getElementById('gateBackendBtn'); b.disabled = true; b.innerText = '連線中…';
         const prev = BACKEND.isCustom ? BACKEND.url : '';
         BACKEND.url = p.url;
@@ -1310,7 +1321,7 @@ function hexA(hex, a) {
         const d = await api.call('bootstrap');
         Object.assign(STATE, {
             familyName: d.familyName, members: d.members, categories: d.categories,
-            tags: d.tags, transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], goals: d.goals || [], achievements: d.achievements || [], cheers: d.cheers || [], memberStats: d.memberStats || {}, familyStats: d.familyStats || {}, streakSaves: d.streakSaves || [], poolInitial: d.poolInitial
+            tags: d.tags, archivedItems: d.archivedItems || [], transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], goals: d.goals || [], achievements: d.achievements || [], cheers: d.cheers || [], memberStats: d.memberStats || {}, familyStats: d.familyStats || {}, streakSaves: d.streakSaves || [], poolInitial: d.poolInitial
         });
         normalizeState();
         STATE.me = STATE.members.find(m => m.member_id === AUTH.memberId);
@@ -1671,7 +1682,7 @@ function hexA(hex, a) {
     async function refreshData() {
         try {
             const d = await api.call('bootstrap');
-            Object.assign(STATE, { transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], goals: d.goals || [], achievements: d.achievements || [], cheers: d.cheers || [], memberStats: d.memberStats || {}, familyStats: d.familyStats || {}, streakSaves: d.streakSaves || [], categories: d.categories, tags: d.tags, members: d.members });
+            Object.assign(STATE, { transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], goals: d.goals || [], achievements: d.achievements || [], cheers: d.cheers || [], memberStats: d.memberStats || {}, familyStats: d.familyStats || {}, streakSaves: d.streakSaves || [], categories: d.categories, tags: d.tags, archivedItems: d.archivedItems || [], members: d.members });
             normalizeState();
             STATE.me = STATE.members.find(m => m.member_id === AUTH.memberId) || STATE.me;
             renderDataViews(); renderSettings(); toast('已同步');
@@ -4219,7 +4230,8 @@ function hexA(hex, a) {
         const itemGrid = (list, group) => list.length ? list.map(c => `
             <div class="p-2.5 rounded-tile border border-pastel-border flex items-center gap-2 justify-between min-w-0" style="background:${hexA(catColor(c.item_name), .1)}">
                 <div class="flex items-center gap-2 min-w-0"><i class="fa-solid ${esc(normIcon(c.icon_emoji, c.item_group))} text-sm w-4 text-center" style="color:${catColor(c.item_name)}"></i><span class="font-bold text-stone-800 truncate">${esc(c.item_name)}</span></div>
-                <button class="text-stone-400 text-[10px] flex-shrink-0" onclick="archiveItem('${esc(c.item_name)}','${group}')"><i class="fa-solid fa-xmark"></i></button>
+                <button class="text-stone-400 text-[10px] flex-shrink-0" data-n="${esc(c.item_name)}" data-g="${esc(group)}"
+                        onclick="archiveItem(this.dataset.n, this.dataset.g)"><i class="fa-solid fa-xmark"></i></button>
             </div>`).join('') : `<div class="col-span-2 text-xs text-pastel-muted">尚無項目</div>`;
 
         // 個人規則只有本人看得到；家庭規則全家可見
@@ -4444,19 +4456,41 @@ function hexA(hex, a) {
 
     let _newItem = { group: '', name: '', icon: 'fa-tag' };
     function addItem(group) {
-        _newItem = { group, name: '', icon: group === 'PAYMENT_TAG' ? 'fa-credit-card' : 'fa-tag' };
+        _newItem = {
+            group, name: '',
+            icon: group === 'PAYMENT_TAG' ? 'fa-credit-card' : group === 'INCOME_CATEGORY' ? 'fa-sack-dollar' : 'fa-tag',
+            color: nextColor(group)
+        };
         openItemSheet();
     }
-    function pickNewIcon(ic) { _newItem.icon = ic; _newItem.name = document.getElementById('niName')?.value || ''; openItemSheet(); }
+    /* 和後端 pickColor 同一套規則：挑同群組裡用得最少的顏色。
+       在前端也算一次，是為了讓彈窗的預覽色就是最後存下來的顏色。 */
+    function nextColor(group) {
+        const list = [...(STATE.categories || []), ...(STATE.tags || [])].filter(c => c.item_group === group);
+        const used = {};
+        list.forEach(c => { const h = String(c.hex_color || '').toUpperCase(); if (h) used[h] = (used[h] || 0) + 1; });
+        let best = CAT_PALETTE[0], bestN = Infinity;
+        CAT_PALETTE.forEach(h => { const n = used[h.toUpperCase()] || 0; if (n < bestN) { bestN = n; best = h; } });
+        return best;
+    }
+    function keepNewItemName() { _newItem.name = document.getElementById('niName')?.value ?? _newItem.name; }
+    function pickNewIcon(ic) { _newItem.icon = ic; keepNewItemName(); openItemSheet(); }
+    function pickNewColor(hex) { _newItem.color = hex; keepNewItemName(); openItemSheet(); }
     function openItemSheet() {
-        const g = _newItem.group;
+        const g = _newItem.group, col = _newItem.color;
         openSheet(`
             <h3 class="text-lg font-bold text-stone-800 mb-5">${g === 'PAYMENT_TAG' ? '新增帳戶 / 標籤' : g === 'INCOME_CATEGORY' ? '新增收入分類' : '新增支出分類'}</h3>
             <div class="flex items-center gap-3 mb-5">
                 <div class="w-14 h-14 rounded-tile flex items-center justify-center text-2xl flex-shrink-0"
-                     style="background:${hexA('#F8A048', .16)};color:#F8A048"><i class="fa-solid ${esc(_newItem.icon)}"></i></div>
+                     style="background:${hexA(col, .16)};color:${col}"><i class="fa-solid ${esc(_newItem.icon)}"></i></div>
                 <input id="niName" value="${esc(_newItem.name)}" placeholder="名稱，例如：富邦-信用卡"
                     class="field flex-1 w-full p-3.5 rounded-tile bg-pastel-bg border border-pastel-border text-stone-800">
+            </div>
+            <div class="text-xs font-bold text-stone-500 mb-2">顏色</div>
+            <div class="flex gap-2 mb-5">
+                ${CAT_PALETTE.map(h => `<button onclick="pickNewColor('${h}')"
+                    class="flex-1 h-9 rounded-xl tactile transition-all ${_newItem.color === h ? 'ring-2 ring-offset-2 ring-stone-400' : ''}"
+                    style="background:${h}"></button>`).join('')}
             </div>
             <div class="text-xs font-bold text-stone-500 mb-2">選一個圖示</div>
             <div class="space-y-4 mb-5">
@@ -4474,27 +4508,40 @@ function hexA(hex, a) {
     async function confirmAddItem() {
         const name = (document.getElementById('niName')?.value || '').trim();
         if (!name) { buzz(30); return toast('請輸入名稱', true); }
-        const group = _newItem.group, icon = _newItem.icon;
+        const group = _newItem.group;
         closeSheet();
-        const item = { item_name: name, item_group: group, icon_emoji: icon };
+        const item = { item_name: name, item_group: group, icon_emoji: _newItem.icon, hex_color: _newItem.color };
         if (group === 'PAYMENT_TAG') STATE.tags.push(item); else STATE.categories.push(item);
         renderSettings(); initAddForm(true);
         if (group !== 'PAYMENT_TAG') addState.cat = name; else addState.tag = name;
         paintTagRow();
-        try { await api.call('addItem', { item }); toast('已新增'); }
+        try {
+            const d = await api.call('addItem', { item });
+            // 以後端回傳的為準：顏色可能被後端改過（例如兩台裝置同時新增）
+            if (d && d.item) {
+                const list = group === 'PAYMENT_TAG' ? STATE.tags : STATE.categories;
+                const i = list.findIndex(x => x.item_name === name && x.item_group === group);
+                if (i >= 0) list[i] = { ...list[i], ...d.item };
+                renderSettings(); initAddForm(true); paintTagRow();
+            }
+            toast('已新增');
+        }
         catch (e) {
             if (group === 'PAYMENT_TAG') STATE.tags = STATE.tags.filter(x => x.item_name !== name);
-            else STATE.categories = STATE.categories.filter(x => x.item_name !== name);
+            else STATE.categories = STATE.categories.filter(x => !(x.item_name === name && x.item_group === group));
             renderSettings(); initAddForm(true); toast(e.message, true);
         }
     }
     async function archiveItem(name, group) {
-        if (!confirm(`確定要停用「${name}」嗎？（歷史紀錄不受影響）`)) return;
+        if (!confirm(`確定要刪除「${name}」嗎？\n\n已經記過的帳不受影響，仍會保留這個分類名稱。`)) return;
         const bc = [...STATE.categories], bt = [...STATE.tags];
-        if (group === 'PAYMENT_TAG') STATE.tags = STATE.tags.filter(x => x.item_name !== name);
+        if (group === 'PAYMENT_TAG') STATE.tags = STATE.tags.filter(x => !(x.item_name === name && x.item_group === group));
         else STATE.categories = STATE.categories.filter(x => !(x.item_name === name && x.item_group === group));
         renderSettings(); initAddForm();
-        try { await api.call('archiveItem', { item_name: name, item_group: group }); toast('已停用'); }
+        try {
+            const d = await api.call('archiveItem', { item_name: name, item_group: group });
+            toast(d && d.mode === 'archived' ? `已移除，${d.used} 筆舊紀錄仍保留這個名稱` : '已刪除');
+        }
         catch (e) { STATE.categories = bc; STATE.tags = bt; renderSettings(); initAddForm(); toast(e.message, true); }
     }
 
