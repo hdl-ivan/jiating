@@ -506,7 +506,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.5.0',
+        VERSION: 'v6.5.1',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -1171,9 +1171,12 @@ function hexA(hex, a) {
                     if (t.entry_type === '支出') s.monthlyExpense += a;
                     if (t.entry_type === '收入' || t.entry_type === '注資') s.monthlyIncome += a;
                 }
-                // 只有「真的流進家庭帳戶」的錢才算：家庭公帳收入、成員注資
-                if (t.entry_type === '注資' || (t.entry_type === '收入' && t.nature === '家庭公帳')) s.poolBalance += a;
-                if (t.entry_type === '支出' && t.nature === '家庭公帳') s.poolBalance -= a;
+                /* 公帳餘額看的是「公帳的錢包有沒有動」，不是「這筆算不算家庭的」。
+                   我請客的家庭花費算家庭支出，但公帳一毛錢都沒出，餘額不該減少。
+                   舊資料的家庭公帳一律 payer_id='family_pool'，行為完全不變。 */
+                const poolWallet = t.payer_id === 'family_pool';
+                if (t.entry_type === '注資' || (t.entry_type === '收入' && t.nature === '家庭公帳' && poolWallet)) s.poolBalance += a;
+                if (t.entry_type === '支出' && t.nature === '家庭公帳' && poolWallet) s.poolBalance -= a;
                 // 先前這裡沒有分辨付款人，導致「媽媽從自己口袋還給大哥」也會扣掉公帳餘額。
                 // 公帳沒付錢就不該減少。
                 if (t.entry_type === '還款' && t.payer_id === 'family_pool') s.poolBalance -= a;
@@ -3677,7 +3680,7 @@ function hexA(hex, a) {
                 <select id="inpNature" onchange="addState.nature=this.value;toggleSplitConfig()" class="w-full p-3 rounded-xl bg-white border border-pastel-accent/25 text-stone-800 text-sm font-medium">
                     <option value="純個人">純個人私費（不進家庭表）</option>
                     <option value="家庭代墊">我先代墊，公帳要還我</option>
-                    <option value="家庭公帳">我贊助家用（不需歸還）</option>
+                    <option value="家庭公帳">我出錢請客（算家庭支出，不用還我）</option>
                     <option value="私人拆帳">與指定成員拆帳</option></select>
                 <div id="splitDetailBox" class="hidden"></div></div>`;
         } else {
@@ -3689,6 +3692,14 @@ function hexA(hex, a) {
         const el = document.getElementById('inpNature');
         if (prev && el && el.options && [...el.options].some(o => o.value === prev)) el.value = prev;
         addState.nature = el ? el.value : '純個人';
+        /* 家庭公帳有兩種完全不同的意思，差別在「誰的錢包出的錢」：
+             個人模式的支出 → 我出錢請客，我的錢包少了錢 → 個人明細必須看得到
+             家庭模式的支出 → 動用公帳資金，我的錢包沒動
+             收入的家庭公帳 → 選項本身就寫著「錢沒經過我」
+           編輯既有紀錄時不重算，以原本存的付款人為準（見 editTxn）。 */
+        if (!addState.poolPayerLocked) {
+            addState.poolPayer = (addState.mode === 'expense' && currentMode === 'personal') ? 'me' : 'pool';
+        }
         paintNatureHint();
         toggleSplitConfig();
     }
@@ -4110,6 +4121,9 @@ function hexA(hex, a) {
             /* 既有紀錄的分攤金額是既成事實，一律用金額模式載入，
                否則切回均分會把原本談好的數字覆寫掉。 */
             splitMode: 'amt', pcts: {},
+            /* 付款人以原紀錄為準並鎖住：否則在家庭模式編輯一筆「我請客」的舊帳，
+               存回去會被改成公帳出錢，金額憑空從公帳消失。 */
+            poolPayer: t.payer_id === 'family_pool' ? 'pool' : 'me', poolPayerLocked: t.nature === '家庭公帳',
             splits: (() => {
                 const o = parseSplit(t).reduce((m, s2) => (m[s2.member_id] = s2.amount, m), {});
                 const others = Object.values(o).reduce((a, b) => a + b, 0);
@@ -4207,6 +4221,7 @@ function hexA(hex, a) {
             more: true,
             from: t.tag, to: t.related_id || '',
             replaceAmt: true,             // 金額視為已選取
+            poolPayer: t.payer_id === 'family_pool' ? 'pool' : 'me', poolPayerLocked: t.nature === '家庭公帳',
             splitMode: 'amt', pcts: {},
             splits: (() => {
                 const o = parseSplit(t).reduce((m, s2) => (m[s2.member_id] = s2.amount, m), {});
@@ -4251,6 +4266,10 @@ function hexA(hex, a) {
         //   公帳注資 → 我拿自己的錢挹注公帳，型態改為「注資」：個人現金減少、公帳增加
         //   其餘     → 我自己的錢
         const isPoolMoney = nature === '家庭公帳';
+        /* 「歸屬」和「誰的錢包出的錢」是兩件事，先前被綁死成一件。
+           歸屬家庭公帳的花費，錢可能從公帳帳戶扣，也可能是我自己請客。
+           後者我的錢包確實少了錢，個人明細就必須看得到。 */
+        const poolFromMe = isPoolMoney && addState.poolPayer !== 'pool';
         const isInject = !isExp && nature === '公帳注資';
         const txn = {
             date: addState.date || todayISO(),
@@ -4260,7 +4279,7 @@ function hexA(hex, a) {
             split_detail: sl.length ? JSON.stringify(sl) : '',
             related_id: sl.length === 1 ? sl[0].member_id : '',
             member_id: STATE.me.member_id,
-            payer_id: isPoolMoney ? 'family_pool' : STATE.me.member_id
+            payer_id: (isPoolMoney && !poolFromMe) ? 'family_pool' : STATE.me.member_id
         };
         // 記住這次的選擇，下次直接帶入
         PREF.set('tag', addState.tag);
