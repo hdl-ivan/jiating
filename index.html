@@ -115,6 +115,29 @@
         html.dark, html.dark body { background-color:#221F1D !important; }
         .hide-scrollbar::-webkit-scrollbar { display:none; }
         .hide-scrollbar { -ms-overflow-style:none; scrollbar-width:none; }
+
+        /* 拖曳中的卡片：抬起來、跟著手指走，不受列表的 transition 影響 */
+        .drag-row { will-change:transform; }
+        .drag-row.dragging {
+            position:relative; z-index:20;
+            box-shadow:0 10px 24px rgba(0,0,0,.16);
+            border-color:#F8A048;
+            scale:1.02;
+        }
+        .drag-handle { touch-action:none; }
+
+        /* ---------- 文字選取：全域鎖死、白名單開放 ----------
+           touch-action:none 只能擋掉「把滑動當成捲動」，擋不掉 iOS 把長按當成選取文字。
+           拖曳排序時跳出「拷貝／查詢／翻譯」那條選單，就是這個原因。
+           與其在拖曳時開開關關（狀態一定會漏），不如預設全鎖，需要複製的地方再開。 */
+        body { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+        input, textarea, select, [contenteditable] {
+            -webkit-user-select:auto; user-select:auto; -webkit-touch-callout:default;
+        }
+        /* 白名單：使用者真的會想複製出去的東西 */
+        .selectable {
+            -webkit-user-select:text; user-select:text; -webkit-touch-callout:default; cursor:text;
+        }
         input, select, textarea { font-size:16px; }
 
         input[type="date"], input[type="month"], input[type="time"] {
@@ -326,7 +349,7 @@
                     請輸入 8 位家庭代碼，跟家人連線吧！</p>
             </div>
         </div>
-        <div id="gateError" class="hidden mb-4 p-3 rounded-tile bg-pastel-redLight border border-pastel-red/30 text-pastel-red text-xs font-bold"></div>
+        <div id="gateError" class="selectable hidden mb-4 p-3 rounded-tile bg-pastel-redLight border border-pastel-red/30 text-pastel-red text-xs font-bold"></div>
 
         <!-- 步驟 0：後端（只有還沒設定過的裝置會看到） -->
         <div id="gateStep0" class="hidden bg-white p-6 rounded-sheet shadow-card border border-pastel-border space-y-4">
@@ -463,7 +486,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.3.0',
+        VERSION: 'v6.3.1',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -3306,7 +3329,7 @@ function hexA(hex, a) {
         // 同類清單項目改用留白引導視覺，不再逐列畫線
         const row = (k, v) => `<div class="flex justify-between py-3 text-sm"><span class="text-pastel-muted">${esc(k)}</span><span class="font-bold text-stone-800 text-right ml-3 truncate">${esc(v)}</span></div>`;
         openSheet(`
-            <h3 class="text-lg font-bold text-stone-800 mb-4">${esc(t.note || t.category || '交易明細')}</h3>
+            <h3 class="selectable text-lg font-bold text-stone-800 mb-4">${esc(t.note || t.category || '交易明細')}</h3>
             <div class="text-3xl font-bold font-rounded mb-4 ${t.entry_type === '支出' ? 'text-pastel-red' : 'text-pastel-green'}">${t.entry_type === '支出' ? '-' : '+'}${fmt(t.amount)}</div>
             ${row('日期', t.date)}${row('類型', t.entry_type)}${row('分類', t.category || '—')}${row('帳戶', t.tag || '—')}
             ${row('費用歸屬', t.nature || '—')}${row('記帳者', nameOf(t.member_id))}${t.recurring_rule_id ? row('來源', '重複性收支自動產生') : ''}
@@ -4199,8 +4222,8 @@ function hexA(hex, a) {
                 <div class="font-bold text-sm text-stone-800 border-b border-pastel-border pb-3">2. 資產負債表（現在身家多少？）</div>
                 <div class="space-y-2.5 text-sm">${currentMode === 'personal' ? `
                     <div class="flex justify-between text-stone-600"><span>口袋現金</span><span class="font-bold font-rounded">${fmt(s.cashBalance)}</span></div>
-                    <div class="flex justify-between text-stone-600"><span>應收（公帳欠我）</span><span class="font-bold text-pastel-green font-rounded">+${fmt(s.poolOwesMe)}</span></div>
-                    <div class="flex justify-between text-stone-600"><span>應付（我欠他人）</span><span class="font-bold text-pastel-red font-rounded">-${fmt(s.iOweOthers)}</span></div>
+                    <div class="flex justify-between text-stone-600"><span>應收（公帳欠我）</span><span class="selectable font-bold text-pastel-green font-rounded">+${fmt(s.poolOwesMe)}</span></div>
+                    <div class="flex justify-between text-stone-600"><span>應付（我欠他人）</span><span class="selectable font-bold text-pastel-red font-rounded">-${fmt(s.iOweOthers)}</span></div>
                     <div class="pt-2 border-t border-dashed border-pastel-border flex justify-between font-bold text-stone-800"><span>淨資產</span><span class="font-rounded">${fmt(s.cashBalance + s.poolOwesMe - s.iOweOthers)}</span></div>`
                 : `<div class="flex justify-between text-stone-600"><span>公帳資金餘額</span><span class="font-bold font-rounded">${fmt(s.poolBalance)}</span></div>
                     <div class="flex justify-between text-stone-600"><span>應付成員代墊</span><span class="font-bold text-pastel-red font-rounded">-${fmt(s.poolOwesMembers.reduce((a, b) => a + b.amount, 0))}</span></div>
@@ -4511,7 +4534,7 @@ function hexA(hex, a) {
                 <div class="flex justify-between text-xs text-pastel-muted"><span>後端版本</span><span class="font-mono">${esc(BACKEND_VERSION || '未知')}</span></div>
                 <div class="text-xs text-pastel-muted">
                     <div class="mb-1">後端網址</div>
-                    <div class="font-mono text-[10px] bg-pastel-bg rounded-lg p-2 break-all">${esc(BACKEND.url || '（未設定）')}</div>
+                    <div class="selectable font-mono text-[10px] bg-pastel-bg rounded-lg p-2 break-all">${esc(BACKEND.url || '（未設定）')}</div>
                 </div>
                 <button id="btnCheck" onclick="actConnCheck()" class="w-full py-3 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border tactile active:bg-pastel-accentLight"><i class="fa-solid fa-stethoscope mr-1.5"></i>連線健檢</button>
                 <div id="connCheckBox" class="hidden space-y-2"></div>
@@ -4656,35 +4679,101 @@ function hexA(hex, a) {
     }
     function bindDragSort() {
         const list = document.getElementById('sortList'); if (!list) return;
-        let el = null, startY = 0;
-        const rowAt = y => [...list.querySelectorAll('.drag-row')].find(r => {
-            if (r === el) return false;
-            const b = r.getBoundingClientRect();
-            return y >= b.top && y <= b.bottom;
-        });
+        const scroller = document.getElementById('appMain');
+        let el = null, startY = 0, baseTop = 0, dy = 0, raf = 0, lastY = 0;
+
+        /* 卡片必須「一直跟著手指」。先前只有換位時才動，中間完全沒有回饋，
+           所以感覺像一格一格跳 —— 問題不在 insertBefore 的重排成本
+           （十來列的重排是微秒級），而在於根本沒有連續的視覺跟隨。 */
+        const paint = () => { el.style.transform = `translateY(${dy}px)`; };
+
+        /* 被擠開的其他列用 FLIP 補一段位移動畫：
+           先量舊位置 → 讓 DOM 換位 → 立刻反向位移回去 → 下一幀放掉，瀏覽器就會自己補間。 */
+        const flip = (mutate) => {
+            const rows = [...list.querySelectorAll('.drag-row')].filter(r => r !== el);
+            const before = new Map(rows.map(r => [r, r.getBoundingClientRect().top]));
+            mutate();
+            rows.forEach(r => {
+                const delta = before.get(r) - r.getBoundingClientRect().top;
+                if (!delta) return;
+                r.style.transition = 'none';
+                r.style.transform = `translateY(${delta}px)`;
+                requestAnimationFrame(() => {
+                    r.style.transition = 'transform .18s cubic-bezier(.22,.61,.36,1)';
+                    r.style.transform = '';
+                });
+            });
+        };
+
+        const step = () => {
+            raf = 0;
+            if (!el) return;
+            // 拖到畫面上下緣時自動捲動，否則分類一多就搆不到清單尾巴
+            if (scroller) {
+                const b = scroller.getBoundingClientRect();
+                const edge = 72;
+                let v = 0;
+                if (lastY < b.top + edge) v = -Math.min(14, (b.top + edge - lastY) / 4);
+                else if (lastY > b.bottom - edge) v = Math.min(14, (lastY - (b.bottom - edge)) / 4);
+                if (v) { scroller.scrollTop += v; startY -= v; dy = lastY - startY; paint(); settle(); raf = requestAnimationFrame(step); }
+            }
+        };
+
+        /** 依卡片目前的視覺中心決定該插在誰前面／後面 */
+        const settle = () => {
+            const mid = baseTop + dy + el.offsetHeight / 2;
+            const rows = [...list.querySelectorAll('.drag-row')].filter(r => r !== el);
+            for (const r of rows) {
+                const b = r.getBoundingClientRect();
+                if (mid < b.top || mid > b.bottom) continue;
+                const after = mid > b.top + b.height / 2;
+                const ref = after ? r.nextSibling : r;
+                if (ref === el || (after && r.nextSibling === el)) return;
+                flip(() => list.insertBefore(el, ref));
+                /* 換位之後這張卡在版面上的位置變了，要把基準補回來，
+                   否則它會從手指底下彈開一整格。 */
+                const newBase = el.getBoundingClientRect().top - dy;
+                startY += (newBase - baseTop);
+                baseTop = newBase;
+                dy = lastY - startY;
+                paint();
+                sortDirty = true;
+                buzz(6);
+                return;
+            }
+        };
+
         list.querySelectorAll('.drag-handle').forEach(h => {
+            const row = h.closest('.drag-row');
             h.addEventListener('pointerdown', e => {
                 e.preventDefault();
-                el = h.closest('.drag-row');
-                startY = e.clientY;
-                el.classList.add('shadow-lg', 'scale-[1.02]', 'border-pastel-accent', 'relative', 'z-10');
+                el = row;
+                lastY = startY = e.clientY;
+                dy = 0;
+                el.style.transition = 'none';
+                baseTop = el.getBoundingClientRect().top;
+                el.classList.add('dragging');
                 h.setPointerCapture(e.pointerId);
                 buzz(10);
+                raf = requestAnimationFrame(step);
             });
             h.addEventListener('pointermove', e => {
                 if (!el) return;
                 e.preventDefault();
-                const over = rowAt(e.clientY);
-                if (!over) return;
-                const b = over.getBoundingClientRect();
-                const after = e.clientY > b.top + b.height / 2;
-                list.insertBefore(el, after ? over.nextSibling : over);
-                sortDirty = true;
-                buzz(6);          // 每次換位給一下輕震，做出實體卡片交換的手感
+                lastY = e.clientY;
+                dy = lastY - startY;
+                paint();
+                settle();
+                if (!raf) raf = requestAnimationFrame(step);
             });
             const end = e => {
                 if (!el) return;
-                el.classList.remove('shadow-lg', 'scale-[1.02]', 'border-pastel-accent', 'relative', 'z-10');
+                if (raf) { cancelAnimationFrame(raf); raf = 0; }
+                const done = el;
+                // 放開時滑順歸位，而不是瞬間跳回格線
+                done.style.transition = 'transform .18s cubic-bezier(.22,.61,.36,1)';
+                done.style.transform = '';
+                setTimeout(() => { done.style.transition = ''; done.classList.remove('dragging'); }, 190);
                 el = null;
                 try { h.releasePointerCapture(e.pointerId); } catch (err) { }
                 commitDomOrder();
@@ -4865,7 +4954,7 @@ function hexA(hex, a) {
                     <i class="fa-solid ${r.ok ? 'fa-circle-check text-pastel-green' : 'fa-triangle-exclamation text-pastel-red'} text-xs mt-0.5"></i>
                     <div class="min-w-0">
                         <div class="text-[11px] font-bold ${r.ok ? 'text-stone-700' : 'text-pastel-red'}">${esc(r.name)}</div>
-                        <div class="text-[10px] text-pastel-muted leading-relaxed break-all">${esc(r.detail)}</div>
+                        <div class="selectable text-[10px] text-pastel-muted leading-relaxed break-all">${esc(r.detail)}</div>
                     </div></div>`).join('');
         };
 
