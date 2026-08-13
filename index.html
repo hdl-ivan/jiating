@@ -124,7 +124,16 @@
             border-color:#F8A048;
             scale:1.02;
         }
-        .drag-handle { touch-action:none; }
+        /* 把手放右側（單手持機時拇指的自然位置），並給滿 44pt 的觸控範圍。
+           圖示本身只有 16px，靠 padding 把可按範圍撐開到整列高、寬 52px。 */
+        .drag-handle {
+            touch-action:none; cursor:grab;
+            min-width:52px; min-height:44px;
+            padding:0 18px 0 14px;
+            margin:-10px 0;                 /* 往上下吃滿整列，不改變列高 */
+        }
+        .drag-handle:active { cursor:grabbing; }
+        .drag-row.dragging .drag-handle { color:#F8A048; }
 
         /* ---------- 文字選取：全域鎖死、白名單開放 ----------
            touch-action:none 只能擋掉「把滑動當成捲動」，擋不掉 iOS 把長按當成選取文字。
@@ -486,7 +495,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.3.1',
+        VERSION: 'v6.3.2',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -4404,11 +4413,12 @@ function hexA(hex, a) {
         const itemSection = (list, group) => sortingGroup === group
             ? `<div class="space-y-2 text-xs" id="sortList" data-group="${esc(group)}">
                 ${list.map(c => `
-                    <div class="drag-row p-2.5 rounded-tile border border-pastel-border flex items-center gap-3 min-w-0 bg-white"
+                    <div class="drag-row pl-3 pr-0 py-2.5 rounded-tile border border-pastel-border flex items-center gap-3 min-w-0 bg-white"
                          data-n="${esc(c.item_name)}">
-                        <button class="drag-handle text-pastel-muted px-1 -mx-1 touch-none cursor-grab" aria-label="拖曳排序"><i class="fa-solid fa-bars"></i></button>
-                        <i class="fa-solid ${esc(normIcon(c.icon_emoji, c.item_group))} text-sm w-4 text-center" style="color:${catColor(c.item_name)}"></i>
+                        <i class="fa-solid ${esc(normIcon(c.icon_emoji, c.item_group))} text-sm w-4 text-center flex-shrink-0" style="color:${catColor(c.item_name)}"></i>
                         <span class="font-bold text-stone-800 truncate flex-1">${esc(c.item_name)}</span>
+                        <button class="drag-handle flex-shrink-0 flex items-center justify-center text-pastel-muted self-stretch"
+                                aria-label="按住拖曳排序"><i class="fa-solid fa-grip-lines text-base"></i></button>
                     </div>`).join('')}
                </div>`
             : `<div class="grid grid-cols-2 gap-2 text-xs">${itemGrid(list, group)}</div>`;
@@ -4687,36 +4697,25 @@ function hexA(hex, a) {
            （十來列的重排是微秒級），而在於根本沒有連續的視覺跟隨。 */
         const paint = () => { el.style.transform = `translateY(${dy}px)`; };
 
-        /* 被擠開的其他列用 FLIP 補一段位移動畫：
-           先量舊位置 → 讓 DOM 換位 → 立刻反向位移回去 → 下一幀放掉，瀏覽器就會自己補間。 */
+        /* 被擠開的其他列用 FLIP 補一段位移動畫。
+           關鍵是量測前要先把上一次動畫的 transform 清掉 ——
+           不然讀到的是「動畫跑到一半的位置」，算出來的位移是錯的，
+           連續拖過好幾格就會越抖越嚴重。 */
         const flip = (mutate) => {
             const rows = [...list.querySelectorAll('.drag-row')].filter(r => r !== el);
             const before = new Map(rows.map(r => [r, r.getBoundingClientRect().top]));
             mutate();
             rows.forEach(r => {
+                r.style.transition = 'none';
+                r.style.transform = '';                              // 先回到真正的版面位置
                 const delta = before.get(r) - r.getBoundingClientRect().top;
                 if (!delta) return;
-                r.style.transition = 'none';
                 r.style.transform = `translateY(${delta}px)`;
                 requestAnimationFrame(() => {
-                    r.style.transition = 'transform .18s cubic-bezier(.22,.61,.36,1)';
+                    r.style.transition = 'transform .16s cubic-bezier(.22,.61,.36,1)';
                     r.style.transform = '';
                 });
             });
-        };
-
-        const step = () => {
-            raf = 0;
-            if (!el) return;
-            // 拖到畫面上下緣時自動捲動，否則分類一多就搆不到清單尾巴
-            if (scroller) {
-                const b = scroller.getBoundingClientRect();
-                const edge = 72;
-                let v = 0;
-                if (lastY < b.top + edge) v = -Math.min(14, (b.top + edge - lastY) / 4);
-                else if (lastY > b.bottom - edge) v = Math.min(14, (lastY - (b.bottom - edge)) / 4);
-                if (v) { scroller.scrollTop += v; startY -= v; dy = lastY - startY; paint(); settle(); raf = requestAnimationFrame(step); }
-            }
         };
 
         /** 依卡片目前的視覺中心決定該插在誰前面／後面 */
@@ -4743,6 +4742,31 @@ function hexA(hex, a) {
             }
         };
 
+        /* 拖到上下緣自動捲動。
+           兩個必須做對的地方：
+           ① 捲動後 baseTop 與 startY 都要補（先前只補了 startY，
+              判斷用的視覺中心就會每幀往上飄，越飄越快）
+           ② 用「實際捲了多少」補償，而不是「打算捲多少」——
+              到頂或到底時實際是 0，不補這一刀就會一路往上頂、回不來 */
+        const autoScroll = () => {
+            if (!el || !scroller) return;
+            const b = scroller.getBoundingClientRect(), edge = 64;
+            let v = 0;
+            if (lastY < b.top + edge) v = -Math.min(10, (b.top + edge - lastY) / 5);
+            else if (lastY > b.bottom - edge) v = Math.min(10, (lastY - (b.bottom - edge)) / 5);
+            if (!v) return;
+            const from = scroller.scrollTop;
+            scroller.scrollTop = Math.max(0, Math.min(scroller.scrollHeight - scroller.clientHeight, from + v));
+            const actual = scroller.scrollTop - from;
+            if (!actual) return;                      // 已經到頂或到底，什麼都不要補
+            baseTop -= actual;
+            startY -= actual;
+            dy = lastY - startY;
+            paint();
+            settle();
+        };
+        const step = () => { if (!el) { raf = 0; return; } autoScroll(); raf = requestAnimationFrame(step); };
+
         list.querySelectorAll('.drag-handle').forEach(h => {
             const row = h.closest('.drag-row');
             h.addEventListener('pointerdown', e => {
@@ -4755,7 +4779,7 @@ function hexA(hex, a) {
                 el.classList.add('dragging');
                 h.setPointerCapture(e.pointerId);
                 buzz(10);
-                raf = requestAnimationFrame(step);
+                if (!raf) raf = requestAnimationFrame(step);
             });
             h.addEventListener('pointermove', e => {
                 if (!el) return;
@@ -4764,17 +4788,16 @@ function hexA(hex, a) {
                 dy = lastY - startY;
                 paint();
                 settle();
-                if (!raf) raf = requestAnimationFrame(step);
             });
             const end = e => {
                 if (!el) return;
-                if (raf) { cancelAnimationFrame(raf); raf = 0; }
                 const done = el;
+                el = null;
+                if (raf) { cancelAnimationFrame(raf); raf = 0; }
                 // 放開時滑順歸位，而不是瞬間跳回格線
                 done.style.transition = 'transform .18s cubic-bezier(.22,.61,.36,1)';
                 done.style.transform = '';
                 setTimeout(() => { done.style.transition = ''; done.classList.remove('dragging'); }, 190);
-                el = null;
                 try { h.releasePointerCapture(e.pointerId); } catch (err) { }
                 commitDomOrder();
             };
