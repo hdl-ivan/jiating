@@ -17,6 +17,9 @@
     <title>家庭記帳</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.3.1/css/all.min.css">
+    <!-- 拖曳排序。先試同源的副本（Service Worker 快取得到、離線也能用），
+         沒有才退回 CDN。版本固定，不用 @latest —— 上游改版不該在半夜弄壞使用者的 App。 -->
+    <script src="./sortable.min.js" onerror="this.remove();document.write('<script src=\'https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js\'><\/script>')"></script>
     <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@500;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
         tailwind.config = {
@@ -116,14 +119,19 @@
         .hide-scrollbar::-webkit-scrollbar { display:none; }
         .hide-scrollbar { -ms-overflow-style:none; scrollbar-width:none; }
 
-        /* 拖曳中的卡片：抬起來、跟著手指走，不受列表的 transition 影響 */
+        /* 拖曳排序（SortableJS，forceFallback 模式）
+           分身的 position/transform 由 SortableJS 以 inline style 控制，
+           這裡只負責外觀，不要寫 position 或 transform 去跟它打架。 */
         .drag-row { will-change:transform; }
         .drag-row.dragging {
-            position:relative; z-index:20;
             box-shadow:0 10px 24px rgba(0,0,0,.16);
             border-color:#F8A048;
             scale:1.02;
+            opacity:1 !important;
         }
+        .drag-row.dragging .drag-handle { color:#F8A048; }
+        /* 留在原地的洞：只保留高度，讓其他卡片滑過來填補 */
+        .drag-ghost { opacity:0; }
         /* 把手放右側（單手持機時拇指的自然位置），並給滿 44pt 的觸控範圍。
            圖示本身只有 16px，靠 padding 把可按範圍撐開到整列高、寬 52px。 */
         .drag-handle {
@@ -133,7 +141,6 @@
             margin:-10px 0;                 /* 往上下吃滿整列，不改變列高 */
         }
         .drag-handle:active { cursor:grabbing; }
-        .drag-row.dragging .drag-handle { color:#F8A048; }
 
         /* ---------- 文字選取：全域鎖死、白名單開放 ----------
            touch-action:none 只能擋掉「把滑動當成捲動」，擋不掉 iOS 把長按當成選取文字。
@@ -495,7 +502,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.3.2',
+        VERSION: 'v6.4.0',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -4408,6 +4415,10 @@ function hexA(hex, a) {
        設定
        ========================================================== */
     function renderSettings() {
+        /* 任何重畫都會丟掉舊的清單節點。先銷毀再重綁，
+           否則監聽器會留在已經不存在的 DOM 上（那正是上一版整頁凍住的形狀）。 */
+        destroySortable();
+        if (sortingGroup) setTimeout(bindDragSort, 0);
         /* 排序模式改成單欄清單：兩欄格線裡「上一格」實際是往左上跳，
            要移到最後得左右左右地按，違反直覺。單欄才是拖曳該有的形狀。 */
         const itemSection = (list, group) => sortingGroup === group
@@ -4678,133 +4689,64 @@ function hexA(hex, a) {
     function keepNewItemName() { _newItem.name = document.getElementById('niName')?.value ?? _newItem.name; }
     function pickNewIcon(ic) { _newItem.icon = ic; keepNewItemName(); openItemSheet(); }
     function pickNewColor(hex) { _newItem.color = hex; keepNewItemName(); openItemSheet(); }
-    /* ---------- 分類排序：拖曳 ----------
-       用 Pointer Events 而不是 HTML5 drag-and-drop —— 後者在 iOS Safari 上幾乎不能用。
-       拖曳時直接搬動 DOM 節點、不重畫整塊，否則指標捕捉會斷掉、卡片會從手上掉下來。 */
-    let sortingGroup = null, sortDirty = false;
+    /* ---------- 分類排序：拖曳（SortableJS） ----------
+       原本手刻了約 110 行（連續位移、FLIP 讓位、邊緣自動捲動、換位後的基準補正）。
+       它在單純情境下可以用，但拖到螢幕最上緣時 iOS 會把觸控事件收走去處理系統手勢，
+       而且不保證發出 pointercancel —— 收尾函式不執行，狀態機就卡在「拖曳中」，
+       rAF 迴圈不停、指標捕捉不放、卡片的 z-index 蓋在最上層，整頁跟著凍住。
+
+       教訓不是「計算寫錯」，而是：在行動裝置上，任何靠 pointerup 收尾的狀態機
+       都必須假設那個事件可能不會來。要處理的邊界不只這一個，所以改用 SortableJS。 */
+    let sortingGroup = null, sortDirty = false, sortable = null;
+
+    function destroySortable() {
+        if (!sortable) return;
+        try { sortable.destroy(); } catch (e) { }
+        sortable = null;
+    }
     function toggleSortMode(group) {
         buzz();
-        if (sortingGroup === group) { const g = sortingGroup; sortingGroup = null; renderSettings(); saveOrder(g); }
-        else { sortingGroup = group; sortDirty = false; renderSettings(); setTimeout(bindDragSort, 0); }
+        if (sortingGroup === group) {
+            const g = sortingGroup;
+            sortingGroup = null;
+            destroySortable();          // 一定要在重畫之前銷毀，否則監聽器會留在被丟掉的 DOM 上
+            renderSettings();
+            saveOrder(g);
+        } else {
+            if (typeof Sortable === 'undefined') { toast('排序功能尚未載入，請連線後重試', true); return; }
+            sortingGroup = group;
+            sortDirty = false;
+            renderSettings();          // renderSettings 會負責重綁
+        }
     }
     function bindDragSort() {
-        const list = document.getElementById('sortList'); if (!list) return;
-        const scroller = document.getElementById('appMain');
-        let el = null, startY = 0, baseTop = 0, dy = 0, raf = 0, lastY = 0;
-
-        /* 卡片必須「一直跟著手指」。先前只有換位時才動，中間完全沒有回饋，
-           所以感覺像一格一格跳 —— 問題不在 insertBefore 的重排成本
-           （十來列的重排是微秒級），而在於根本沒有連續的視覺跟隨。 */
-        const paint = () => { el.style.transform = `translateY(${dy}px)`; };
-
-        /* 被擠開的其他列用 FLIP 補一段位移動畫。
-           關鍵是量測前要先把上一次動畫的 transform 清掉 ——
-           不然讀到的是「動畫跑到一半的位置」，算出來的位移是錯的，
-           連續拖過好幾格就會越抖越嚴重。 */
-        const flip = (mutate) => {
-            const rows = [...list.querySelectorAll('.drag-row')].filter(r => r !== el);
-            const before = new Map(rows.map(r => [r, r.getBoundingClientRect().top]));
-            mutate();
-            rows.forEach(r => {
-                r.style.transition = 'none';
-                r.style.transform = '';                              // 先回到真正的版面位置
-                const delta = before.get(r) - r.getBoundingClientRect().top;
-                if (!delta) return;
-                r.style.transform = `translateY(${delta}px)`;
-                requestAnimationFrame(() => {
-                    r.style.transition = 'transform .16s cubic-bezier(.22,.61,.36,1)';
-                    r.style.transform = '';
-                });
-            });
-        };
-
-        /** 依卡片目前的視覺中心決定該插在誰前面／後面 */
-        const settle = () => {
-            const mid = baseTop + dy + el.offsetHeight / 2;
-            const rows = [...list.querySelectorAll('.drag-row')].filter(r => r !== el);
-            for (const r of rows) {
-                const b = r.getBoundingClientRect();
-                if (mid < b.top || mid > b.bottom) continue;
-                const after = mid > b.top + b.height / 2;
-                const ref = after ? r.nextSibling : r;
-                if (ref === el || (after && r.nextSibling === el)) return;
-                flip(() => list.insertBefore(el, ref));
-                /* 換位之後這張卡在版面上的位置變了，要把基準補回來，
-                   否則它會從手指底下彈開一整格。 */
-                const newBase = el.getBoundingClientRect().top - dy;
-                startY += (newBase - baseTop);
-                baseTop = newBase;
-                dy = lastY - startY;
-                paint();
-                sortDirty = true;
-                buzz(6);
-                return;
-            }
-        };
-
-        /* 拖到上下緣自動捲動。
-           兩個必須做對的地方：
-           ① 捲動後 baseTop 與 startY 都要補（先前只補了 startY，
-              判斷用的視覺中心就會每幀往上飄，越飄越快）
-           ② 用「實際捲了多少」補償，而不是「打算捲多少」——
-              到頂或到底時實際是 0，不補這一刀就會一路往上頂、回不來 */
-        const autoScroll = () => {
-            if (!el || !scroller) return;
-            const b = scroller.getBoundingClientRect(), edge = 64;
-            let v = 0;
-            if (lastY < b.top + edge) v = -Math.min(10, (b.top + edge - lastY) / 5);
-            else if (lastY > b.bottom - edge) v = Math.min(10, (lastY - (b.bottom - edge)) / 5);
-            if (!v) return;
-            const from = scroller.scrollTop;
-            scroller.scrollTop = Math.max(0, Math.min(scroller.scrollHeight - scroller.clientHeight, from + v));
-            const actual = scroller.scrollTop - from;
-            if (!actual) return;                      // 已經到頂或到底，什麼都不要補
-            baseTop -= actual;
-            startY -= actual;
-            dy = lastY - startY;
-            paint();
-            settle();
-        };
-        const step = () => { if (!el) { raf = 0; return; } autoScroll(); raf = requestAnimationFrame(step); };
-
-        list.querySelectorAll('.drag-handle').forEach(h => {
-            const row = h.closest('.drag-row');
-            h.addEventListener('pointerdown', e => {
-                e.preventDefault();
-                el = row;
-                lastY = startY = e.clientY;
-                dy = 0;
-                el.style.transition = 'none';
-                baseTop = el.getBoundingClientRect().top;
-                el.classList.add('dragging');
-                h.setPointerCapture(e.pointerId);
-                buzz(10);
-                if (!raf) raf = requestAnimationFrame(step);
-            });
-            h.addEventListener('pointermove', e => {
-                if (!el) return;
-                e.preventDefault();
-                lastY = e.clientY;
-                dy = lastY - startY;
-                paint();
-                settle();
-            });
-            const end = e => {
-                if (!el) return;
-                const done = el;
-                el = null;
-                if (raf) { cancelAnimationFrame(raf); raf = 0; }
-                // 放開時滑順歸位，而不是瞬間跳回格線
-                done.style.transition = 'transform .18s cubic-bezier(.22,.61,.36,1)';
-                done.style.transform = '';
-                setTimeout(() => { done.style.transition = ''; done.classList.remove('dragging'); }, 190);
-                try { h.releasePointerCapture(e.pointerId); } catch (err) { }
+        const list = document.getElementById('sortList');
+        if (!list || typeof Sortable === 'undefined') return;
+        destroySortable();
+        sortable = new Sortable(list, {
+            handle: '.drag-handle',
+            animation: 200,
+            /* 強制走 fallback：iOS 本來就沒有 HTML5 drag，強制之後桌機與手機行為一致，
+               而且分身的外觀由我們的 CSS 決定，不會出現瀏覽器預設的半透明拖影。 */
+            forceFallback: true,
+            fallbackOnBody: false,
+            fallbackTolerance: 3,       // 手指抖 3px 內不算拖曳，避免點一下就位移
+            fallbackClass: 'dragging',
+            ghostClass: 'drag-ghost',
+            /* 明確指定捲動容器，不讓它自己猜。上一版的卡死就發生在捲動邊界。 */
+            scroll: document.getElementById('appMain'),
+            scrollSensitivity: 64,
+            scrollSpeed: 10,
+            bubbleScroll: false,
+            onStart: () => buzz(10),
+            onChange: () => buzz(6),    // 每次擠開別人給一下輕震，維持實體卡片的手感
+            onEnd: (e) => {
+                if (e.oldIndex !== e.newIndex) sortDirty = true;
                 commitDomOrder();
-            };
-            h.addEventListener('pointerup', end);
-            h.addEventListener('pointercancel', end);
+            }
         });
     }
+
     /** 把畫面上的順序寫回 STATE（只動這個群組，其他群組的位置不變） */
     function commitDomOrder() {
         const list = document.getElementById('sortList'); if (!list) return;
