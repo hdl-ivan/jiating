@@ -463,7 +463,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.0.5',
+        VERSION: 'v6.0.6',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -1279,8 +1279,8 @@ function hexA(hex, a) {
             return '這個網址回傳的不是資料，而是登入或權限頁面。'
                 + '請到「部署 → 管理部署作業 → 鉛筆」，把「誰可以存取」改成「所有人」後重新部署。';
         if (/Failed to fetch|NetworkError|Load failed|HTTP 404/i.test(m))
-            return '連不到這個網址。① 安裝碼或網址可能不完整（結尾要是 /exec） '
-                + '② 部署時「誰可以存取」要選「所有人」。'
+            return '連不到這個網址。① 安裝碼的部署 ID 可能不完整（正常是 50 個字元以上，中間不能斷行）'
+                + ' ② 部署時「誰可以存取」要選「所有人」。'
                 + '可以先用瀏覽器直接開一次這個網址測試：' + url;
         return '連不上：' + m + '（可以先用瀏覽器直接開 ' + url + ' 看看回什麼）';
     }
