@@ -463,7 +463,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.0.6',
+        VERSION: 'v6.1.0',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -4251,7 +4251,11 @@ function hexA(hex, a) {
     function renderSettings() {
         const itemGrid = (list, group) => list.length ? list.map(c => `
             <div class="p-2.5 rounded-tile border border-pastel-border flex items-center gap-2 justify-between min-w-0" style="background:${hexA(catColor(c.item_name), .1)}">
-                <div class="flex items-center gap-2 min-w-0"><i class="fa-solid ${esc(normIcon(c.icon_emoji, c.item_group))} text-sm w-4 text-center" style="color:${catColor(c.item_name)}"></i><span class="font-bold text-stone-800 truncate">${esc(c.item_name)}</span></div>
+                <button class="flex items-center gap-2 min-w-0 flex-1 text-left tactile" data-n="${esc(c.item_name)}" data-g="${esc(group)}"
+                        onclick="editItem(this.dataset.n, this.dataset.g)">
+                    <i class="fa-solid ${esc(normIcon(c.icon_emoji, c.item_group))} text-sm w-4 text-center" style="color:${catColor(c.item_name)}"></i>
+                    <span class="font-bold text-stone-800 truncate">${esc(c.item_name)}</span>
+                </button>
                 <button class="text-stone-400 text-[10px] flex-shrink-0" data-n="${esc(c.item_name)}" data-g="${esc(group)}"
                         onclick="archiveItem(this.dataset.n, this.dataset.g)"><i class="fa-solid fa-xmark"></i></button>
             </div>`).join('') : `<div class="col-span-2 text-xs text-pastel-muted">尚無項目</div>`;
@@ -4479,7 +4483,7 @@ function hexA(hex, a) {
     let _newItem = { group: '', name: '', icon: 'fa-tag' };
     function addItem(group) {
         _newItem = {
-            group, name: '',
+            group, name: '', editing: '',
             icon: group === 'PAYMENT_TAG' ? 'fa-credit-card' : group === 'INCOME_CATEGORY' ? 'fa-sack-dollar' : 'fa-tag',
             color: nextColor(group)
         };
@@ -4498,16 +4502,31 @@ function hexA(hex, a) {
     function keepNewItemName() { _newItem.name = document.getElementById('niName')?.value ?? _newItem.name; }
     function pickNewIcon(ic) { _newItem.icon = ic; keepNewItemName(); openItemSheet(); }
     function pickNewColor(hex) { _newItem.color = hex; keepNewItemName(); openItemSheet(); }
+    function editItem(name, group) {
+        const c = (group === 'PAYMENT_TAG' ? STATE.tags : STATE.categories)
+            .find(x => x.item_name === name && x.item_group === group);
+        if (!c) return;
+        buzz();
+        _newItem = {
+            group, name, editing: name,
+            icon: normIcon(c.icon_emoji, group),
+            color: c.hex_color || catColor(name)
+        };
+        openItemSheet();
+    }
     function openItemSheet() {
-        const g = _newItem.group, col = _newItem.color;
+        const g = _newItem.group, col = _newItem.color, ed = !!_newItem.editing;
+        const title = ed ? '編輯' + (g === 'PAYMENT_TAG' ? '帳戶 / 標籤' : '分類')
+            : g === 'PAYMENT_TAG' ? '新增帳戶 / 標籤' : g === 'INCOME_CATEGORY' ? '新增收入分類' : '新增支出分類';
         openSheet(`
-            <h3 class="text-lg font-bold text-stone-800 mb-5">${g === 'PAYMENT_TAG' ? '新增帳戶 / 標籤' : g === 'INCOME_CATEGORY' ? '新增收入分類' : '新增支出分類'}</h3>
+            <h3 class="text-lg font-bold text-stone-800 mb-5">${title}</h3>
             <div class="flex items-center gap-3 mb-5">
                 <div class="w-14 h-14 rounded-tile flex items-center justify-center text-2xl flex-shrink-0"
                      style="background:${hexA(col, .16)};color:${col}"><i class="fa-solid ${esc(_newItem.icon)}"></i></div>
                 <input id="niName" value="${esc(_newItem.name)}" placeholder="名稱，例如：富邦-信用卡"
                     class="field flex-1 w-full p-3.5 rounded-tile bg-pastel-bg border border-pastel-border text-stone-800">
             </div>
+            ${ed ? `<p class="text-[11px] text-pastel-muted leading-relaxed -mt-3 mb-4">改名後，已經記過的帳會一起換成新名稱，統計不會斷成兩截。</p>` : ''}
             <div class="text-xs font-bold text-stone-500 mb-2">顏色</div>
             <div class="flex gap-2 mb-5">
                 ${CAT_PALETTE.map(h => `<button onclick="pickNewColor('${h}')"
@@ -4525,7 +4544,46 @@ function hexA(hex, a) {
                                 <i class="fa-solid ${ic}"></i></button>`).join('')}
                         </div></div>`).join('')}
             </div>
-            <button onclick="confirmAddItem()" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile">新增</button>`);
+            <button onclick="${ed ? 'confirmEditItem()' : 'confirmAddItem()'}" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile">${ed ? '儲存' : '新增'}</button>`);
+    }
+    /* 改名要同步改掉本地的引用，否則畫面上的舊紀錄會暫時「找不到分類」，
+       等到下次同步才恢復 —— 那幾秒看起來就像資料掉了。 */
+    function renameLocalRefs(group, oldName, newName) {
+        const key = group === 'PAYMENT_TAG' ? 'tag' : 'category';
+        (STATE.transactions || []).forEach(t => { if (t[key] === oldName) t[key] = newName; });
+        (STATE.rules || []).forEach(r => { if (r[key] === oldName) r[key] = newName; });
+        if (group !== 'PAYMENT_TAG') (STATE.budgets || []).forEach(b => { if (b.category === oldName) b.category = newName; });
+        if (addState.cat === oldName && group !== 'PAYMENT_TAG') addState.cat = newName;
+        if (addState.tag === oldName && group === 'PAYMENT_TAG') addState.tag = newName;
+    }
+    async function confirmEditItem() {
+        const newName = (document.getElementById('niName')?.value || '').trim();
+        if (!newName) { buzz(30); return toast('請輸入名稱', true); }
+        const group = _newItem.group, oldName = _newItem.editing;
+        const patch = { icon_emoji: _newItem.icon, hex_color: _newItem.color };
+        closeSheet();
+        const list = group === 'PAYMENT_TAG' ? STATE.tags : STATE.categories;
+        const i = list.findIndex(x => x.item_name === oldName && x.item_group === group);
+        if (i < 0) return;
+        const backup = { list: [...list], txns: (STATE.transactions || []).map(t => ({ ...t })) };
+        list[i] = { ...list[i], item_name: newName, ...patch };
+        if (newName !== oldName) renameLocalRefs(group, oldName, newName);
+        renderSettings(); initAddForm(true); paintTagRow();
+        try {
+            const d = await api.call('updateItem', { item_name: oldName, item_group: group, new_name: newName, ...patch });
+            if (d && d.item) {
+                const j = (group === 'PAYMENT_TAG' ? STATE.tags : STATE.categories)
+                    .findIndex(x => x.item_name === newName && x.item_group === group);
+                if (j >= 0) (group === 'PAYMENT_TAG' ? STATE.tags : STATE.categories)[j] = { ...d.item };
+            }
+            renderSettings(); initAddForm(true); paintTagRow(); renderAll();
+            const n = d && d.moved ? (d.moved.transactions || 0) : 0;
+            toast(d && d.renamed ? (n ? `已更名，${n} 筆紀錄一起更新` : '已更名') : '已更新');
+        } catch (e) {
+            if (group === 'PAYMENT_TAG') STATE.tags = backup.list; else STATE.categories = backup.list;
+            STATE.transactions = backup.txns;
+            renderSettings(); initAddForm(true); paintTagRow(); toast(e.message, true);
+        }
     }
     async function confirmAddItem() {
         const name = (document.getElementById('niName')?.value || '').trim();
