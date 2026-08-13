@@ -463,7 +463,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.0.3',
+        VERSION: 'v6.0.5',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -594,11 +594,14 @@
     /* GAS Web App 的 /exec 會 302 轉到 script.googleusercontent.com，
        回應較大時（例如單據影像）第一次常拿到 404 —— 這是已知的重導向抖動。
        因此對「唯讀」動作自動重試；寫入動作絕不重試，否則可能重複記帳。 */
-    const READ_ONLY = ['bootstrap', 'listMembers', 'listTransactions', 'getReceipt'];
+    const READ_ONLY = ['bootstrap', 'listMembers', 'listTransactions', 'getReceipt', 'ping', 'diagnose'];
+    /* ping 是「對一個全新部署發出的第一個請求」，正好是重導向抖動最容易發生的時刻，
+       所以多給幾次。它是唯讀且冪等的，重試沒有任何副作用。 */
+    const TRIES = { ping: 4 };
     const api = {
         async call(action, payload = {}) {
             if (CONFIG.DEMO) return DEMO_API(action, payload);
-            const tries = READ_ONLY.includes(action) ? 3 : 1;
+            const tries = TRIES[action] || (READ_ONLY.includes(action) ? 3 : 1);
             let lastErr;
             for (let n = 0; n < tries; n++) {
                 if (n) await new Promise(z => setTimeout(z, 250 * n));   // 250ms、500ms
@@ -1258,9 +1261,28 @@ function hexA(hex, a) {
         } catch (e) {
             prev ? (BACKEND.url = prev) : BACKEND.clear();
             gateSay('連不上這個後端，再確認一下？');
-            showGateError(/尚未初始化|初始化/.test(e.message) ? e.message
-                : '連不上。請確認：① 網址是否貼完整 ② 部署時「誰可以存取」有沒有選「所有人」。（' + e.message + '）');
+            showGateError(diagnoseConnError(e, p.url));
         } finally { b.disabled = false; b.innerText = '連線'; }
+    }
+
+    /* 同樣是「連不上」，成因完全不同，處置也不同。
+       把後端回來的訊息分類，直接告訴使用者該去改哪一格。 */
+    function diagnoseConnError(e, url) {
+        const m = String(e && e.message || e);
+        if (/尚未初始化|初始化/.test(m)) return m;
+        if (/家庭代碼/.test(m))
+            return '這個網址連得上，但背後跑的是 6.0 之前的舊程式碼（它不認得新版的連線檢查）。'
+                + '常見原因是貼了新的 Code.gs 卻沒有重新部署 —— 試算表選單跑的是編輯器裡的最新程式，'
+                + '網頁應用程式跑的是「已部署的版本」，兩者可以不一樣。'
+                + '請到 Apps Script：部署 → 管理部署作業 → 鉛筆 → 版本選「新版本」→ 部署，然後再試一次。';
+        if (/HTTP 401|HTTP 403|Unexpected token|JSON|SyntaxError/i.test(m))
+            return '這個網址回傳的不是資料，而是登入或權限頁面。'
+                + '請到「部署 → 管理部署作業 → 鉛筆」，把「誰可以存取」改成「所有人」後重新部署。';
+        if (/Failed to fetch|NetworkError|Load failed|HTTP 404/i.test(m))
+            return '連不到這個網址。① 安裝碼或網址可能不完整（結尾要是 /exec） '
+                + '② 部署時「誰可以存取」要選「所有人」。'
+                + '可以先用瀏覽器直接開一次這個網址測試：' + url;
+        return '連不上：' + m + '（可以先用瀏覽器直接開 ' + url + ' 看看回什麼）';
     }
 
     async function gateSubmitCode() {
@@ -4586,7 +4608,7 @@ function hexA(hex, a) {
         } catch (e) {
             rows.push({
                 ok: false, name: '後端可達',
-                detail: '連不上。① 後端網址是否貼完整 ② 部署時「誰可以存取」是否選了「所有人」 ③ 改過程式碼後有沒有重新部署新版本。（' + e.message + '）'
+                detail: diagnoseConnError(e, BACKEND.url)
             });
         }
         paint();
