@@ -463,7 +463,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.1.0',
+        VERSION: 'v6.2.0',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -3527,6 +3527,13 @@ function hexA(hex, a) {
         }
         addState.expr = e;
         paintAmount();
+        /* 均分／比例是「跟著總額走」的，金額一改就要重算，
+           否則使用者先設好分攤再改金額，畫面上的數字會停在舊值。 */
+        if (splitMode() !== 'amt' && Object.keys(addState.splits || {}).length) {
+            recalcSplits();
+            const box = document.getElementById('splitDetailBox');
+            if (box && !box.classList.contains('hidden')) renderSplitBox(document.getElementById('inpNature')?.value);
+        }
         paintSplitSummary();
     }
 
@@ -3635,7 +3642,10 @@ function hexA(hex, a) {
         el.textContent = NATURE_HINT[document.getElementById('inpNature')?.value] || '';
     }
 
-    /* ---------- 分攤設定：家庭代墊與私人拆帳共用同一組 UI 與 split_detail 結構 ---------- */
+    /* ---------- 分攤設定：家庭代墊與私人拆帳共用同一組 UI 與 split_detail 結構 ----------
+       三種模式：均分（不必輸入）、比例（%）、金額（手動）。
+       付款人自己以「我自己」這一列出現 —— 先前是隱藏的「＋1」，
+       使用者看不到自己算不算一份，只能從結果反推。 */
     function splitMembers() {
         return (STATE.members || []).filter(m => m.member_id !== 'family_pool' &&
             m.member_id !== STATE.me?.member_id && m.status !== '停用');
@@ -3643,69 +3653,153 @@ function hexA(hex, a) {
     function splitSum() {
         return Object.values(addState.splits || {}).reduce((a, b) => a + (Number(b) || 0), 0);
     }
+    const splitMode = () => addState.splitMode || 'even';
+    /** 均分／比例模式下重算每個人的金額；金額模式不動使用者輸入的數字 */
+    function recalcSplits() {
+        const total = Math.round(evalExpr(addState.expr) || 0);
+        const ids = Object.keys(addState.splits || {});
+        if (!ids.length) return;
+        if (splitMode() === 'even') {
+            const heads = ids.length + (addState.splitSelf ? 1 : 0);
+            const each = Math.floor(total / heads);
+            ids.forEach(i => addState.splits[i] = each);
+            /* 除不盡的餘數：有算自己就自己吸收，沒有就加在最後一位身上。
+               不處理的話，分攤總額會少幾塊錢，對帳時很惱人。 */
+            if (!addState.splitSelf) {
+                const rest = total - each * ids.length;
+                if (rest) addState.splits[ids[ids.length - 1]] += rest;
+            }
+        } else if (splitMode() === 'pct') {
+            addState.pcts = addState.pcts || {};
+            ids.forEach(i => addState.splits[i] = Math.round(total * (Number(addState.pcts[i]) || 0) / 100));
+        }
+    }
     function toggleSplitConfig() {
         const v = document.getElementById('inpNature')?.value, b = document.getElementById('splitDetailBox');
         if (!b) return;
         const on = (v === '私人拆帳' || v === '家庭代墊');
         b.classList.toggle('hidden', !on);
-        if (on) renderSplitBox(v);
+        if (on) { if (addState.splitSelf === undefined) addState.splitSelf = true; renderSplitBox(v); }
         else addState.splits = {};
+    }
+    function setSplitMode(m) {
+        buzz();
+        addState.splitMode = m;
+        PREF.set('splitMode', m);
+        if (m === 'pct') {
+            // 從現有金額回推百分比，切換模式時數字不會憑空跳掉
+            const total = Math.round(evalExpr(addState.expr) || 0);
+            addState.pcts = addState.pcts || {};
+            Object.keys(addState.splits || {}).forEach(i => {
+                if (addState.pcts[i] === undefined) {
+                    addState.pcts[i] = total ? Math.round((Number(addState.splits[i]) || 0) / total * 100) : 0;
+                }
+            });
+        }
+        recalcSplits();
+        renderSplitBox(document.getElementById('inpNature')?.value);
     }
     function renderSplitBox(mode) {
         const b = document.getElementById('splitDetailBox'); if (!b) return;
         const isPool = mode === '家庭代墊';
         addState.splits = addState.splits || {};
+        addState.pcts = addState.pcts || {};
+        const md = splitMode(), meName = STATE.me?.nickname || '我自己';
+        const MODES = [['even', '均分'], ['pct', '比例'], ['amt', '金額']];
+        const row = (id, name, on, extra) => `
+            <div class="flex items-center gap-2">
+                <button type="button" onclick="${extra.toggle}"
+                    class="w-6 h-6 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${on ? 'bg-pastel-accent border-pastel-accent text-white' : 'border-pastel-border bg-pastel-bg text-transparent'}">
+                    <i class="fa-solid fa-check text-[10px]"></i></button>
+                <span class="flex-1 text-sm truncate ${extra.self ? 'text-stone-500 italic' : 'text-stone-700'}">${esc(name)}</span>
+                ${extra.input}
+            </div>`;
+        const box = (inner) => `<div class="relative w-28 flex-shrink-0">${inner}</div>`;
+        const readOnly = (txt) => box(`<div class="w-full py-2 px-2 rounded-lg text-sm text-right font-rounded bg-stone-100/60 text-stone-500">${txt}</div>`);
+
         b.innerHTML = `
             <div class="p-3 bg-white rounded-xl border border-pastel-accent/25 space-y-3">
-                <div class="flex justify-between items-center">
-                    <div class="font-bold text-stone-700 text-xs">${isPool ? '要分攤給誰？（可複選）' : '與誰拆帳？（可複選）'}</div>
-                    ${isPool ? `<button type="button" onclick="splitEven()" class="text-[11px] font-bold text-pastel-accent">平均分攤</button>` : ''}
+                <div class="flex justify-between items-center gap-2">
+                    <div class="font-bold text-stone-700 text-xs flex-shrink-0">${isPool ? '分攤給誰？' : '與誰拆帳？'}</div>
+                    <div class="flex bg-pastel-bg rounded-full p-0.5 border border-pastel-border">
+                        ${MODES.map(([k, label]) => `<button type="button" onclick="setSplitMode('${k}')"
+                            class="px-3 py-1 rounded-full text-[11px] font-bold transition-all ${md === k ? 'bg-white text-stone-800 shadow-sm' : 'text-pastel-muted'}">${label}</button>`).join('')}
+                    </div>
                 </div>
                 <div class="space-y-2">
+                    ${row('me', meName + '（自己吸收）', !!addState.splitSelf, {
+            self: true, toggle: 'toggleSplitSelf()',
+            input: md === 'even' ? readOnly(addState.splitSelf ? fmt(selfShare()) : '—')
+                : md === 'pct' ? readOnly(addState.splitSelf ? (100 - pctSum()) + '%' : '—')
+                    : readOnly(fmt(Math.max(0, Math.round(evalExpr(addState.expr) || 0) - splitSum())))
+        })}
                     ${splitMembers().map(m => {
             const on = addState.splits[m.member_id] !== undefined;
-            return `<div class="flex items-center gap-2">
-                            <button type="button" onclick="toggleSplitMember('${esc(m.member_id)}')"
-                                class="w-6 h-6 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${on ? 'bg-pastel-accent border-pastel-accent text-white' : 'border-pastel-border bg-pastel-bg text-transparent'}">
-                                <i class="fa-solid fa-check text-[10px]"></i></button>
-                            <span class="flex-1 text-sm text-stone-700 truncate">${esc(m.nickname)}</span>
-                            <div class="relative w-28 flex-shrink-0">
-                                <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-pastel-muted">$</span>
-                                <input type="number" inputmode="decimal" ${on ? '' : 'disabled'}
-                                    value="${on ? esc(addState.splits[m.member_id]) : ''}"
-                                    oninput="setSplitAmount('${esc(m.member_id)}', this.value)"
-                                    class="w-full py-2 pl-6 pr-2 rounded-lg border text-sm text-right font-rounded ${on ? 'bg-pastel-bg border-pastel-border text-stone-800' : 'bg-stone-100/60 border-transparent text-stone-300'}">
-                            </div></div>`;
+            const inp = md === 'even'
+                ? readOnly(on ? fmt(addState.splits[m.member_id]) : '—')
+                : md === 'pct'
+                    ? box(`<span class="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-pastel-muted">%</span>
+                           <input type="number" inputmode="decimal" ${on ? '' : 'disabled'} value="${on ? esc(addState.pcts[m.member_id] ?? '') : ''}"
+                            oninput="setSplitPct('${esc(m.member_id)}', this.value)"
+                            class="w-full py-2 pl-2 pr-6 rounded-lg border text-sm text-right font-rounded ${on ? 'bg-pastel-bg border-pastel-border text-stone-800' : 'bg-stone-100/60 border-transparent text-stone-300'}">`)
+                    : box(`<span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-pastel-muted">$</span>
+                           <input type="number" inputmode="decimal" ${on ? '' : 'disabled'} value="${on ? esc(addState.splits[m.member_id]) : ''}"
+                            oninput="setSplitAmount('${esc(m.member_id)}', this.value)"
+                            class="w-full py-2 pl-6 pr-2 rounded-lg border text-sm text-right font-rounded ${on ? 'bg-pastel-bg border-pastel-border text-stone-800' : 'bg-stone-100/60 border-transparent text-stone-300'}">`);
+            return row(m.member_id, m.nickname, on, { toggle: `toggleSplitMember('${esc(m.member_id)}')`, input: inp });
         }).join('')}
                 </div>
                 <div id="splitSummary" class="text-[11px] pt-2 border-t border-pastel-border"></div>
             </div>`;
         paintSplitSummary();
     }
+    const pctSum = () => Object.keys(addState.splits || {})
+        .reduce((a, i) => a + (Number((addState.pcts || {})[i]) || 0), 0);
+    function selfShare() {
+        const total = Math.round(evalExpr(addState.expr) || 0);
+        return Math.max(0, total - splitSum());
+    }
     function paintSplitSummary() {
         const el = document.getElementById('splitSummary'); if (!el) return;
-        const total = evalExpr(addState.expr), sum = splitSum(), rest = total - sum;
+        const total = Math.round(evalExpr(addState.expr) || 0), sum = splitSum(), rest = total - sum;
         const over = sum > total + 0.01;
-        el.innerHTML = `<div class="flex justify-between ${over ? 'text-pastel-red font-bold' : 'text-pastel-muted'}">
+        const pctOver = splitMode() === 'pct' && pctSum() > 100.01;
+        el.innerHTML = `<div class="flex justify-between ${over || pctOver ? 'text-pastel-red font-bold' : 'text-pastel-muted'}">
                 <span>已分攤 ${fmt(sum)} / 總額 ${fmt(total)}</span>
-                <span>${over ? '超過總額！' : rest > 0.01 ? `你自己吸收 ${fmt(rest)}` : '無人吸收剩餘'}</span></div>`;
+                <span>${pctOver ? `比例合計 ${pctSum()}%，超過了` : over ? '超過總額！' : rest > 0.01 ? `你自己吸收 ${fmt(rest)}` : '無人吸收剩餘'}</span></div>`;
+    }
+    function toggleSplitSelf() {
+        buzz();
+        addState.splitSelf = !addState.splitSelf;
+        recalcSplits();
+        renderSplitBox(document.getElementById('inpNature')?.value);
     }
     function toggleSplitMember(id) {
         buzz();
         addState.splits = addState.splits || {};
-        if (addState.splits[id] !== undefined) delete addState.splits[id];
-        else addState.splits[id] = 0;
+        if (addState.splits[id] !== undefined) { delete addState.splits[id]; delete (addState.pcts || {})[id]; }
+        else {
+            addState.splits[id] = 0;
+            if (splitMode() === 'pct') {
+                // 新勾選的人先給「剩下的比例」，多數情況一次就對，不用再手動算
+                addState.pcts = addState.pcts || {};
+                addState.pcts[id] = Math.max(0, 100 - pctSum());
+            }
+        }
+        recalcSplits();
         renderSplitBox(document.getElementById('inpNature')?.value);
     }
     function setSplitAmount(id, v) { addState.splits[id] = Number(v) || 0; paintSplitSummary(); }
-    function splitEven() {
-        const ids = Object.keys(addState.splits || {});
-        if (!ids.length) return toast('請先勾選要分攤的成員', true);
-        const total = evalExpr(addState.expr);
-        const each = Math.round(total / (ids.length + 1));    // ＋1＝付款人自己也算一份
-        ids.forEach(i => addState.splits[i] = each);
-        renderSplitBox(document.getElementById('inpNature')?.value);
+    function setSplitPct(id, v) {
+        addState.pcts = addState.pcts || {};
+        addState.pcts[id] = Number(v) || 0;
+        recalcSplits();
+        paintSplitSummary();
+        // 只更新摘要，不整塊重畫 —— 重畫會讓輸入游標跳掉
+        const me = document.querySelector('#splitDetailBox .space-y-2 > div:first-child .w-28 > div');
+        if (me) me.innerText = addState.splitSelf ? (100 - pctSum()) + '%' : '—';
     }
+    function splitEven() { setSplitMode('even'); }
     function splitList() {
         return Object.entries(addState.splits || {})
             .filter(([, v]) => Number(v) > 0)
@@ -3725,7 +3819,8 @@ function hexA(hex, a) {
                 tag: PREF.get('tag', '') || (STATE.tags[0]?.item_name || ''),
                 nature: PREF.get('nature', '純個人'),
                 from: PREF.get('tag', '') || (STATE.tags[0]?.item_name || ''),
-                to: STATE.tags[1]?.item_name || '', splits: {}
+                to: STATE.tags[1]?.item_name || '', splits: {}, pcts: {},
+                splitMode: PREF.get('splitMode', 'even'), splitSelf: true
             };
             editingTxnId = null; pendingReceipt = null;
         }
@@ -3921,7 +4016,11 @@ function hexA(hex, a) {
         addState = {
             mode: t.entry_type === '收入' ? 'income' : (t.entry_type === '轉帳' ? 'transfer' : 'expense'),
             expr: String(t.amount), cat: t.category, tag: t.tag, nature: t.nature,
-            date: t.date, note: t.note || '', more: true, from: t.tag, to: t.related_id || ''
+            date: t.date, note: t.note || '', more: true, from: t.tag, to: t.related_id || '',
+            /* 既有紀錄的分攤金額是既成事實，一律用金額模式載入，
+               否則切回均分會把原本談好的數字覆寫掉。 */
+            splitMode: 'amt', pcts: {}, splitSelf: true,
+            splits: parseSplit(t).reduce((o, s2) => (o[s2.member_id] = s2.amount, o), {})
         };
         switchTab('add'); initAddForm(true);
         toast('已載入，修改後按更新');
@@ -4249,16 +4348,26 @@ function hexA(hex, a) {
        設定
        ========================================================== */
     function renderSettings() {
-        const itemGrid = (list, group) => list.length ? list.map(c => `
+        const itemGrid = (list, group) => list.length ? list.map((c, i) => `
             <div class="p-2.5 rounded-tile border border-pastel-border flex items-center gap-2 justify-between min-w-0" style="background:${hexA(catColor(c.item_name), .1)}">
                 <button class="flex items-center gap-2 min-w-0 flex-1 text-left tactile" data-n="${esc(c.item_name)}" data-g="${esc(group)}"
-                        onclick="editItem(this.dataset.n, this.dataset.g)">
+                        onclick="${sortingGroup === group ? '' : 'editItem(this.dataset.n, this.dataset.g)'}">
                     <i class="fa-solid ${esc(normIcon(c.icon_emoji, c.item_group))} text-sm w-4 text-center" style="color:${catColor(c.item_name)}"></i>
                     <span class="font-bold text-stone-800 truncate">${esc(c.item_name)}</span>
                 </button>
-                <button class="text-stone-400 text-[10px] flex-shrink-0" data-n="${esc(c.item_name)}" data-g="${esc(group)}"
-                        onclick="archiveItem(this.dataset.n, this.dataset.g)"><i class="fa-solid fa-xmark"></i></button>
+                ${sortingGroup === group ? `
+                    <div class="flex gap-1 flex-shrink-0">
+                        <button class="w-6 h-6 rounded-md bg-white/70 border border-pastel-border text-stone-500 text-[10px] tactile ${i === 0 ? 'opacity-30' : ''}"
+                                data-n="${esc(c.item_name)}" onclick="moveItem(this.dataset.n, '${esc(group)}', -1)"><i class="fa-solid fa-chevron-up"></i></button>
+                        <button class="w-6 h-6 rounded-md bg-white/70 border border-pastel-border text-stone-500 text-[10px] tactile ${i === list.length - 1 ? 'opacity-30' : ''}"
+                                data-n="${esc(c.item_name)}" onclick="moveItem(this.dataset.n, '${esc(group)}', 1)"><i class="fa-solid fa-chevron-down"></i></button>
+                    </div>`
+                : `<button class="text-stone-400 text-[10px] flex-shrink-0" data-n="${esc(c.item_name)}" data-g="${esc(group)}"
+                        onclick="archiveItem(this.dataset.n, this.dataset.g)"><i class="fa-solid fa-xmark"></i></button>`}
             </div>`).join('') : `<div class="col-span-2 text-xs text-pastel-muted">尚無項目</div>`;
+        const sortBtn = (group) => `<button onclick="toggleSortMode('${esc(group)}')"
+            class="text-[11px] font-bold ${sortingGroup === group ? 'text-pastel-green' : 'text-pastel-muted'} tactile">
+            <i class="fa-solid ${sortingGroup === group ? 'fa-check' : 'fa-arrow-up-arrow-down'} mr-1"></i>${sortingGroup === group ? '完成' : '排序'}</button>`;
 
         // 個人規則只有本人看得到；家庭規則全家可見
         const rules = (STATE.rules || []).filter(r => r.status !== '刪除' &&
@@ -4340,19 +4449,19 @@ function hexA(hex, a) {
             <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-4">
                 <div class="flex justify-between items-center border-b border-pastel-border pb-2">
                     <div class="font-bold text-sm text-stone-800 flex items-center gap-2"><i class="fa-solid fa-icons text-pastel-blue"></i> 支出分類</div>
-                    <button class="text-xs text-pastel-accent font-bold" onclick="addItem('EXPENSE_CATEGORY')">新增</button></div>
+                    <div class="flex items-center gap-3">${sortBtn('EXPENSE_CATEGORY')}<button class="text-xs text-pastel-accent font-bold" onclick="addItem('EXPENSE_CATEGORY')">新增</button></div></div>
                 <div class="grid grid-cols-2 gap-2 text-xs">${itemGrid(STATE.categories.filter(c => c.item_group === 'EXPENSE_CATEGORY'), 'EXPENSE_CATEGORY')}</div></div>
 
             <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-4">
                 <div class="flex justify-between items-center border-b border-pastel-border pb-2">
                     <div class="font-bold text-sm text-stone-800 flex items-center gap-2"><i class="fa-solid fa-sack-dollar text-pastel-green"></i> 收入分類</div>
-                    <button class="text-xs text-pastel-accent font-bold" onclick="addItem('INCOME_CATEGORY')">新增</button></div>
+                    <div class="flex items-center gap-3">${sortBtn('INCOME_CATEGORY')}<button class="text-xs text-pastel-accent font-bold" onclick="addItem('INCOME_CATEGORY')">新增</button></div></div>
                 <div class="grid grid-cols-2 gap-2 text-xs">${itemGrid(STATE.categories.filter(c => c.item_group === 'INCOME_CATEGORY'), 'INCOME_CATEGORY')}</div></div>
 
             <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-4">
                 <div class="flex justify-between items-center border-b border-pastel-border pb-2">
                     <div class="font-bold text-sm text-stone-800 flex items-center gap-2"><i class="fa-solid fa-credit-card text-pastel-purple"></i> 帳戶 / 標籤</div>
-                    <button class="text-xs text-pastel-accent font-bold" onclick="addItem('PAYMENT_TAG')">新增</button></div>
+                    <div class="flex items-center gap-3">${sortBtn('PAYMENT_TAG')}<button class="text-xs text-pastel-accent font-bold" onclick="addItem('PAYMENT_TAG')">新增</button></div></div>
                 <div class="grid grid-cols-2 gap-2 text-xs">${itemGrid(STATE.tags, 'PAYMENT_TAG')}</div></div>
 
             <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-3">
@@ -4502,6 +4611,42 @@ function hexA(hex, a) {
     function keepNewItemName() { _newItem.name = document.getElementById('niName')?.value ?? _newItem.name; }
     function pickNewIcon(ic) { _newItem.icon = ic; keepNewItemName(); openItemSheet(); }
     function pickNewColor(hex) { _newItem.color = hex; keepNewItemName(); openItemSheet(); }
+    /* ---------- 分類排序 ----------
+       手機上拖曳排序很難按準，所以用上下箭頭：每一下都看得到結果，
+       離開排序模式時才送出一次完整順序，避免連按十下就打十次 API。 */
+    let sortingGroup = null, sortDirty = false;
+    function toggleSortMode(group) {
+        buzz();
+        if (sortingGroup === group) { const g = sortingGroup; sortingGroup = null; renderSettings(); saveOrder(g); }
+        else { sortingGroup = group; sortDirty = false; renderSettings(); }
+    }
+    function moveItem(name, group, dir) {
+        const isTag = group === 'PAYMENT_TAG';
+        const all = isTag ? STATE.tags : STATE.categories;
+        const view = all.filter(c => c.item_group === group);
+        const i = view.findIndex(c => c.item_name === name);
+        const j = i + dir;
+        if (i < 0 || j < 0 || j >= view.length) return;
+        buzz();
+        [view[i], view[j]] = [view[j], view[i]];
+        // 把重排後的該群組寫回原本的陣列，其他群組的位置不動
+        let k = 0;
+        const merged = all.map(c => c.item_group === group ? view[k++] : c);
+        if (isTag) STATE.tags = merged; else STATE.categories = merged;
+        sortDirty = true;
+        renderSettings();
+    }
+    async function saveOrder(group) {
+        if (!sortDirty) return;
+        sortDirty = false;
+        const list = (group === 'PAYMENT_TAG' ? STATE.tags : STATE.categories).filter(c => c.item_group === group);
+        try {
+            await api.call('reorderItems', { item_group: group, names: list.map(c => c.item_name) });
+            initAddForm(true); paintTagRow();
+            toast('順序已儲存');
+        } catch (e) { toast(e.message, true); }
+    }
+
     function editItem(name, group) {
         const c = (group === 'PAYMENT_TAG' ? STATE.tags : STATE.categories)
             .find(x => x.item_name === name && x.item_group === group);
