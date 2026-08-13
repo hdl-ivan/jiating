@@ -172,6 +172,10 @@
 
         .js-hide { display:none !important; }
 
+        /* 聯想套用後，被自動填入的區塊輕輕縮放一下，讓使用者看得出「剛剛發生了什麼」 */
+        @keyframes popFill { 0% { transform:scale(1); } 45% { transform:scale(.972); } 100% { transform:scale(1); } }
+        .pop-fill { animation:popFill .24s cubic-bezier(.22,.61,.36,1); }
+
         /* ───────── 深色模式 ─────────
            以覆寫實際使用到的 Tailwind 工具類別實作，
            不必改動任何一處 markup，切換即時生效。 */
@@ -502,7 +506,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.4.0',
+        VERSION: 'v6.5.0',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -1397,6 +1401,7 @@ function hexA(hex, a) {
         document.getElementById('appHeader').classList.remove('js-hide');
         document.getElementById('appMain').classList.remove('js-hide');
         document.getElementById('appNav').classList.remove('js-hide');
+        buildMemoIndex();
         renderAll(); updateLevelDisplays();
         requestAnimationFrame(() => { syncFrameHeight(); requestAnimationFrame(syncFrameHeight); });
         setTimeout(syncFrameHeight, 80);
@@ -1746,6 +1751,7 @@ function hexA(hex, a) {
             Object.assign(STATE, { transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], goals: d.goals || [], achievements: d.achievements || [], cheers: d.cheers || [], memberStats: d.memberStats || {}, familyStats: d.familyStats || {}, streakSaves: d.streakSaves || [], categories: d.categories, tags: d.tags, archivedItems: d.archivedItems || [], members: d.members });
             normalizeState();
             STATE.me = STATE.members.find(m => m.member_id === AUTH.memberId) || STATE.me;
+            buildMemoIndex();
             renderDataViews(); renderSettings(); toast('已同步');
         } catch (e) { toast('同步失敗：' + e.message, true); }
     }
@@ -3135,8 +3141,11 @@ function hexA(hex, a) {
             ? `還款 ・ ${esc(nameOf(t.payer_id))} → ${esc(nameOf(t.related_id))}` : '';
         return `
         <div class="swipe-wrap relative w-full ${isLast ? '' : 'border-b border-pastel-border/50'} ${t._pending ? 'pending' : ''} ${t._new ? 'is-new' : ''}" data-id="${esc(t.txn_id)}">
-            <div class="swipe-bg absolute inset-0 flex items-center justify-between px-6 text-white font-bold text-sm opacity-0 bg-pastel-blue">
-                <span class="sw-edit flex items-center gap-2"><i class="fa-solid fa-pen"></i>編輯</span>
+            <div class="swipe-bg absolute inset-0 flex items-center justify-between pl-3 pr-6 text-white font-bold text-sm opacity-0 bg-pastel-blue">
+                <span class="flex items-center">
+                    <span class="sw-edit flex flex-col items-center justify-center gap-0.5 w-[68px] py-1"><i class="fa-solid fa-pen"></i><span class="text-[10px]">編輯</span></span>
+                    <span class="sw-copy flex flex-col items-center justify-center gap-0.5 w-[68px] py-1"><i class="fa-solid fa-copy"></i><span class="text-[10px]">再記一次</span></span>
+                </span>
                 <span class="sw-void flex items-center gap-2">作廢<i class="fa-solid fa-trash"></i></span>
             </div>
             <div class="swipe-inner bg-white px-4 py-3.5 flex justify-between items-center relative w-full">
@@ -3181,8 +3190,11 @@ function hexA(hex, a) {
             const inner = wrap.querySelector('.swipe-inner');
             const bg = wrap.querySelector('.swipe-bg');
             const eEdit = wrap.querySelector('.sw-edit'), eVoid = wrap.querySelector('.sw-void');
+            const eCopy = wrap.querySelector('.sw-copy');
             const id = wrap.dataset.id;
-            const OPEN = 92, FIRE = 176;        // 展開位置 / 直接執行門檻
+            /* 右滑露出兩顆按鈕（編輯／再記一次），所以展開距離要比左滑寬；
+               「重滑到底直接執行」的門檻也跟著往後推，免得想展開卻直接開了編輯。 */
+            const OPEN = 92, OPEN_R = 148, FIRE = 176, FIRE_R = 232;
             let x0 = 0, y0 = 0, dx = 0, lock = null, active = false, moved = false, armed = false;
             let rest = 0;                        // 目前停靠位置（0 或 ±OPEN）
 
@@ -3190,10 +3202,10 @@ function hexA(hex, a) {
                 const mag = Math.abs(dx);
                 bg.style.opacity = Math.min(mag / OPEN, 1);
                 bg.style.backgroundColor = dx >= 0 ? '#3090F8' : '#F05838';
-                eEdit.style.opacity = dx > 0 ? 1 : 0;
+                eEdit.style.opacity = eCopy.style.opacity = dx > 0 ? 1 : 0;
                 eVoid.style.opacity = dx < 0 ? 1 : 0;
-                const sc = mag >= FIRE ? 1.25 : 1;
-                eEdit.style.transform = eVoid.style.transform = `scale(${sc})`;
+                eEdit.style.transform = `scale(${dx > 0 && mag >= FIRE_R ? 1.2 : 1})`;
+                eVoid.style.transform = `scale(${mag >= FIRE ? 1.25 : 1})`;
             };
             const settle = (to) => {
                 rest = to; dx = to;
@@ -3223,7 +3235,7 @@ function hexA(hex, a) {
                 // 漸進阻力：OPEN 之內 1:1，之後阻尼 0.45，越滑越重
                 const raw = ddx, sign = raw >= 0 ? 1 : -1, mag = Math.abs(raw);
                 const damped = mag <= OPEN ? mag : OPEN + (mag - OPEN) * 0.45;
-                dx = sign * Math.min(damped, FIRE + 26);
+                dx = sign * Math.min(damped, (sign > 0 ? FIRE_R : FIRE) + 26);
                 if (!armed && Math.abs(dx) >= FIRE) { armed = true; buzz(14); }
                 if (armed && Math.abs(dx) < FIRE) armed = false;
                 inner.style.transform = `translate3d(${dx}px,0,0)`;
@@ -3233,11 +3245,12 @@ function hexA(hex, a) {
                 if (!active) { inner.classList.remove('dragging'); return; }
                 active = false; inner.classList.remove('dragging');
                 const mag = Math.abs(dx);
-                if (mag >= FIRE) {                       // 重滑到底：直接執行
+                const fire = dx > 0 ? FIRE_R : FIRE, open = dx > 0 ? OPEN_R : OPEN;
+                if (mag >= fire) {                       // 重滑到底：直接執行
                     if (dx < 0) { inner.style.transform = 'translateX(-110%)'; bg.style.opacity = 1; setTimeout(() => voidTxn(id), 190); }
                     else { settle(0); editTxn(id); }
-                } else if (mag >= OPEN * 0.55) {         // 輕滑：停在展開狀態，可反悔
-                    settle(dx < 0 ? -OPEN : OPEN); buzz(6);
+                } else if (mag >= open * 0.55) {         // 輕滑：停在展開狀態，可反悔
+                    settle(dx < 0 ? -OPEN : OPEN_R); buzz(6);
                 } else settle(0);                        // 滑回來：取消
             };
 
@@ -3255,9 +3268,11 @@ function hexA(hex, a) {
             bg.addEventListener('click', ev => {
                 if (!rest) return;
                 ev.stopPropagation();
-                const wasRight = rest > 0;           // 右滑展開＝編輯，左滑展開＝作廢
+                // 右滑展開有兩顆按鈕，看點到哪一顆；左滑展開只有作廢
+                const copy = rest > 0 && ev.target.closest('.sw-copy');
+                const act = rest < 0 ? voidTxn : (copy ? copyTxn : editTxn);
                 settle(0);
-                setTimeout(() => wasRight ? editTxn(id) : voidTxn(id), 140);
+                setTimeout(() => act(id), 140);
             });
             inner.addEventListener('click', () => {
                 if (moved) return;
@@ -3359,6 +3374,7 @@ function hexA(hex, a) {
                 </div></div>` : ''}
             ${(t.nature === '家庭代墊' || t.nature === '私人拆帳') && t.payer_id === STATE.me?.member_id
                 ? `<button onclick="closeSheet();openEditSplit('${esc(id)}')" class="w-full mt-4 py-3 bg-pastel-accentLight text-pastel-accent font-bold rounded-tile text-sm tactile"><i class="fa-solid fa-users-between-lines mr-1"></i> 調整分攤設定</button>` : ''}
+            <button onclick="closeSheet();copyTxn('${esc(id)}')" class="w-full mt-4 py-3.5 bg-pastel-blue text-white font-bold rounded-tile text-sm shadow-md tactile"><i class="fa-solid fa-copy mr-1.5"></i> 再記一次</button>
             <div class="grid grid-cols-2 gap-3 mt-3">
                 <button onclick="closeSheet();editTxn('${esc(id)}')" class="py-3 bg-pastel-blueLight text-pastel-blue font-bold rounded-tile text-sm"><i class="fa-solid fa-pen mr-1"></i> 編輯</button>
                 <button onclick="closeSheet();voidTxn('${esc(id)}')" class="py-3 bg-pastel-redLight text-pastel-red font-bold rounded-tile text-sm"><i class="fa-solid fa-trash mr-1"></i> 作廢</button></div>
@@ -3553,6 +3569,12 @@ function hexA(hex, a) {
     function kp(k) {
         buzz(6);
         let e = addState.expr;
+        /* 複製上一筆之後，金額視為「已選取」：按下第一個數字就整個換掉，
+           而不是接在後面變成 180500。按運算子或刪除則保留原值繼續編輯。 */
+        if (addState.replaceAmt) {
+            addState.replaceAmt = false;
+            if (/^[0-9]$/.test(k)) e = '0';
+        }
         if (k === 'C') e = '0';
         else if (k === 'del') { e = e.length > 1 ? e.slice(0, -1) : '0'; }
         else if (OPS.includes(k)) {
@@ -3890,8 +3912,8 @@ function hexA(hex, a) {
         const amt = evalExpr(addState.expr);
         const col = isTr ? '#3090F8' : isExp ? '#F05838' : '#40B868';
 
-        const rowBtn = (label, valueHtml, onclick) => `
-            <button onclick="${onclick}" class="w-full flex items-center justify-between gap-3 px-4 py-3.5 tactile text-left">
+        const rowBtn = (label, valueHtml, onclick, id) => `
+            <button ${id ? 'id=' + id : ''} onclick="${onclick}" class="w-full flex items-center justify-between gap-3 px-4 py-3.5 tactile text-left">
                 <span class="text-sm text-stone-600 flex-shrink-0">${label}</span>
                 <span class="flex items-center gap-2 min-w-0">
                     <span class="text-sm font-bold text-stone-800 truncate">${valueHtml}</span>
@@ -3907,7 +3929,7 @@ function hexA(hex, a) {
             </div>
 
             <!-- 金額（點擊開鍵盤抽屜） -->
-            <button onclick="openKeypadDrawer()" class="w-full rounded-card p-5 shadow-md text-white text-left tactile"
+            <button id="kpCard" onclick="openKeypadDrawer()" class="w-full rounded-card p-5 shadow-md text-white text-left tactile"
                     style="background:linear-gradient(135deg,${isTr ? '#3090F8,#2B7BD6' : isExp ? '#F8A048,#F0863A' : '#40B868,#35A25A'})">
                 <div class="flex justify-between items-center mb-1">
                     <span class="text-[11px] font-bold opacity-85">${isTr ? '轉帳金額' : isExp ? '支出金額' : '收入金額'}</span>
@@ -3928,17 +3950,24 @@ function hexA(hex, a) {
                 </div>`
                 : rowBtn('分類', addState.cat
                     ? `<i class="fa-solid ${esc(catIcon(addState.cat))} mr-1.5" style="color:${catColor(addState.cat)}"></i>${esc(addState.cat)}`
-                    : '<span class="text-pastel-muted font-normal">請選擇</span>', 'openCatDrawer()')}
+                    : '<span class="text-pastel-muted font-normal">請選擇</span>', 'openCatDrawer()', 'catRow')}
 
                 <div class="px-4 py-3 flex items-center justify-between gap-3">
                     <span class="text-sm text-stone-600 flex-shrink-0">日期</span>
                     <input id="inpDate" type="date" value="${esc(addState.date)}" onchange="addState.date=this.value"
                         class="field flex-1 max-w-[190px] py-2 px-3 rounded-xl bg-pastel-bg border border-pastel-border text-sm font-bold text-stone-800 font-sans"></div>
 
-                <div class="px-4 py-3 flex items-center gap-3">
-                    <span class="text-sm text-stone-600 flex-shrink-0">備註</span>
-                    <input id="inpNote" type="text" value="${esc(addState.note)}" oninput="addState.note=this.value" placeholder="寫點什麼…"
-                        class="field flex-1 py-2 px-3 rounded-xl bg-pastel-bg border border-pastel-border text-sm text-right text-stone-800"></div>
+                <div class="px-4 py-3">
+                    <div class="flex items-center gap-3">
+                        <span class="text-sm text-stone-600 flex-shrink-0">備註</span>
+                        <input id="inpNote" type="text" value="${esc(addState.note)}" placeholder="寫點什麼…"
+                            oninput="onMemoInput(this.value)"
+                            oncompositionstart="_memoComposing=true"
+                            oncompositionend="_memoComposing=false;onMemoInput(this.value)"
+                            onblur="setTimeout(hideMemoBar,180)"
+                            class="field flex-1 py-2 px-3 rounded-xl bg-pastel-bg border border-pastel-border text-sm text-right text-stone-800"></div>
+                    <!-- 聯想晶片列：橫向捲動，不用下拉選單 —— 鍵盤彈起時下拉會被遮住 -->
+                    <div id="memoBar" class="js-hide flex gap-2 mt-2 overflow-x-auto hide-scrollbar pb-0.5"></div></div>
 
                 ${(!isTr && isExp && activeGoals().length) ? `
                 <div class="px-4 py-3">
@@ -4092,7 +4121,105 @@ function hexA(hex, a) {
         switchTab('add'); initAddForm(true);
         toast('已載入，修改後按更新');
     }
+    /* ---------- 備註自動聯想 ----------
+       純前端，用已經在記憶體裡的 STATE.transactions 建索引，不打任何 API。
+
+       隱私防線：只用「自己記的」紀錄（member_id === 我）。
+       原提案是依 payer_id 過濾，但這個 App 的 payer_id 是「誰付的錢」，
+       代墊時常常是別人；member_id 才是記帳者本人。用錯欄位會讓
+       家人代墊時打的備註出現在別人的聯想清單裡。 */
+    let memoIndex = [], _memoComposing = false;
+    function buildMemoIndex() {
+        const myId = STATE.me?.member_id;
+        if (!myId) { memoIndex = []; return; }
+        const map = new Map();
+        (STATE.transactions || []).forEach(t => {
+            if (t.status === '作廢' || t.member_id !== myId) return;
+            if (t.entry_type === '還款' || t.entry_type === '劃撥儲蓄') return;   // 這兩種不是「再記一次」的對象
+            const key = String(t.note || '').trim();
+            if (key.length < 2) return;
+            const prev = map.get(key);
+            // 同一句備註取「最近一次」的金額與設定 —— 價格會變，舊的沒有參考價值
+            if (!prev) map.set(key, { note: key, count: 1, date: t.date, txn_id: t.txn_id, amount: t.amount });
+            else {
+                prev.count++;
+                if (String(t.date) >= String(prev.date)) { prev.date = t.date; prev.txn_id = t.txn_id; prev.amount = t.amount; }
+            }
+        });
+        memoIndex = [...map.values()].sort((a, b) => b.count - a.count || String(b.date).localeCompare(String(a.date))).slice(0, 60);
+    }
+    function memoBar() { return document.getElementById('memoBar'); }
+    function hideMemoBar() { const b = memoBar(); if (b) { b.innerHTML = ''; b.classList.add('js-hide'); } }
+    function onMemoInput(v) {
+        addState.note = v;
+        if (_memoComposing) return;      // 注音組字中不干擾，等使用者選完字
+        paintMemoBar(v);
+    }
+    function paintMemoBar(query) {
+        const b = memoBar(); if (!b) return;
+        const q = String(query || '').trim().toLowerCase();
+        if (!q) return hideMemoBar();
+        const hits = memoIndex.filter(m => m.note.toLowerCase().includes(q) && m.note.toLowerCase() !== q).slice(0, 6);
+        if (!hits.length) return hideMemoBar();
+        b.innerHTML = hits.map(m => `<button type="button" onclick="applyMemo('${esc(m.txn_id)}')"
+            class="flex-shrink-0 px-3 py-1.5 bg-pastel-bg border border-pastel-border rounded-full text-[11px] text-stone-700 tactile">
+            <span class="font-bold">${esc(m.note)}</span>
+            <span class="text-pastel-muted ml-1">${fmt(m.amount)}</span></button>`).join('');
+        b.classList.remove('js-hide');
+    }
+    /* 套用聯想＝把那一筆整個複製過來（金額、分類、帳戶、性質、分攤），
+       但保留使用者當下已經輸入的其他欄位不被洗掉的部分由 copyTxn 決定。 */
+    function applyMemo(txnId) {
+        const t = (STATE.transactions || []).find(x => x.txn_id === txnId); if (!t) return;
+        buzz(6);
+        hideMemoBar();
+        document.getElementById('inpNote')?.blur();
+        copyTxn(txnId);
+        setTimeout(() => {
+            ['kpCard', 'catRow', 'tagRow'].forEach(id => {
+                const el = document.getElementById(id); if (!el) return;
+                el.classList.add('pop-fill');
+                setTimeout(() => el.classList.remove('pop-fill'), 240);
+            });
+        }, 60);
+    }
+    /* ---------- 再記一次（複製上一筆） ----------
+       複製的是「肌肉記憶」：金額、分類、性質、帳戶、備註、分攤結構。
+       重置的是「每一筆都應該獨一無二」的東西：日期、單據、存錢目標。
+       日期若照抄舊值，使用者會在不知情的狀況下記到上個月去；
+       單據每筆不同不該繼承；目標標籤繼承會造成重複劃撥。 */
     function cancelEdit() { editingTxnId = null; pendingReceipt = null; initAddForm(); toast('已取消編輯'); }
+
+    function copyTxn(id) {
+        const t = STATE.transactions.find(x => x.txn_id === id); if (!t) return;
+        buzz(6);
+        editingTxnId = null;              // 這是新的一筆，不是編輯
+        pendingReceipt = null;            // 單據不繼承
+        const isGoalTag = (STATE.goals || []).some(g => g.project_tag && g.project_tag === t.tag);
+        addState = {
+            mode: t.entry_type === '收入' ? 'income' : (t.entry_type === '轉帳' ? 'transfer' : 'expense'),
+            expr: String(Math.round(Number(t.amount) || 0)),
+            cat: t.category,
+            tag: isGoalTag ? (PREF.get('tag', '') || STATE.tags[0]?.item_name || '') : t.tag,
+            nature: t.nature,
+            date: todayISO(),             // 一律改成今天
+            note: t.note || '',
+            more: true,
+            from: t.tag, to: t.related_id || '',
+            replaceAmt: true,             // 金額視為已選取
+            splitMode: 'amt', pcts: {},
+            splits: (() => {
+                const o = parseSplit(t).reduce((m, s2) => (m[s2.member_id] = s2.amount, m), {});
+                const others = Object.values(o).reduce((a, b) => a + b, 0);
+                const mine = Math.round(Number(t.amount) || 0) - others;
+                if (Object.keys(o).length && mine > 0) o[STATE.me?.member_id || 'me'] = mine;
+                return o;
+            })()
+        };
+        switchTab('add'); initAddForm(true);
+        setTimeout(openKeypadDrawer, 260);
+        toast('已複製，確認金額後按儲存');
+    }
 
     async function saveTransaction() {
         const amount = evalExpr(addState.expr);
