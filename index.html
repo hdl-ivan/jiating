@@ -506,7 +506,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.5.1',
+        VERSION: 'v6.6.0',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -689,7 +689,7 @@ let addState = { mode: 'expense', expr: '0', cat: '', tag: '', nature: '', date:
     let pendingReceipt = null;
     let editingTxnId = null;
     let viewYM = currentYM();
-    let filters = { type: 'all', natures: [], cats: [], tags: [], min: '', max: '', q: '', allTime: false };
+    let filters = { type: 'all', natures: [], cats: [], tags: [], members: [], min: '', max: '', q: '', allTime: false };
     let statsRange = 'month';        // 'week' | 'month' | 'year'
 
 /* 分類顏色：讓每個分類有自己的識別色，明細與圖表一致 */
@@ -2819,6 +2819,11 @@ function hexA(hex, a) {
         if (filters.natures.length) rows = rows.filter(t => filters.natures.includes(t.nature));
         if (filters.cats.length) rows = rows.filter(t => filters.cats.includes(t.category));
         if (filters.tags.length) rows = rows.filter(t => filters.tags.includes(t.tag));
+        /* 成員篩選只在家庭模式有意義 —— 個人模式的明細本來就只有自己的紀錄。
+           萬一切回個人模式時舊條件還留著，這裡直接忽略，不會出現「什麼都篩不到」。 */
+        if (currentMode === 'family' && filters.members.length) {
+            rows = rows.filter(t => filters.members.includes(t.payer_id));
+        }
         if (filters.min !== '') rows = rows.filter(t => Number(t.amount) >= Number(filters.min));
         if (filters.max !== '') rows = rows.filter(t => Number(t.amount) <= Number(filters.max));
         if (filters.q) { const q = filters.q.toLowerCase(); rows = rows.filter(t => `${t.note}${t.category}${t.tag}`.toLowerCase().includes(q)); }
@@ -2826,7 +2831,8 @@ function hexA(hex, a) {
     }
     function activeFilterCount() {
         return (filters.type !== 'all' ? 1 : 0) + filters.natures.length + filters.cats.length +
-            filters.tags.length + (filters.min !== '' ? 1 : 0) + (filters.max !== '' ? 1 : 0);
+            filters.tags.length + (currentMode === 'family' ? filters.members.length : 0) +
+            (filters.min !== '' ? 1 : 0) + (filters.max !== '' ? 1 : 0);
     }
 
     /* ---------- 收支節奏分析圖 ----------
@@ -3195,20 +3201,22 @@ function hexA(hex, a) {
             const eEdit = wrap.querySelector('.sw-edit'), eVoid = wrap.querySelector('.sw-void');
             const eCopy = wrap.querySelector('.sw-copy');
             const id = wrap.dataset.id;
-            /* 右滑露出兩顆按鈕（編輯／再記一次），所以展開距離要比左滑寬；
-               「重滑到底直接執行」的門檻也跟著往後推，免得想展開卻直接開了編輯。 */
-            const OPEN = 92, OPEN_R = 148, FIRE = 176, FIRE_R = 232;
-            let x0 = 0, y0 = 0, dx = 0, lock = null, active = false, moved = false, armed = false;
+            /* 右滑露出兩顆按鈕（編輯／再記一次），所以展開距離要比左滑寬。
+               FIRE / FIRE_R 是「手指實際滑動距離」的門檻，不是位移量。
+               左滑（作廢）刻意設得比右滑遠 —— 破壞性的動作應該難一點。 */
+            const OPEN = 92, OPEN_R = 148, FIRE = 280, FIRE_R = 240;
+            let x0 = 0, y0 = 0, dx = 0, rawMag = 0, lock = null, active = false, moved = false, armed = false;
             let rest = 0;                        // 目前停靠位置（0 或 ±OPEN）
 
             const paint = () => {
                 const mag = Math.abs(dx);
-                bg.style.opacity = Math.min(mag / OPEN, 1);
+                bg.style.opacity = Math.min(mag / (dx >= 0 ? OPEN_R : OPEN), 1);
                 bg.style.backgroundColor = dx >= 0 ? '#3090F8' : '#F05838';
                 eEdit.style.opacity = eCopy.style.opacity = dx > 0 ? 1 : 0;
                 eVoid.style.opacity = dx < 0 ? 1 : 0;
-                eEdit.style.transform = `scale(${dx > 0 && mag >= FIRE_R ? 1.2 : 1})`;
-                eVoid.style.transform = `scale(${mag >= FIRE ? 1.25 : 1})`;
+                // 放大＝「放開就會直接執行」的預告，跟震動的觸發條件一致
+                eEdit.style.transform = `scale(${dx > 0 && armed ? 1.2 : 1})`;
+                eVoid.style.transform = `scale(${dx < 0 && armed ? 1.25 : 1})`;
             };
             const settle = (to) => {
                 rest = to; dx = to;
@@ -3235,12 +3243,17 @@ function hexA(hex, a) {
                 if (lock !== 'h') return;
                 if (e && e.cancelable) e.preventDefault();
                 moved = true;
-                // 漸進阻力：OPEN 之內 1:1，之後阻尼 0.45，越滑越重
-                const raw = ddx, sign = raw >= 0 ? 1 : -1, mag = Math.abs(raw);
-                const damped = mag <= OPEN ? mag : OPEN + (mag - OPEN) * 0.45;
-                dx = sign * Math.min(damped, (sign > 0 ? FIRE_R : FIRE) + 26);
-                if (!armed && Math.abs(dx) >= FIRE) { armed = true; buzz(14); }
-                if (armed && Math.abs(dx) < FIRE) armed = false;
+                /* 漸進阻力：展開距離之內 1:1，之後阻尼 0.45，越滑越重。
+                   關鍵是「觸發門檻要用手指真的滑了多遠」來判斷，不能用阻尼後的位移 ——
+                   阻尼是 0.45，用位移判斷等於要求手指滑兩倍多的距離。
+                   先前右滑要 232 的位移，換算回手指是 403px，比手機還寬，永遠滑不到。 */
+                const raw = ddx, sign = raw >= 0 ? 1 : -1;
+                rawMag = Math.abs(raw);
+                const open = sign > 0 ? OPEN_R : OPEN, fire = sign > 0 ? FIRE_R : FIRE;
+                const damped = rawMag <= open ? rawMag : open + (rawMag - open) * 0.45;
+                dx = sign * Math.min(damped, open + 30);
+                if (!armed && rawMag >= fire) { armed = true; buzz(14); }
+                if (armed && rawMag < fire) armed = false;
                 inner.style.transform = `translate3d(${dx}px,0,0)`;
                 paint();
             };
@@ -3249,7 +3262,7 @@ function hexA(hex, a) {
                 active = false; inner.classList.remove('dragging');
                 const mag = Math.abs(dx);
                 const fire = dx > 0 ? FIRE_R : FIRE, open = dx > 0 ? OPEN_R : OPEN;
-                if (mag >= fire) {                       // 重滑到底：直接執行
+                if (rawMag >= fire) {                    // 重滑到底：直接執行
                     if (dx < 0) { inner.style.transform = 'translateX(-110%)'; bg.style.opacity = 1; setTimeout(() => voidTxn(id), 190); }
                     else { settle(0); editTxn(id); }
                 } else if (mag >= open * 0.55) {         // 輕滑：停在展開狀態，可反悔
@@ -3285,7 +3298,7 @@ function hexA(hex, a) {
         });
     }
 
-    function clearAllFilters() { filters = { type: 'all', natures: [], cats: [], tags: [], min: '', max: '', q: '', allTime: false }; renderTransactions(); }
+    function clearAllFilters() { filters = { type: 'all', natures: [], cats: [], tags: [], members: [], min: '', max: '', q: '', allTime: false }; renderTransactions(); }
     function toggleAllTime() { filters.allTime = !filters.allTime; buzz(); renderTransactions(); }
 
     let _searchTimer, _composing = false;
@@ -3325,9 +3338,15 @@ function hexA(hex, a) {
         const item = src[idx]; if (!item) return;
         toggleFilter(key, item.item_name);
     }
+    /* 篩選用的成員清單。家庭公帳本身也是一個「付款人」——
+       「這個月公帳直接付了哪些」跟「二哥代墊了哪些」是同一個問題的兩面，
+       把它排除掉反而少了最常用的一格。 */
+    function filterMembers() {
+        return (STATE.members || []).filter(m => m.status !== '停用');
+    }
     function toggleFilter(key, val) { const a = filters[key], i = a.indexOf(val); if (i >= 0) a.splice(i, 1); else a.push(val); openFilterSheet(); }
     function setFilterType(v) { filters.type = v; openFilterSheet(); }
-    function resetFilters() { filters = { type: 'all', natures: [], cats: [], tags: [], min: '', max: '', q: filters.q, allTime: filters.allTime }; openFilterSheet(); }
+    function resetFilters() { filters = { type: 'all', natures: [], cats: [], tags: [], members: [], min: '', max: '', q: filters.q, allTime: filters.allTime }; openFilterSheet(); }
     function applyFilters() {
         filters.min = document.getElementById('fMin').value;
         filters.max = document.getElementById('fMax').value;
@@ -3340,6 +3359,20 @@ function hexA(hex, a) {
                 <h3 class="text-lg font-bold text-stone-800">進階篩選</h3>
                 <button onclick="resetFilters()" class="text-xs font-bold text-pastel-accent">重設</button></div>
             <div class="space-y-4">
+                ${currentMode === 'family' ? `
+                <div><label class="block text-xs font-bold text-stone-500 mb-2">付款成員（可複選，不選＝全部）</label>
+                    <div class="flex gap-2 overflow-x-auto hide-scrollbar pb-1 pt-1">
+                        ${filterMembers().map(m => {
+            const on = filters.members.includes(m.member_id);
+            const a = getLevelInfo(m.streak_days);
+            return `<button onclick="toggleFilter('members','${esc(m.member_id)}')"
+                                class="flex-shrink-0 flex items-center gap-2 pl-1 pr-3 py-1 rounded-full border-2 transition-all tactile
+                                       ${on ? 'bg-white shadow-sm scale-105' : 'bg-pastel-bg opacity-40'}"
+                                style="border-color:${on ? a.ring : '#E7E0D5'}">
+                                <span class="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center text-sm">${avatarInner(m.avatar_emoji)}</span>
+                                <span class="text-xs font-bold text-stone-700 whitespace-nowrap">${esc(m.nickname)}</span></button>`;
+        }).join('')}
+                    </div></div>` : ''}
                 <div><label class="block text-xs font-bold text-stone-500 mb-2">收支類型</label>
                     <div class="flex gap-2">${['all', 'expense', 'income'].map((v, i) => `<button onclick="setFilterType('${v}')" class="flex-1 py-2 rounded-xl text-sm font-bold ${filters.type === v ? 'bg-stone-800 text-white' : 'bg-pastel-bg text-stone-600 border border-pastel-border'}">${['全部', '支出', '收入'][i]}</button>`).join('')}</div></div>
                 <div><label class="block text-xs font-bold text-stone-500 mb-2">費用歸屬（可複選）</label>
