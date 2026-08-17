@@ -156,11 +156,14 @@
         }
         input, select, textarea { font-size:16px; }
 
+        /* iOS 的空白日期欄位會塌成比其他欄位矮一截 —— 沒有值就沒有內容撐開高度。
+           固定最小高度，並讓內部的值區塊也有高度，空的跟填好的看起來才一樣大。 */
         input[type="date"], input[type="month"], input[type="time"] {
             -webkit-appearance:none; appearance:none;
             width:100%; min-width:0; max-width:100%; box-sizing:border-box; display:block;
+            min-height:42px; line-height:1.25;
         }
-        input[type="date"]::-webkit-date-and-time-value { text-align:left; }
+        input[type="date"]::-webkit-date-and-time-value { text-align:left; min-height:20px; margin:0; }
         input[type="date"]::-webkit-calendar-picker-indicator { opacity:.45; }
         select { -webkit-appearance:none; appearance:none; background-image:none; min-width:0; }
         .field { min-width:0; }
@@ -175,6 +178,14 @@
         /* 聯想套用後，被自動填入的區塊輕輕縮放一下，讓使用者看得出「剛剛發生了什麼」 */
         @keyframes popFill { 0% { transform:scale(1); } 45% { transform:scale(.972); } 100% { transform:scale(1); } }
         .pop-fill { animation:popFill .24s cubic-bezier(.22,.61,.36,1); }
+
+        /* 同步中的轉動回饋 */
+        @keyframes spinSlow { to { transform:rotate(360deg); } }
+        .spin-slow { animation:spinSlow .9s linear infinite; }
+
+        /* 打字時收起底部導覽列，把畫面讓給輸入框 */
+        #appNav { transition:max-height .18s ease, opacity .18s ease; max-height:120px; overflow:hidden; }
+        #appNav.kb-hide { max-height:0; opacity:0; padding-top:0; border-top-width:0; }
 
         /* ───────── 深色模式 ─────────
            以覆寫實際使用到的 Tailwind 工具類別實作，
@@ -506,7 +517,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.6.0',
+        VERSION: 'v6.7.0',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -979,12 +990,10 @@ function hexA(hex, a) {
             ? 'w-24 h-24 rounded-full border-[4px] flex items-center justify-center text-5xl overflow-hidden shadow-md transition-all duration-500'
             : 'w-12 h-12 rounded-full border-[3px] flex items-center justify-center text-xl overflow-hidden shadow-sm transition-all duration-500') + ` ${i.border} ${i.bg}`;
         el.innerHTML = avatarInner(STATE.me.avatar_emoji);
-        if (badge) {
-            badge.className = (isModal
-                ? 'absolute -bottom-1 -right-1 text-white text-xs font-bold px-2.5 py-1 rounded-full border-2 border-white shadow-sm'
-                : 'absolute -bottom-1 -right-1 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full border-2 border-white shadow-sm') + ` ${i.badge}`;
-            badge.innerText = `LV.${i.level}`;
-        }
+        /* LV 已移除：每十天升一級，跟連續天數是同一件事的兩種說法，
+           擺在一起只是製造「這個數字代表什麼」的疑問。光環（顏色）留著，
+           它有明確的六個階段門檻，比 LV 好懂。 */
+        if (badge) badge.classList.add('js-hide');
     }
 
     function updateLevelDisplays() {
@@ -1003,7 +1012,7 @@ function hexA(hex, a) {
             s.className = `w-16 h-16 mx-auto rounded-full border-[4px] flex items-center justify-center text-2xl overflow-hidden mb-3 ${i.border} ${i.bg}`;
             s.innerHTML = avatarInner(STATE.me.avatar_emoji);
             document.getElementById('settingsLevelName').className = `font-bold ${i.color}`;
-            document.getElementById('settingsLevelName').innerText = `LV.${i.level} ${i.name}`;
+            document.getElementById('settingsLevelName').innerText = i.name;
         }
     }
 
@@ -1749,6 +1758,13 @@ function hexA(hex, a) {
     }
 
     async function refreshData() {
+        /* 按了要看得出來有反應：立刻震一下、圖示轉起來、按鈕鎖住不能連按。
+           先前完全沒有回饋，使用者只能一直按，反而製造重複請求。 */
+        const btn = document.getElementById('btnSyncTop'), ic = btn?.querySelector('i');
+        if (btn?.dataset.busy) return;
+        buzz(8);
+        if (btn) { btn.dataset.busy = '1'; btn.classList.add('opacity-50', 'pointer-events-none'); }
+        ic?.classList.add('spin-slow');
         try {
             const d = await api.call('bootstrap');
             Object.assign(STATE, { transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], goals: d.goals || [], achievements: d.achievements || [], cheers: d.cheers || [], memberStats: d.memberStats || {}, familyStats: d.familyStats || {}, streakSaves: d.streakSaves || [], categories: d.categories, tags: d.tags, archivedItems: d.archivedItems || [], members: d.members });
@@ -1757,6 +1773,10 @@ function hexA(hex, a) {
             buildMemoIndex();
             renderDataViews(); renderSettings(); toast('已同步');
         } catch (e) { toast('同步失敗：' + e.message, true); }
+        finally {
+            if (btn) { delete btn.dataset.busy; btn.classList.remove('opacity-50', 'pointer-events-none'); }
+            ic?.classList.remove('spin-slow');
+        }
     }
     function logout() { if (confirm('確定要登出嗎？')) { AUTH.clear(); location.reload(); } }
 
@@ -1967,11 +1987,13 @@ function hexA(hex, a) {
        全部都在動的話，動這件事本身就失去強調的意義。
        FA 的動畫會自動遵守系統的「減少動態效果」設定，不必額外防護。 */
     function getMascotState(pct, hasData) {
-        if (!hasData) return { mood: 'FREEZE', av: 'av14', word: '這個月還沒開張，記一筆吧', color: '#88D8F8', badge: { icon: 'fa-moon', anim: 'fa-fade' } };
-        if (pct > 100) return { mood: 'DANGER', av: 'av4', word: '已超出預算，先煞車一下', color: '#F05838', badge: { icon: 'fa-triangle-exclamation', anim: 'fa-beat-fade' } };
-        if (pct > 80) return { mood: 'WARNING', av: 'av48', word: '快到上限了，留意一下', color: '#F8C850', badge: { icon: 'fa-triangle-exclamation', anim: 'fa-shake' } };
-        if (pct > 50) return { mood: 'GOOD', av: 'av21', word: '節奏還可以，繼續保持', color: '#3090F8', badge: null };
-        return { mood: 'GREAT', av: 'av5', word: '目前非常有餘裕！', color: '#40B868', badge: { icon: 'fa-star', anim: 'fa-beat' } };
+        /* card = 主卡底色。刻意不直接用 color（角色色），因為那組色是給小圖示用的，
+           像 #F8C850 這種亮黃配白字讀不清楚 —— 卡片用同色系但壓深一階的版本。 */
+        if (!hasData) return { mood: 'FREEZE', av: 'av14', word: '這個月還沒開張，記一筆吧', color: '#88D8F8', card: ['#7FC0DE', '#5EA3C4'], badge: { icon: 'fa-moon', anim: 'fa-fade' } };
+        if (pct > 100) return { mood: 'DANGER', av: 'av4', word: '已超出預算，先煞車一下', color: '#F05838', card: ['#F05838', '#D8452A'], badge: { icon: 'fa-triangle-exclamation', anim: 'fa-beat-fade' } };
+        if (pct > 80) return { mood: 'WARNING', av: 'av48', word: '快到上限了，留意一下', color: '#F8C850', card: ['#EFA22B', '#D98A17'], badge: { icon: 'fa-triangle-exclamation', anim: 'fa-shake' } };
+        if (pct > 50) return { mood: 'GOOD', av: 'av21', word: '節奏還可以，繼續保持', color: '#3090F8', card: ['#3090F8', '#2B7BD6'], badge: null };
+        return { mood: 'GREAT', av: 'av5', word: '目前非常有餘裕！', color: '#40B868', card: ['#40B868', '#35A25A'], badge: { icon: 'fa-star', anim: 'fa-beat' } };
     }
     function mascotBadge(state) {
         if (!state.badge) return '';
@@ -2032,7 +2054,7 @@ function hexA(hex, a) {
 
         return `<div class="bg-white rounded-[28px] shadow-card border border-pastel-border/60 p-1 hero-shell">
             <div onclick="openBudgetSheet()" class="relative rounded-[24px] p-5 text-white overflow-hidden tactile-card"
-                 style="background:linear-gradient(135deg, ${over ? '#F05838' : '#F8A048'} 0%, ${over ? '#D8452A' : '#F0863A'} 100%)">
+                 style="background:linear-gradient(135deg, ${mood.card[0]} 0%, ${mood.card[1]} 100%);transition:background .6s ease">
                 <div class="absolute right-0 bottom-0 w-24 h-24 pointer-events-none">
                     <img src="./${mood.av}.png" alt="" class="w-full h-full opacity-90">
                     ${mascotBadge(mood)}
@@ -2149,18 +2171,68 @@ function hexA(hex, a) {
                 const paid = g.expected - g.remaining, pct = g.expected ? paid / g.expected * 100 : 0;
                 const m = STATE.members.find(x => x.member_id === id);
                 const lv = getLevelInfo(m?.streak_days);
-                return `<div class="bg-pastel-bg rounded-tile p-3 border border-pastel-border">
+                return `<button onclick="openOweDetail('${esc(id)}')" class="w-full text-left bg-pastel-bg rounded-tile p-3 border border-pastel-border tactile active:bg-white">
                     <div class="flex items-center gap-3 mb-2">
                         <div class="w-8 h-8 rounded-full border-2 ${lv.border} ${lv.bg} overflow-hidden flex items-center justify-center text-xs flex-shrink-0">${avatarInner(m?.avatar_emoji)}</div>
                         <div class="flex-1 min-w-0">
                             <div class="font-bold text-sm text-stone-800 truncate">${esc(g.name)}</div>
                             <div class="text-[10px] text-pastel-muted">${g.items.length} 筆 ・ 已還 ${fmt(paid)} / ${fmt(g.expected)}</div></div>
-                        <div class="font-bold font-rounded text-pastel-green flex-shrink-0">${fmt(g.remaining)}</div></div>
+                        <div class="flex items-center gap-1.5 flex-shrink-0">
+                            <span class="font-bold font-rounded text-pastel-green">${fmt(g.remaining)}</span>
+                            <i class="fa-solid fa-chevron-right text-[10px] text-pastel-muted"></i></div></div>
                     <div class="w-full bg-white rounded-full h-1.5 overflow-hidden border border-pastel-border">
                         <div class="bg-pastel-green h-1.5 rounded-full transition-all duration-700" style="width:${pct.toFixed(0)}%"></div></div>
-                </div>`;
+                </button>`;
             }).join('')}
         </div>`;
+    }
+
+    /* 點「爸爸要還我 $300」→ 看得到那 300 是怎麼來的。
+       總額能提醒，明細才能對帳 —— 尤其是隔了幾週之後兩邊記憶不一致的時候。 */
+    function openOweDetail(memberId) {
+        buzz();
+        const all = othersOweMe().filter(x => x.memberId === memberId);
+        if (!all.length) return;
+        const m = STATE.members.find(x => x.member_id === memberId);
+        const lv = getLevelInfo(m?.streak_days);
+        const remaining = all.reduce((a, b) => a + b.remaining, 0);
+        const expected = all.reduce((a, b) => a + b.expected, 0);
+        const paid = expected - remaining;
+        openSheet(`
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-12 h-12 rounded-full border-[3px] ${lv.border} ${lv.bg} overflow-hidden flex items-center justify-center text-lg flex-shrink-0">${avatarInner(m?.avatar_emoji)}</div>
+                <div class="min-w-0">
+                    <h3 class="text-lg font-bold text-stone-800 truncate">${esc(nameOf(memberId))} 要還我</h3>
+                    <div class="text-[11px] text-pastel-muted">${all.length} 筆 ・ 已還 ${fmt(paid)} / ${fmt(expected)}</div></div>
+                <div class="ml-auto text-right flex-shrink-0">
+                    <div class="text-2xl font-bold font-rounded text-pastel-green">${fmt(remaining)}</div>
+                    <div class="text-[10px] text-pastel-muted">尚未歸還</div></div>
+            </div>
+            <div class="space-y-2 max-h-[52vh] overflow-y-auto hide-scrollbar">
+                ${all.map(x => {
+            const done = x.expected - x.remaining;
+            return `<div class="p-3 rounded-tile bg-pastel-bg border border-pastel-border">
+                        <div class="flex items-start gap-2.5">
+                            <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-xs"
+                                 style="background:${hexA(catColor(x.category), .16)};color:${catColor(x.category)}">
+                                <i class="fa-solid ${esc(catIcon(x.category))}"></i></div>
+                            <div class="flex-1 min-w-0">
+                                <div class="text-[13px] font-bold text-stone-800 truncate">${esc(x.note || x.category || '（無備註）')}</div>
+                                <div class="text-[10px] text-pastel-muted">${esc(x.date)} ・ ${esc(x.category || '未分類')}
+                                    ・ <span class="${x.itemType === 'pool' ? 'text-pastel-accent' : 'text-pastel-blue'}">${x.itemType === 'pool' ? '公帳代墊' : '私人拆帳'}</span></div>
+                                ${done > 0.01 ? `<div class="text-[10px] text-pastel-green mt-0.5">已還 ${fmt(done)} / ${fmt(x.expected)}</div>` : ''}
+                            </div>
+                            <div class="text-right flex-shrink-0">
+                                <div class="font-bold font-rounded text-pastel-green text-sm">${fmt(x.remaining)}</div></div>
+                        </div>
+                        <button onclick="closeSheet();openTxnSheet('${esc(x.srcId)}')"
+                            class="w-full mt-2 py-1.5 rounded-lg bg-white border border-pastel-border text-[11px] font-bold text-stone-600 tactile">看這筆原始紀錄</button>
+                    </div>`;
+        }).join('')}
+            </div>
+            <button onclick="closeSheet();settleUp('${esc(nameOf(memberId))}', ${remaining}, 'member2pool')"
+                class="w-full mt-4 py-3.5 bg-pastel-green text-white font-bold rounded-tile text-sm shadow-md tactile">
+                <i class="fa-solid fa-money-bill-transfer mr-1.5"></i>記錄一筆結算 ${fmt(remaining)}</button>`);
     }
 
     /* ---------- 第二層：待辦（三類合併成一張，但個別項目仍直接列出） ---------- */
@@ -3005,7 +3077,7 @@ function hexA(hex, a) {
         c.innerHTML = `
             <div class="flex justify-between items-center">
                 <h2 class="text-lg font-bold text-stone-800">${currentMode === 'personal' ? '我的明細' : '家庭公帳明細'}</h2>
-                <button onclick="refreshData()" aria-label="同步" class="text-stone-400 text-lg px-1"><i class="fa-solid fa-rotate"></i></button>
+                <button id="btnSyncTop" onclick="refreshData()" aria-label="同步" class="w-10 h-10 -mr-1 rounded-full flex items-center justify-center text-stone-400 text-lg tactile active:bg-pastel-bg"><i class="fa-solid fa-rotate"></i></button>
             </div>
             ${toolbarRow()}
             ${summaryStrip()}
@@ -3689,7 +3761,6 @@ function hexA(hex, a) {
                 style="${on ? `background:${col}` : ''}">
                 <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${on ? 'rgba(255,255,255,.9)' : col}"></span>
                 <span class="whitespace-nowrap">${esc(t.item_name)}</span>
-                ${on ? '<i class="fa-solid fa-check text-[10px]"></i>' : ''}
             </button>`;
         }).join('') +
             `<button onclick="addItem('PAYMENT_TAG')" class="flex-shrink-0 px-3.5 py-2 rounded-full text-xs font-bold border border-dashed border-pastel-border text-pastel-muted">＋</button>`;
@@ -4448,7 +4519,6 @@ function hexA(hex, a) {
             <div class="flex flex-col items-center text-center space-y-3 mb-6">
                 <button onclick="openAvatarPicker()" class="relative group">
                     <div id="modalUserAvatar" class="w-24 h-24 rounded-full border-[4px] flex items-center justify-center text-5xl overflow-hidden shadow-md ${i.border} ${i.bg}">${avatarInner(STATE.me?.avatar_emoji)}</div>
-                    <div id="modalLevelBadge" class="absolute -bottom-1 -right-1 text-white text-xs font-bold px-2.5 py-1 rounded-full border-2 border-white shadow-sm ${i.badge}">LV.${i.level}</div>
                     <div class="absolute -top-1 -left-1 w-8 h-8 rounded-full bg-white border border-pastel-border shadow-sm flex items-center justify-center text-pastel-accent text-xs"><i class="fa-solid fa-camera"></i></div>
                 </button>
                 <div><h3 class="text-xl font-bold text-stone-800">${esc(STATE.me?.nickname)}</h3>
@@ -4655,7 +4725,6 @@ function hexA(hex, a) {
             return `<div class="flex flex-col items-center gap-1.5 min-w-0">
                         <div class="relative">
                             <div class="w-14 h-14 rounded-full border-[3px] ${i.border} ${i.bg} overflow-hidden flex items-center justify-center text-2xl">${avatarInner(m.avatar_emoji)}</div>
-                            <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 ${i.badge} text-white text-[10px] font-bold px-2 py-0.5 rounded-full border-2 border-white whitespace-nowrap">LV.${i.level}</div>
                         </div>
                         <div class="text-[11px] font-bold text-stone-700 truncate w-full text-center mt-1">${esc(m.nickname)}${isMe ? ' ·我' : ''}</div>
                         <div class="text-[10px] ${i.color} font-bold truncate w-full text-center leading-tight">${esc(i.name)}</div>
@@ -5405,7 +5474,24 @@ ${L.standalone ? 'PWA' : 'WEB(Safari)'}  dpr=${window.devicePixelRatio}  statusB
     initServiceWorker();
     applyTheme();
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (getTheme() === 'auto') applyTheme(); });
-    window.addEventListener('DOMContentLoaded', () => { bindLayout(); bootstrap(); });
+    /* 鍵盤打開時，底部導覽列會被頂上來壓住輸入框（iOS 特別明顯）。
+       打字時導覽列本來就用不到，直接收起來，並把焦點欄位捲進可視範圍。 */
+    function bindKeyboardNav() {
+        const nav = document.getElementById('appNav');
+        const isField = el => el && /^(INPUT|TEXTAREA)$/.test(el.tagName) &&
+            !/^(button|submit|checkbox|radio|file)$/.test(el.type || '');
+        document.addEventListener('focusin', e => {
+            if (!isField(e.target)) return;
+            nav?.classList.add('kb-hide');
+            setTimeout(() => e.target.scrollIntoView({ block: 'center', behavior: 'smooth' }), 260);
+        });
+        document.addEventListener('focusout', e => {
+            if (!isField(e.target)) return;
+            // 延遲一下：從一個欄位跳到下一個欄位時不要閃一下
+            setTimeout(() => { if (!isField(document.activeElement)) nav?.classList.remove('kb-hide'); }, 120);
+        });
+    }
+    window.addEventListener('DOMContentLoaded', () => { bindLayout(); bindKeyboardNav(); bootstrap(); });
     </script>
 
 </body>
