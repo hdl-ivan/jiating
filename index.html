@@ -584,7 +584,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.9.1',
+        VERSION: 'v6.10.0',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -2327,7 +2327,7 @@ function hexA(hex, a) {
                     <input id="rpNote" value="${esc(`${x.payerName}代墊：${x.category || x.note || ''}`)}" class="w-full p-3.5 rounded-tile bg-pastel-bg border border-pastel-border text-sm"></div>
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">從哪個帳戶付</label>
                     <select id="rpTag" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
-                        ${STATE.tags.map(t => `<option ${PREF.get('tag', '') === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
+                        ${visibleTags().map(t => `<option ${PREF.get('tag', '') === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
                 <button onclick="doRepay('${esc(srcId)}')" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile">確認歸還</button>
             </div>`);
     }
@@ -2733,7 +2733,7 @@ function hexA(hex, a) {
                 <div id="coinPreview" class="flex items-center gap-3 p-3 rounded-tile bg-pastel-bg border border-pastel-border"></div>
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">從哪個帳戶劃撥</label>
                     <select id="dpTag" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
-                        ${STATE.tags.map(t => `<option ${PREF.get('tag', '') === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
+                        ${visibleTags().map(t => `<option ${PREF.get('tag', '') === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
                 <p class="text-[11px] text-pastel-muted leading-relaxed">劃撥不是支出，錢沒有離開你的口袋，只是被標記為「保留」，不會計入收支統計。</p>
                 <button onclick="doDeposit('${esc(id)}')" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile"><i class="fa-solid fa-coins mr-1.5"></i>投入籌碼</button>
             </div>`);
@@ -3812,13 +3812,110 @@ function hexA(hex, a) {
         paintGoalRow(); paintTagRow();
     }
 
+    /* ---------- 帳戶標籤的歸屬過濾 ----------
+       個人模式：家庭公用 ＋ 自己的個人帳戶
+       家庭模式：只有家庭公用 —— 公帳不該由個人的口袋直接扣款，
+                 幫忙墊的錢要在個人模式記成「代墊」，帳才會對得起來。
+
+       要說清楚這個防線擋得住什麼：它擋的是「介面被別人的卡淹沒」
+       和「待辦跳出別人的帳單」。它不是隱私牆 —— 家庭代墊的紀錄本來就會
+       顯示付款的標籤名稱，那是共用帳本的性質，不是這裡能改的。 */
+    function visibleTags() {
+        const me = STATE.me?.member_id;
+        return (STATE.tags || []).filter(t => {
+            if (String(t.scope || 'family') !== 'personal') return true;   // 沒有 scope 的舊資料視為公用
+            if (currentMode === 'family') return false;
+            return String(t.owner_id || '') === me;
+        });
+    }
+    /* 顯示用的查詢仍然看得到所有標籤 —— 舊帳如果用了別人的個人卡，
+       圖示與顏色還是要畫得出來，否則畫面看起來像資料壞了。 */
+    const isCreditCard = t => String(t && t.card_type || '') === 'credit';
+
+    /* ---------- 信用卡帳單週期試算 ----------
+       帳單期間 = (上次結帳日的隔天) ~ (本次結帳日)，繳款日在結帳日之後。
+
+       兩個一定要處理對的地方：
+       ① 大小月：結帳日設 31，二月只有 28 天 —— 用 Math.min 夾到當月最後一天，
+          否則 new Date(2026,1,31) 會自動溢位成 3/3，整個週期算錯一個月。
+       ② 代墊要計入：用信用卡付的家庭代墊，卡費仍然是刷全額，
+          之後家人還錢是另一筆金流。帳單金額算的是「這張卡要繳多少」，
+          不是「我最後負擔多少」，所以不能扣掉分攤出去的部分。 */
+    const daysInMonth = (y, m) => new Date(y, m + 1, 0).getDate();
+    /** 某年某月的第 d 天，超過當月天數就取月底 */
+    function clampDay(y, m, d) {
+        return new Date(y, m, Math.min(Math.max(1, d), daysInMonth(y, m)));
+    }
+    const ymd = dt => `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
+
+    /**
+     * @param card     帳戶標籤（需有 billing_day / due_day）
+     * @param refISO   參考日期，預設今天
+     * @returns { open, closed }
+     *   open   本期累積中：periodStart ~ periodEnd（本次結帳日）、dueDate、amount
+     *   closed 上期已結待繳：同上，是「現在該付的那一期」
+     */
+    function statementOf(card, refISO) {
+        const b = Number(card && card.billing_day) || 0;
+        if (!b) return null;
+        const ref = new Date((refISO || todayISO()) + 'T00:00:00');
+        const y = ref.getFullYear(), m = ref.getMonth();
+
+        // 本月的結帳日；今天已經過了就往下一個月推
+        let closeThis = clampDay(y, m, b);
+        if (ref > closeThis) closeThis = clampDay(y, m + 1, b);
+        const closePrev = clampDay(closeThis.getFullYear(), closeThis.getMonth() - 1, b);
+        const closePrev2 = clampDay(closeThis.getFullYear(), closeThis.getMonth() - 2, b);
+
+        const dayAfter = dt => new Date(dt.getFullYear(), dt.getMonth(), dt.getDate() + 1);
+        const dueOf = (close) => {
+            const d = Number(card.due_day) || 0;
+            if (!d) return null;
+            /* 繳款日若小於等於結帳日，代表是下個月的那一天（例如 15 號結帳、3 號繳款）。
+               相等時也算下個月 —— 同一天結帳又繳款在實務上不存在。 */
+            const off = d <= Number(card.billing_day) ? 1 : 0;
+            return clampDay(close.getFullYear(), close.getMonth() + off, d);
+        };
+        return {
+            open: { start: ymd(dayAfter(closePrev)), end: ymd(closeThis), due: dueOf(closeThis) ? ymd(dueOf(closeThis)) : '' },
+            closed: { start: ymd(dayAfter(closePrev2)), end: ymd(closePrev), due: dueOf(closePrev) ? ymd(dueOf(closePrev)) : '' }
+        };
+    }
+
+    /** 某張卡在某段期間內的應繳金額。支出計入、退款（收入）扣除、還款與轉帳不算。 */
+    function statementAmount(tagName, start, end) {
+        return (STATE.transactions || []).reduce((sum, t) => {
+            if (t.status === '作廢' || t.status === '已修訂' || t.is_rollup) return sum;
+            if (t.tag !== tagName) return sum;
+            const d = String(t.date).slice(0, 10);
+            if (d < start || d > end) return sum;
+            const a = Math.round(Number(t.amount) || 0);
+            if (t.entry_type === '支出') return sum + a;      // 代墊也算：卡片仍要繳全額
+            if (t.entry_type === '收入') return sum - a;      // 刷退
+            return sum;                                       // 還款／轉帳（含繳卡費）不進帳單
+        }, 0);
+    }
+    /** 把週期與金額組成一張卡的完整帳單資訊 */
+    function cardStatement(card, refISO) {
+        const p = statementOf(card, refISO);
+        if (!p) return null;
+        return {
+            name: card.item_name,
+            open: { ...p.open, amount: statementAmount(card.item_name, p.open.start, p.open.end) },
+            closed: { ...p.closed, amount: statementAmount(card.item_name, p.closed.start, p.closed.end) },
+            autoPayTag: card.auto_pay_tag || ''
+        };
+    }
+    /** 我看得到的信用卡（個人卡只有自己看得到，所以別人的帳單不會跑到我的待辦） */
+    const myCards = () => visibleTags().filter(isCreditCard);
+
     function paintTagRow() {
         const r = document.getElementById('tagRow'); if (!r) return;
-        if (!STATE.tags.length) {
+        if (!visibleTags().length) {
             r.innerHTML = `<button onclick="addItem('PAYMENT_TAG')" class="flex-shrink-0 px-4 py-2 rounded-full text-xs font-bold border border-dashed border-pastel-border text-pastel-muted">＋ 先新增一個帳戶</button>`;
             return;
         }
-        r.innerHTML = STATE.tags.map(t => {
+        r.innerHTML = visibleTags().map(t => {
             const on = t.item_name === addState.tag, col = catColor(t.item_name);
             return `<button onclick="pickTag('${esc(t.item_name)}')"
                 class="flex-shrink-0 flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-bold border transition-all tactile ${on ? 'text-white border-transparent shadow-sm' : 'bg-white text-stone-700 border-pastel-border'}"
@@ -4122,10 +4219,10 @@ function hexA(hex, a) {
                 <div class="px-4 py-3.5 grid grid-cols-2 gap-3">
                     <div class="field"><label class="block text-[11px] font-bold text-stone-500 mb-1.5">從</label>
                         <select id="trFrom" class="w-full p-2.5 rounded-xl bg-pastel-bg border border-pastel-border text-sm truncate">
-                            ${STATE.tags.map(t => `<option ${addState.from === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
+                            ${visibleTags().map(t => `<option ${addState.from === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
                     <div class="field"><label class="block text-[11px] font-bold text-stone-500 mb-1.5">到</label>
                         <select id="trTo" class="w-full p-2.5 rounded-xl bg-pastel-bg border border-pastel-border text-sm truncate">
-                            ${STATE.tags.map(t => `<option ${addState.to === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
+                            ${visibleTags().map(t => `<option ${addState.to === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
                 </div>`
                 : rowBtn('分類', addState.cat
                     ? `<i class="fa-solid ${esc(catIcon(addState.cat))} mr-1.5" style="color:${catColor(addState.cat)}"></i>${esc(addState.cat)}`
@@ -4898,7 +4995,10 @@ function hexA(hex, a) {
         const r = ruleId ? STATE.rules.find(x => x.rule_id === ruleId) : null;
         const isExp = !r || r.entry_type !== '收入';
         const catOpts = g => STATE.categories.filter(c => c.item_group === g)
-            .map(c => `<option value="${esc(c.item_name)}" ${r && r.category === c.item_name ? 'selected' : ''}>${esc(c.icon_emoji)} ${esc(c.item_name)}</option>`).join('');
+            /* 原生 <option> 沒辦法畫向量圖示，先前直接把 icon_emoji 印出來，
+               舊資料是 emoji 還看得過去，改成 fa- 代號之後就變成一串英文。
+               選單裡只留純名稱，圖示交給外層卡片渲染。 */
+            .map(c => `<option value="${esc(c.item_name)}" ${r && r.category === c.item_name ? 'selected' : ''}>${esc(c.item_name)}</option>`).join('');
         openSheet(`
             <h3 class="text-lg font-bold text-stone-800 mb-5">${r ? '編輯' : '新增'}重複性收支</h3>
             <div class="space-y-4">
@@ -4915,7 +5015,7 @@ function hexA(hex, a) {
                         <select id="rCat" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm truncate">${catOpts(isExp ? 'EXPENSE_CATEGORY' : 'INCOME_CATEGORY')}</select></div>
                     <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">帳戶</label>
                         <select id="rTag" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm truncate">
-                            ${STATE.tags.map(t => `<option ${r && r.tag === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div></div>
+                            ${visibleTags().map(t => `<option ${r && r.tag === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div></div>
                 <div class="grid grid-cols-2 gap-3">
                     <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">週期</label>
                         <select id="rFreq" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
@@ -4945,7 +5045,7 @@ function hexA(hex, a) {
         const isExp = document.getElementById('rType').value === '支出';
         document.getElementById('rCat').innerHTML = STATE.categories
             .filter(c => c.item_group === (isExp ? 'EXPENSE_CATEGORY' : 'INCOME_CATEGORY'))
-            .map(c => `<option value="${esc(c.item_name)}">${esc(c.icon_emoji)} ${esc(c.item_name)}</option>`).join('');
+            .map(c => `<option value="${esc(c.item_name)}">${esc(c.item_name)}</option>`).join('');
     }
     async function saveRule(ruleId) {
         const rule = {
@@ -4980,9 +5080,13 @@ function hexA(hex, a) {
     }
 
     let _newItem = { group: '', name: '', icon: 'fa-tag' };
-    function addItem(group) {
+    function addItem(group, scope) {
         _newItem = {
             group, name: '', editing: '',
+            /* 從記帳頁的標籤列按「＋」→ 個人專屬（只有自己看得到）
+               從設定頁的「家庭公用帳戶」按「＋」→ 全家共用
+               分類一律 family，那是全家共同的財務語言 */
+            scope: group === 'PAYMENT_TAG' ? (scope || (currentMode === 'family' ? 'family' : 'personal')) : 'family',
             icon: group === 'PAYMENT_TAG' ? 'fa-credit-card' : group === 'INCOME_CATEGORY' ? 'fa-sack-dollar' : 'fa-tag',
             color: nextColor(group)
         };
@@ -5090,7 +5194,12 @@ function hexA(hex, a) {
         _newItem = {
             group, name, editing: name,
             icon: normIcon(c.icon_emoji, group),
-            color: c.hex_color || catColor(name)
+            color: c.hex_color || catColor(name),
+            scope: String(c.scope || 'family'),
+            card_type: String(c.card_type || ''),
+            billing_day: Number(c.billing_day) || 0,
+            due_day: Number(c.due_day) || 0,
+            auto_pay_tag: String(c.auto_pay_tag || '')
         };
         openItemSheet();
     }
@@ -5107,6 +5216,41 @@ function hexA(hex, a) {
                     class="field flex-1 w-full p-3.5 rounded-tile bg-pastel-bg border border-pastel-border text-stone-800">
             </div>
             ${ed ? `<p class="text-[11px] text-pastel-muted leading-relaxed -mt-3 mb-4">改名後，已經記過的帳會一起換成新名稱，統計不會斷成兩截。</p>` : ''}
+            ${g === 'PAYMENT_TAG' ? `
+            <div class="p-3 rounded-tile bg-pastel-bg border border-pastel-border mb-5 space-y-3">
+                <label class="flex items-center justify-between gap-3">
+                    <span class="text-xs font-bold text-stone-700">只有我看得到</span>
+                    <input type="checkbox" ${_newItem.scope === 'personal' ? 'checked' : ''}
+                        onchange="_newItem.scope=this.checked?'personal':'family'"
+                        class="w-5 h-5 accent-pastel-accent"></label>
+                <p class="text-[10px] text-pastel-muted leading-relaxed -mt-1">
+                    個人帳戶只出現在你的個人模式；取消勾選就變成全家共用（例如公帳現金）。</p>
+                <label class="flex items-center justify-between gap-3 pt-2 border-t border-pastel-border">
+                    <span class="text-xs font-bold text-stone-700">這是信用卡</span>
+                    <input type="checkbox" ${_newItem.card_type === 'credit' ? 'checked' : ''}
+                        onchange="_newItem.card_type=this.checked?'credit':'';keepNewItemName();openItemSheet()"
+                        class="w-5 h-5 accent-pastel-accent"></label>
+                ${_newItem.card_type === 'credit' ? `
+                <div class="grid grid-cols-2 gap-2">
+                    <div><div class="text-[10px] text-pastel-muted mb-1">結帳日</div>
+                        <input type="number" min="1" max="31" inputmode="numeric" value="${_newItem.billing_day || ''}" placeholder="例：15"
+                            oninput="_newItem.billing_day=Number(this.value)||0"
+                            class="field w-full py-2 px-2 rounded-lg bg-white border border-pastel-border text-sm text-center"></div>
+                    <div><div class="text-[10px] text-pastel-muted mb-1">繳款日</div>
+                        <input type="number" min="1" max="31" inputmode="numeric" value="${_newItem.due_day || ''}" placeholder="例：3"
+                            oninput="_newItem.due_day=Number(this.value)||0"
+                            class="field w-full py-2 px-2 rounded-lg bg-white border border-pastel-border text-sm text-center"></div>
+                </div>
+                <div><div class="text-[10px] text-pastel-muted mb-1">從哪個帳戶扣繳</div>
+                    <select onchange="_newItem.auto_pay_tag=this.value"
+                        class="field w-full py-2 px-2 rounded-lg bg-white border border-pastel-border text-sm">
+                        <option value="">未設定</option>
+                        ${visibleTags().filter(x => x.item_name !== _newItem.editing && !isCreditCard(x))
+                    .map(x => `<option ${_newItem.auto_pay_tag === x.item_name ? 'selected' : ''}>${esc(x.item_name)}</option>`).join('')}
+                    </select></div>
+                <p class="text-[10px] text-pastel-muted leading-relaxed">
+                    設定後，帳單週期與應繳金額會自動算出來。結帳日大於當月天數時會自動改用月底。</p>` : ''}
+            </div>` : ''}
             <div class="text-xs font-bold text-stone-500 mb-2">顏色</div>
             <div class="flex gap-2 mb-5">
                 ${CAT_PALETTE.map(h => `<button onclick="pickNewColor('${h}')"
@@ -5141,6 +5285,13 @@ function hexA(hex, a) {
         if (!newName) { buzz(30); return toast('請輸入名稱', true); }
         const group = _newItem.group, oldName = _newItem.editing;
         const patch = { icon_emoji: _newItem.icon, hex_color: _newItem.color };
+        if (group === 'PAYMENT_TAG') {
+            patch.scope = _newItem.scope || 'family';
+            patch.card_type = _newItem.card_type || '';
+            patch.billing_day = _newItem.billing_day || 0;
+            patch.due_day = _newItem.due_day || 0;
+            patch.auto_pay_tag = _newItem.auto_pay_tag || '';
+        }
         closeSheet();
         const list = group === 'PAYMENT_TAG' ? STATE.tags : STATE.categories;
         const i = list.findIndex(x => x.item_name === oldName && x.item_group === group);
@@ -5170,7 +5321,12 @@ function hexA(hex, a) {
         if (!name) { buzz(30); return toast('請輸入名稱', true); }
         const group = _newItem.group;
         closeSheet();
-        const item = { item_name: name, item_group: group, icon_emoji: _newItem.icon, hex_color: _newItem.color };
+        const item = {
+            item_name: name, item_group: group, icon_emoji: _newItem.icon, hex_color: _newItem.color,
+            scope: _newItem.scope || 'family',
+            card_type: _newItem.card_type || '', billing_day: _newItem.billing_day || 0,
+            due_day: _newItem.due_day || 0, auto_pay_tag: _newItem.auto_pay_tag || ''
+        };
         if (group === 'PAYMENT_TAG') STATE.tags.push(item); else STATE.categories.push(item);
         renderSettings(); initAddForm(true);
         if (group !== 'PAYMENT_TAG') addState.cat = name; else addState.tag = name;
