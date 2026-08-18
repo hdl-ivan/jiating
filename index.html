@@ -584,7 +584,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.10.0',
+        VERSION: 'v6.10.1',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -2327,7 +2327,7 @@ function hexA(hex, a) {
                     <input id="rpNote" value="${esc(`${x.payerName}代墊：${x.category || x.note || ''}`)}" class="w-full p-3.5 rounded-tile bg-pastel-bg border border-pastel-border text-sm"></div>
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">從哪個帳戶付</label>
                     <select id="rpTag" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
-                        ${visibleTags().map(t => `<option ${PREF.get('tag', '') === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
+                        ${tagChoices(PREF.get('tag', '')).map(t => `<option ${PREF.get('tag', '') === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
                 <button onclick="doRepay('${esc(srcId)}')" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile">確認歸還</button>
             </div>`);
     }
@@ -2733,7 +2733,7 @@ function hexA(hex, a) {
                 <div id="coinPreview" class="flex items-center gap-3 p-3 rounded-tile bg-pastel-bg border border-pastel-border"></div>
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">從哪個帳戶劃撥</label>
                     <select id="dpTag" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
-                        ${visibleTags().map(t => `<option ${PREF.get('tag', '') === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
+                        ${tagChoices(PREF.get('tag', '')).map(t => `<option ${PREF.get('tag', '') === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
                 <p class="text-[11px] text-pastel-muted leading-relaxed">劃撥不是支出，錢沒有離開你的口袋，只是被標記為「保留」，不會計入收支統計。</p>
                 <button onclick="doDeposit('${esc(id)}')" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile"><i class="fa-solid fa-coins mr-1.5"></i>投入籌碼</button>
             </div>`);
@@ -3832,6 +3832,19 @@ function hexA(hex, a) {
        圖示與顏色還是要畫得出來，否則畫面看起來像資料壞了。 */
     const isCreditCard = t => String(t && t.card_type || '') === 'credit';
 
+    /* 編輯既有紀錄時，那筆用的帳戶可能不在目前模式的清單裡
+       （例如在家庭模式打開一筆用個人卡代墊的舊帳）。
+       清單裡沒有它，下拉就會顯示成第一個選項 —— 畫面說的跟資料存的不一樣，
+       使用者以為自己在看國泰卡，其實顯示的是現金。
+       所以挑選清單一律把「目前這筆的值」補進去。 */
+    function tagChoices(current) {
+        const list = visibleTags();
+        const cur = String(current || '');
+        if (!cur || list.some(t => t.item_name === cur)) return list;
+        const found = (STATE.tags || []).find(t => t.item_name === cur);
+        return [found || { item_name: cur, item_group: 'PAYMENT_TAG' }, ...list];
+    }
+
     /* ---------- 信用卡帳單週期試算 ----------
        帳單期間 = (上次結帳日的隔天) ~ (本次結帳日)，繳款日在結帳日之後。
 
@@ -3911,11 +3924,11 @@ function hexA(hex, a) {
 
     function paintTagRow() {
         const r = document.getElementById('tagRow'); if (!r) return;
-        if (!visibleTags().length) {
+        if (!tagChoices(addState.tag).length) {
             r.innerHTML = `<button onclick="addItem('PAYMENT_TAG')" class="flex-shrink-0 px-4 py-2 rounded-full text-xs font-bold border border-dashed border-pastel-border text-pastel-muted">＋ 先新增一個帳戶</button>`;
             return;
         }
-        r.innerHTML = visibleTags().map(t => {
+        r.innerHTML = tagChoices(addState.tag).map(t => {
             const on = t.item_name === addState.tag, col = catColor(t.item_name);
             return `<button onclick="pickTag('${esc(t.item_name)}')"
                 class="flex-shrink-0 flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-bold border transition-all tactile ${on ? 'text-white border-transparent shadow-sm' : 'bg-white text-stone-700 border-pastel-border'}"
@@ -4219,10 +4232,10 @@ function hexA(hex, a) {
                 <div class="px-4 py-3.5 grid grid-cols-2 gap-3">
                     <div class="field"><label class="block text-[11px] font-bold text-stone-500 mb-1.5">從</label>
                         <select id="trFrom" class="w-full p-2.5 rounded-xl bg-pastel-bg border border-pastel-border text-sm truncate">
-                            ${visibleTags().map(t => `<option ${addState.from === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
+                            ${tagChoices(addState.from).map(t => `<option ${addState.from === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
                     <div class="field"><label class="block text-[11px] font-bold text-stone-500 mb-1.5">到</label>
                         <select id="trTo" class="w-full p-2.5 rounded-xl bg-pastel-bg border border-pastel-border text-sm truncate">
-                            ${visibleTags().map(t => `<option ${addState.to === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
+                            ${tagChoices(addState.to).map(t => `<option ${addState.to === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
                 </div>`
                 : rowBtn('分類', addState.cat
                     ? `<i class="fa-solid ${esc(catIcon(addState.cat))} mr-1.5" style="color:${catColor(addState.cat)}"></i>${esc(addState.cat)}`
@@ -5015,7 +5028,7 @@ function hexA(hex, a) {
                         <select id="rCat" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm truncate">${catOpts(isExp ? 'EXPENSE_CATEGORY' : 'INCOME_CATEGORY')}</select></div>
                     <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">帳戶</label>
                         <select id="rTag" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm truncate">
-                            ${visibleTags().map(t => `<option ${r && r.tag === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div></div>
+                            ${tagChoices(r && r.tag).map(t => `<option ${r && r.tag === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div></div>
                 <div class="grid grid-cols-2 gap-3">
                     <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">週期</label>
                         <select id="rFreq" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
