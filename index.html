@@ -107,9 +107,10 @@
            那塊區域任何元素都畫不進去，WebKit #295283 至今未解，
            且官方建議的 obscuredContentInsets 是原生 App API，網頁端拿不到。
            因此所有可點擊元件一律避開底部 64px。 */
-        #appNav { background-color:#FFFFFF; padding-bottom:max(64px, calc(0.35rem + var(--sab, env(safe-area-inset-bottom, 0px)))); }
+        #appNav { background:transparent; }
         #sheetContent, #profileModalContent { padding-bottom:max(64px, calc(1.5rem + var(--sab, env(safe-area-inset-bottom, 0px)))) !important; }
-        html.dark #appNav { background-color:#221F1D !important; }
+        html.dark #appNav { background:transparent !important; }
+        html.dark #navPill { background:rgba(30,27,25,.94) !important; box-shadow:0 10px 30px rgba(0,0,0,.5) !important; }
         html.dark .nav-btn { color:#8F857A; }
         /* 已加入主畫面時，整個底色改成 App 奶油色，狀態列區域才不會露出不同色 */
         /* iOS PWA 的版面視窗（812）比實體螢幕（874）矮，中間那 62px 只會被
@@ -184,21 +185,35 @@
         @keyframes spinSlow { to { transform:rotate(360deg); } }
         .spin-slow { animation:spinSlow .9s linear infinite; }
 
-        /* ── 底部導覽列：貼齊外框底邊的白色橫條 ──
-           白底一路延伸進底部 64px 的死區，視覺上是完整接地的一條，
-           不是浮在半空中、下面又露出一塊白的組合。
-           只留圖示不留文字，所以整條比原本矮一截。 */
+        /* ── 懸浮膠囊導覽列 ──
+           左右各留 12px，膠囊本身有底色與陰影、沒有邊框線。
+           膠囊以外（含底部安全區）全部透明，內容從底下經過。 */
         #appNav {
-            display:flex; justify-content:space-around; align-items:center;
-            padding-top:4px;
-            border-top:1px solid var(--nav-border, #E7E0D5);
-            box-shadow:0 -10px 40px rgba(160,130,100,.06);
-            /* 收合改用位移＋淡出。不能用 max-height + overflow:hidden，
-               那個 overflow 會裁掉任何凸出導覽列的元件（v6.7.0 的加號就是這樣被切掉的）。 */
+            display:flex; align-items:flex-end;
+            pointer-events:none;                 /* 膠囊以外的空白要能點到底下的內容 */
+            /* 底部 64px 是 iOS PWA 畫不進去的死區（見上方註解）。
+               再多留 14px，膠囊的陰影才有空間淡出，不會在死區邊界被切成一條直線 ——
+               那正是你看到「加號陰影被切斷」的原因。 */
+            padding:0 12px 14px;
+            /* 收合用位移＋淡出。不能用 max-height + overflow:hidden，
+               那個 overflow 會把凸出膠囊的加號裁掉。 */
             transition:transform .2s ease, opacity .2s ease;
         }
-        #appNav.kb-hide { transform:translateY(110%); opacity:0; pointer-events:none; }
-        html.dark #appNav { --nav-border:#3A3430; }
+        #appNav.kb-hide { transform:translateY(150%); opacity:0; pointer-events:none; }
+        /* 只有手機要避開底部死區；桌機的模擬外框沒有這個問題 */
+        @media (max-width:767px) {
+            #appNav { padding-bottom:max(78px, calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 14px)); }
+        }
+        #navPill {
+            pointer-events:auto;
+            width:100%; height:60px;
+            display:flex; justify-content:space-around; align-items:center;
+            border-radius:999px;
+            background:rgba(255,255,255,.94);
+            -webkit-backdrop-filter:saturate(180%) blur(16px);
+            backdrop-filter:saturate(180%) blur(16px);
+            box-shadow:0 10px 30px rgba(120,95,70,.18), 0 2px 8px rgba(120,95,70,.08);
+        }
         .nav-btn {
             /* 44px 是 Apple 的最小觸控目標，再小就會開始按不準 */
             width:44px; height:44px; border-radius:999px;
@@ -209,17 +224,20 @@
         .nav-btn:active { transform:scale(.9); }
         .nav-btn.nav-active { color:#F8A048; background:rgba(248,160,72,.12); }
         .mode-family .nav-btn.nav-active { color:#3090F8; background:rgba(48,144,248,.12); }
-        /* 加號留在橫條之內，不凸出去 —— 顏色已經足夠把它跟其他圖示分開，
-           而且凸出去的元件只要外層哪天加了 overflow 就會被裁掉。 */
-        .nav-add { width:52px; height:44px; }
+        /* 加號凸出膠囊上緣。外層沒有 overflow，所以不會被裁掉；
+           而且整條導覽列離死區還有 14px，陰影也不會在邊界被切斷。 */
+        .nav-add { width:60px; height:44px; position:relative; z-index:2; }
         #addBtnInner {
-            width:44px; height:44px; border-radius:999px;
+            position:absolute; left:50%; top:50%;
+            width:58px; height:58px; border-radius:999px;
+            margin:0 0 0 -29px;
+            transform:translateY(-50%) translateY(-13px);
             display:flex; align-items:center; justify-content:center;
-            background:#F8A048; color:#fff; font-size:20px;
-            box-shadow:0 4px 12px rgba(248,160,72,.4);
+            background:#F8A048; color:#fff; font-size:24px;
+            box-shadow:0 8px 22px rgba(248,160,72,.5);
             transition:transform .2s ease, box-shadow .2s ease, background .3s ease;
         }
-        .nav-add-on #addBtnInner { transform:rotate(45deg); box-shadow:0 4px 16px rgba(248,160,72,.55); }
+        .nav-add-on #addBtnInner { transform:translateY(-50%) translateY(-13px) rotate(45deg); box-shadow:0 10px 26px rgba(248,160,72,.62); }
 
         /* ───────── 深色模式 ─────────
            以覆寫實際使用到的 Tailwind 工具類別實作，
@@ -509,8 +527,9 @@
 
     <div id="toast" class="absolute left-0 right-0 bottom-24 z-[95] flex justify-center opacity-0 pointer-events-none transition-opacity duration-300"></div>
 
-    <!-- 底部導覽列：貼齊外框底邊的白色橫條，只有圖示不放文字 -->
+    <!-- 懸浮膠囊導覽列：左右各留 12px，膠囊以外全部透明，內容從底下經過 -->
     <nav id="appNav" class="js-hide">
+        <div id="navPill">
         <button onclick="switchTab('dashboard')" id="navDashboard" aria-label="首頁" class="nav-btn"><i class="fa-solid fa-house-chimney"></i></button>
         <button onclick="switchTab('transactions')" id="navTransactions" aria-label="明細" class="nav-btn"><i class="fa-solid fa-list-ul"></i></button>
         <button onclick="switchTab('add')" id="navAdd" aria-label="新增" class="nav-btn nav-add tactile">
@@ -518,6 +537,7 @@
         </button>
         <button onclick="switchTab('stats')" id="navStats" aria-label="圖表" class="nav-btn"><i class="fa-solid fa-chart-pie"></i></button>
         <button onclick="switchTab('settings')" id="navSettings" aria-label="設定" class="nav-btn"><i class="fa-solid fa-user-group"></i></button>
+        </div>
     </nav>
 
     <div id="profileModal" class="absolute inset-0 bg-stone-900/40 backdrop-blur-sm z-[60] flex items-end justify-center opacity-0 transition-opacity duration-300 js-hide" onclick="if(event.target===this)closeProfileModal()">
@@ -552,7 +572,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.8.1',
+        VERSION: 'v6.8.2',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -5365,15 +5385,21 @@ function hexA(hex, a) {
             h = Math.round(Math.min(base + satPx, scr));
             document.documentElement.style.setProperty('--appH', h + 'px');
         }
-        /* 導覽列貼齊外框底邊，主內容要讓出「導覽列頂端到外框底邊」的高度。
-           不直接用 offsetHeight，是因為那個值在導覽列被 transform 位移時仍然不變，
-           而量距離的寫法對貼底與懸浮兩種版面都成立。 */
+        /* 主內容要讓出的底部空間，量的是「導覽列最上緣到外框底邊」。
+           最上緣不是膠囊 —— 加號凸出在膠囊之上，它才是最高的那個點。
+           只量膠囊的話，捲到最底時最後一筆會被加號蓋住。
+           再加 30px 呼吸空間，讓最後一筆完整露出而不是剛好貼著。 */
         const nav = document.getElementById('appNav');
         let navH = 0;
         if (nav && !nav.classList.contains('js-hide')) {
             const frameEl = document.getElementById('appFrame');
             const fb = frameEl ? frameEl.getBoundingClientRect().bottom : window.innerHeight;
-            navH = Math.max(0, Math.round(fb - nav.getBoundingClientRect().top));
+            const add = document.getElementById('addBtnInner');
+            const top = Math.min(
+                nav.getBoundingClientRect().top,
+                add ? add.getBoundingClientRect().top : Infinity
+            );
+            navH = Math.max(0, Math.round(fb - top)) + 30;
         }
         if (navH > 0) document.documentElement.style.setProperty('--navH', navH + 'px');
         // 實測 100dvh 換算出的像素，用來確認它是否等於實體螢幕高度
