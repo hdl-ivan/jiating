@@ -202,7 +202,15 @@
         #appNav.kb-hide { transform:translateY(150%); opacity:0; pointer-events:none; }
         /* 只有手機要避開底部死區；桌機的模擬外框沒有這個問題 */
         @media (max-width:767px) {
-            #appNav { padding-bottom:max(78px, calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 14px)); }
+            /* 死區由 JS 量出來寫進 --deadZone；再加 14px 讓陰影有空間淡出。
+               fallback 78px 是實測值，只在量測還沒跑完的第一幀用得到。 */
+            #appNav {
+                padding-bottom:max(
+                    calc(var(--deadZone, 64px) + 14px),
+                    calc(var(--sab, env(safe-area-inset-bottom, 0px)) + 14px),
+                    78px
+                );
+            }
         }
         #navPill {
             pointer-events:auto;
@@ -572,7 +580,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.8.2',
+        VERSION: 'v6.9.0',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -5402,6 +5410,18 @@ function hexA(hex, a) {
             navH = Math.max(0, Math.round(fb - top)) + 30;
         }
         if (navH > 0) document.documentElement.style.setProperty('--navH', navH + 'px');
+
+        /* ── 死區：量出來，不要猜 ──
+           外框是 position:fixed;inset:0，但高度又被改寫成 100dvh + 上安全區，
+           所以外框比「看得到的版面視窗」高出一截 —— 多出來的那段在螢幕外，
+           畫什麼都看不見。那就是先前寫死的「64px 死區」的真正身分。
+           改成每次量：外框底邊 − 可視視窗高度。換任何機型都成立，不必再猜數字。 */
+        const frameForDead = document.getElementById('appFrame');
+        if (frameForDead) {
+            const visH = (vv && !kbOpen) ? vv.height : window.innerHeight;
+            const dead = Math.max(0, Math.round(frameForDead.getBoundingClientRect().bottom - visH));
+            document.documentElement.style.setProperty('--deadZone', dead + 'px');
+        }
         // 實測 100dvh 換算出的像素，用來確認它是否等於實體螢幕高度
         const dvhPx = measureDvh();
 
