@@ -112,11 +112,15 @@
         html.dark #appNav { background:transparent !important; }
         html.dark #navPill { background:rgba(30,27,25,.94) !important; box-shadow:0 10px 30px rgba(0,0,0,.5) !important; }
         html.dark .nav-btn { color:#8F857A; }
-        /* 已加入主畫面時，整個底色改成 App 奶油色，狀態列區域才不會露出不同色 */
-        /* iOS PWA 的版面視窗（812）比實體螢幕（874）矮，中間那 62px 只會被
-           canvas 背景填滿——任何元素都畫不進去。把它設成與導覽列同色，
-           視覺上導覽列就是延伸到螢幕最底，不會再出現那條奶油色橫帶。 */
-        @media (display-mode: standalone) { html, body { background-color:#FFFFFF; } }
+        /* ── 安全區「沒有顏色」的真正做法 ──
+           安全區本身沒辦法透明 —— 它後面沒有東西，透出來的就是 canvas 背景。
+           所以「不要有一塊顏色」＝「canvas 的顏色要跟 App 一樣」。
+
+           先前這裡設成白色，是為了配合當時貼底的白色導覽列。
+           導覽列改成懸浮膠囊之後，那塊白就變成畫面下緣一條突兀的白帶 ——
+           那正是你看到的「一堆白色遮擋區塊」。改回 App 的奶油底色，
+           上下安全區就跟內容連成一片，看不出邊界。 */
+        @media (display-mode: standalone) { html, body { background-color:#FFF8F0; } }
         html.dark, html.dark body { background-color:#221F1D !important; }
         .hide-scrollbar::-webkit-scrollbar { display:none; }
         .hide-scrollbar { -ms-overflow-style:none; scrollbar-width:none; }
@@ -580,7 +584,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.9.0',
+        VERSION: 'v6.9.1',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
