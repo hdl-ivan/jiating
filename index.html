@@ -584,7 +584,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.10.1',
+        VERSION: 'v6.11.0',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -2610,7 +2610,7 @@ function hexA(hex, a) {
                 ${deps.length ? deps.map(t => `
                     <div class="flex justify-between items-center bg-pastel-bg rounded-tile px-3 py-3 border border-pastel-border">
                         <div class="min-w-0"><div class="text-sm font-bold text-stone-800 truncate">${esc(nameOf(t.payer_id))}${t.settle_member_id === 'RELEASE' ? (String(t.note).indexOf('結案') === 0 ? '（結案釋出）' : '（提取）') : ''}</div>
-                        <div class="text-[10px] text-pastel-muted">${esc(t.date)} ・ ${esc(t.tag || '—')}</div></div>
+                        <div class="text-[10px] text-pastel-muted">${esc(t.date)} ・ ${esc(displayTag(t.tag) || '—')}</div></div>
                         <div class="font-bold font-rounded flex-shrink-0 ml-2 ${t.settle_member_id === 'RELEASE' ? 'text-pastel-muted' : 'text-pastel-green'}">${t.settle_member_id === 'RELEASE' ? '-' : '+'}${fmt(t.amount)}</div>
                     </div>`).join('') : '<div class="text-[11px] text-pastel-muted">尚無劃撥</div>'}
                 </div>
@@ -2954,7 +2954,9 @@ function hexA(hex, a) {
         if (filters.type === 'income') rows = rows.filter(t => t.entry_type === '收入');
         if (filters.natures.length) rows = rows.filter(t => filters.natures.includes(t.nature));
         if (filters.cats.length) rows = rows.filter(t => filters.cats.includes(t.category));
-        if (filters.tags.length) rows = rows.filter(t => filters.tags.includes(t.tag));
+        /* 家庭模式的晶片是遮罩後的名稱，所以比對也要遮罩過 ——
+           勾「信用卡」要能撈出所有人用信用卡付的紀錄，不管實際是哪一張。 */
+        if (filters.tags.length) rows = rows.filter(t => filters.tags.includes(displayTag(t.tag)));
         /* 成員篩選只在家庭模式有意義 —— 個人模式的明細本來就只有自己的紀錄。
            萬一切回個人模式時舊條件還留著，這裡直接忽略，不會出現「什麼都篩不到」。 */
         if (currentMode === 'family' && filters.members.length) {
@@ -2962,7 +2964,13 @@ function hexA(hex, a) {
         }
         if (filters.min !== '') rows = rows.filter(t => Number(t.amount) >= Number(filters.min));
         if (filters.max !== '') rows = rows.filter(t => Number(t.amount) <= Number(filters.max));
-        if (filters.q) { const q = filters.q.toLowerCase(); rows = rows.filter(t => `${t.note}${t.category}${t.tag}`.toLowerCase().includes(q)); }
+        /* 搜尋也要比對遮罩後的名稱：
+           家庭模式搜「信用卡」要找得到，搜別人的卡真名則不該找得到 —— 
+           否則遮罩只是把名字從畫面上拿掉，用猜的還是問得出來。 */
+        if (filters.q) {
+            const q = filters.q.toLowerCase();
+            rows = rows.filter(t => `${t.note}${t.category}${displayTag(t.tag)}`.toLowerCase().includes(q));
+        }
         return rows.sort((a, b) => (b.date + b.created_at).localeCompare(a.date + a.created_at));
     }
     function activeFilterCount() {
@@ -3301,7 +3309,7 @@ function hexA(hex, a) {
                         <div class="font-bold text-stone-800 text-[13px] truncate">${esc(t.note || t.category || '（無備註）')}${t.recurring_rule_id ? ' <i class="fa-solid fa-rotate text-[10px] text-pastel-muted"></i>' : ''}</div>
                         <div class="text-[11px] text-pastel-muted flex items-center gap-1.5 truncate mt-0.5">
                             <span class="truncate">${repayLabel || esc(t.category || t.entry_type)}</span>
-                            ${t.tag && !isRepay ? `<span class="w-1 h-1 rounded-full bg-stone-300 flex-shrink-0"></span><span class="truncate">${esc(t.tag)}</span>` : ''}
+                            ${t.tag && !isRepay ? `<span class="w-1 h-1 rounded-full bg-stone-300 flex-shrink-0"></span><span class="truncate">${esc(displayTag(t.tag))}</span>` : ''}
                         </div>
                         ${(() => {
             const st = settleSummary(t); if (!st) return '';
@@ -3516,7 +3524,7 @@ function hexA(hex, a) {
                 <div><label class="block text-xs font-bold text-stone-500 mb-2">分類（可複選）</label>
                     <div class="flex flex-wrap gap-2">${STATE.categories.map((c, i) => chip(c.item_name, filters.cats.includes(c.item_name), `toggleFilterAt('cats',${i})`)).join('')}</div></div>
                 <div><label class="block text-xs font-bold text-stone-500 mb-2">帳戶 / 標籤（可複選）</label>
-                    <div class="flex flex-wrap gap-2">${STATE.tags.map((t, i) => chip(t.item_name, filters.tags.includes(t.item_name), `toggleFilterAt('tags',${i})`)).join('')}</div></div>
+                    <div class="flex flex-wrap gap-2">${filterTagNames().map(n => chip(n, filters.tags.includes(n), `toggleFilter('tags', ${JSON.stringify(n)})`)).join('')}</div></div>
                 <div><label class="block text-xs font-bold text-stone-500 mb-2">金額區間</label>
                     <div class="flex items-center gap-2">
                         <input id="fMin" type="number" inputmode="numeric" value="${esc(filters.min)}" placeholder="最低" class="field flex-1 w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
@@ -3534,7 +3542,7 @@ function hexA(hex, a) {
         openSheet(`
             <h3 class="selectable text-lg font-bold text-stone-800 mb-4">${esc(t.note || t.category || '交易明細')}</h3>
             <div class="text-3xl font-bold font-rounded mb-4 ${t.entry_type === '支出' ? 'text-pastel-red' : 'text-pastel-green'}">${t.entry_type === '支出' ? '-' : '+'}${fmt(t.amount)}</div>
-            ${row('日期', t.date)}${row('類型', t.entry_type)}${row('分類', t.category || '—')}${row('帳戶', t.tag || '—')}
+            ${row('日期', t.date)}${row('類型', t.entry_type)}${row('分類', t.category || '—')}${row('帳戶', displayTag(t.tag) || '—')}
             ${row('費用歸屬', t.nature || '—')}${row('記帳者', nameOf(t.member_id))}${t.recurring_rule_id ? row('來源', '重複性收支自動產生') : ''}
             ${t.receipt_file_id ? `
             <div class="mt-4">
@@ -3921,6 +3929,38 @@ function hexA(hex, a) {
     }
     /** 我看得到的信用卡（個人卡只有自己看得到，所以別人的帳單不會跑到我的待辦） */
     const myCards = () => visibleTags().filter(isCreditCard);
+
+    /* ---------- 標籤的對外顯示名稱 ----------
+       個人模式顯示真名（那是你自己的帳戶）；
+       家庭模式一律顯示 public_tag —— 家人只會看到「信用卡」，不知道是哪一張。
+
+       這件事的風險是「漏一個地方就洩漏」，標籤名稱散落在明細列、詳情頁、
+       篩選晶片、待辦、圖表。所以所有要印出標籤名稱的地方一律走這個函式，
+       測試會擋住任何直接印 t.tag 的寫法。 */
+    /** 篩選晶片要列的標籤名稱：家庭模式列遮罩後的、去重 */
+    function filterTagNames() {
+        const seen = [], out = [];
+        (STATE.tags || []).forEach(t => {
+            if (currentMode === 'family' && String(t.scope || 'family') === 'personal') {
+                const p = String(t.public_tag || '');
+                if (!p) return;                       // 沒設遮罩的個人帳戶，家庭模式不列出來
+                if (seen.indexOf(p) < 0) { seen.push(p); out.push(p); }
+                return;
+            }
+            if (seen.indexOf(t.item_name) < 0) { seen.push(t.item_name); out.push(t.item_name); }
+        });
+        return out;
+    }
+    function displayTag(name) {
+        const n = String(name || '');
+        if (!n || currentMode !== 'family') return n;
+        const t = (STATE.tags || []).find(x => x.item_name === n);
+        if (!t || String(t.scope || 'family') !== 'personal') return n;
+        return String(t.public_tag || '') || n;
+    }
+    /** 家庭模式的圖示與顏色也要跟著遮罩，否則顏色會把是哪張卡洩漏出去 */
+    const tagIcon = name => catIcon(displayTag(name));
+    const tagColor = name => catColor(displayTag(name));
 
     function paintTagRow() {
         const r = document.getElementById('tagRow'); if (!r) return;
@@ -5115,6 +5155,14 @@ function hexA(hex, a) {
         CAT_PALETTE.forEach(h => { const n = used[h.toUpperCase()] || 0; if (n < bestN) { bestN = n; best = h; } });
         return best;
     }
+    /* 勾成信用卡時，如果還沒設遮罩就自動建議「信用卡」——
+       這是最常見的選擇，但仍然可以改成不遮蔽。 */
+    function suggestPublicTag() {
+        if (_newItem.card_type !== 'credit' || _newItem.public_tag) return;
+        if (_newItem.scope !== 'personal') return;
+        const has = (STATE.tags || []).some(x => x.item_name === '信用卡' && String(x.scope || 'family') !== 'personal');
+        if (has) _newItem.public_tag = '信用卡';
+    }
     function keepNewItemName() { _newItem.name = document.getElementById('niName')?.value ?? _newItem.name; }
     function pickNewIcon(ic) { _newItem.icon = ic; keepNewItemName(); openItemSheet(); }
     function pickNewColor(hex) { _newItem.color = hex; keepNewItemName(); openItemSheet(); }
@@ -5212,7 +5260,8 @@ function hexA(hex, a) {
             card_type: String(c.card_type || ''),
             billing_day: Number(c.billing_day) || 0,
             due_day: Number(c.due_day) || 0,
-            auto_pay_tag: String(c.auto_pay_tag || '')
+            auto_pay_tag: String(c.auto_pay_tag || ''),
+            public_tag: String(c.public_tag || '')
         };
         openItemSheet();
     }
@@ -5238,10 +5287,22 @@ function hexA(hex, a) {
                         class="w-5 h-5 accent-pastel-accent"></label>
                 <p class="text-[10px] text-pastel-muted leading-relaxed -mt-1">
                     個人帳戶只出現在你的個人模式；取消勾選就變成全家共用（例如公帳現金）。</p>
+                ${_newItem.scope === 'personal' ? `
+                <div class="pt-2 border-t border-pastel-border">
+                    <div class="text-[10px] text-pastel-muted mb-1">在家庭帳本上顯示為</div>
+                    <select onchange="_newItem.public_tag=this.value"
+                        class="field w-full py-2 px-2 rounded-lg bg-white border border-pastel-border text-sm">
+                        <option value="">不遮蔽（顯示真名）</option>
+                        ${(STATE.tags || []).filter(x => String(x.scope || 'family') !== 'personal')
+                    .map(x => `<option ${_newItem.public_tag === x.item_name ? 'selected' : ''}>${esc(x.item_name)}</option>`).join('')}
+                    </select>
+                    <p class="text-[10px] text-pastel-muted leading-relaxed mt-1">
+                        設成「信用卡」的話，家人在共用帳本上只會看到「信用卡」，不知道是哪一張。</p>
+                </div>` : ''}
                 <label class="flex items-center justify-between gap-3 pt-2 border-t border-pastel-border">
                     <span class="text-xs font-bold text-stone-700">這是信用卡</span>
                     <input type="checkbox" ${_newItem.card_type === 'credit' ? 'checked' : ''}
-                        onchange="_newItem.card_type=this.checked?'credit':'';keepNewItemName();openItemSheet()"
+                        onchange="_newItem.card_type=this.checked?'credit':'';suggestPublicTag();keepNewItemName();openItemSheet()"
                         class="w-5 h-5 accent-pastel-accent"></label>
                 ${_newItem.card_type === 'credit' ? `
                 <div class="grid grid-cols-2 gap-2">
@@ -5304,6 +5365,7 @@ function hexA(hex, a) {
             patch.billing_day = _newItem.billing_day || 0;
             patch.due_day = _newItem.due_day || 0;
             patch.auto_pay_tag = _newItem.auto_pay_tag || '';
+            patch.public_tag = _newItem.scope === 'personal' ? (_newItem.public_tag || '') : '';
         }
         closeSheet();
         const list = group === 'PAYMENT_TAG' ? STATE.tags : STATE.categories;
@@ -5338,7 +5400,8 @@ function hexA(hex, a) {
             item_name: name, item_group: group, icon_emoji: _newItem.icon, hex_color: _newItem.color,
             scope: _newItem.scope || 'family',
             card_type: _newItem.card_type || '', billing_day: _newItem.billing_day || 0,
-            due_day: _newItem.due_day || 0, auto_pay_tag: _newItem.auto_pay_tag || ''
+            due_day: _newItem.due_day || 0, auto_pay_tag: _newItem.auto_pay_tag || '',
+            public_tag: _newItem.scope === 'personal' ? (_newItem.public_tag || '') : ''
         };
         if (group === 'PAYMENT_TAG') STATE.tags.push(item); else STATE.categories.push(item);
         renderSettings(); initAddForm(true);
