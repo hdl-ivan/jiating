@@ -584,7 +584,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.11.0',
+        VERSION: 'v6.12.0',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -1208,7 +1208,7 @@ function hexA(hex, a) {
     function computeSummary(mode, ym) {
         ym = ym || currentYM();
         const meId = STATE.me?.member_id, rows = activeTxns();
-        const s = { monthlyIncome: 0, monthlyExpense: 0, cashBalance: 0, poolOwesMe: 0, iOweOthers: 0, poolBalance: 0, poolOwesMembers: [], membersOwePool: [], byCategory: [] };
+        const s = { monthlyIncome: 0, monthlyExpense: 0, cashBalance: 0, cardDebt: 0, poolOwesMe: 0, iOweOthers: 0, poolBalance: 0, poolOwesMembers: [], membersOwePool: [], byCategory: [] };
 
         if (mode === 'personal') {
             const mine = rows.filter(t => isMine(t, meId));
@@ -1218,9 +1218,20 @@ function hexA(hex, a) {
                     if (t.entry_type === '支出' && t.payer_id === meId) s.monthlyExpense += a;
                     if (t.entry_type === '收入' && t.payer_id === meId) s.monthlyIncome += a;
                 }
-                if (t.entry_type === '收入') s.cashBalance += a;
-                else if (t.entry_type === '支出' || t.entry_type === '注資') s.cashBalance -= a;
+                /* 信用卡：刷卡的當下錢還沒離開口袋，離開的是「額度」。
+                   所以支出計入當月收支，但不扣現金，改記成卡片負債；
+                   等到繳卡費（轉帳進卡片）時，現金與負債才同步減少。
+                   不這樣分開的話，刷卡當下扣一次現金、繳卡費再扣一次，會重複認列。 */
+                const onCard = isCreditCard(findItem(t.tag));
+                if (t.entry_type === '收入') { onCard ? s.cardDebt -= a : s.cashBalance += a; }
+                else if (t.entry_type === '支出') { onCard ? s.cardDebt += a : s.cashBalance -= a; }
+                else if (t.entry_type === '注資') s.cashBalance -= a;
                 else if (t.entry_type === '還款') s.cashBalance += (t.related_id === meId ? a : -a);
+                else if (t.entry_type === '轉帳' && isCreditCard(findItem(t.related_id))) {
+                    // 繳卡費：錢從帳戶流出，卡片負債同額減少。轉帳本身不進收支表。
+                    s.cashBalance -= a;
+                    s.cardDebt -= a;
+                }
                 if (t.nature === '家庭代墊' && t.entry_type === '支出' && t.payer_id === meId) {
                     // 有分攤明細時，只有「其他人該還我」的部分算應收；
                     // 自己吸收的那一份不是任何人的債務。這是本次最重要的金額修正。
@@ -1959,7 +1970,8 @@ function hexA(hex, a) {
         const c = document.getElementById('dashboardView'), s = computeSummary(currentMode);
         c.classList.add('stagger');
         if (currentMode === 'personal') {
-            const net = s.cashBalance + s.poolOwesMe - s.iOweOthers;
+            // 淨資產要扣掉卡片負債 —— 刷了還沒繳的錢仍然是欠的
+            const net = s.cashBalance + s.poolOwesMe - s.iOweOthers - s.cardDebt;
             c.innerHTML = `
                 <!-- 第一層：唯一一張主卡（預算＋淨資產＋分類預算） -->
                 ${budgetHero(s)}
@@ -1979,6 +1991,11 @@ function hexA(hex, a) {
                         <div class="bg-pastel-greenLight border border-pastel-green/20 p-3 rounded-tile min-w-0"><div class="text-xs text-pastel-green mb-1">公帳欠我</div>
                             <div class="font-bold text-pastel-green text-lg font-rounded truncate">+${fmt(s.poolOwesMe)}</div></div>
                     </div>
+                    ${s.cardDebt > 0.01 ? `
+                    <div class="flex justify-between items-center mt-3 pt-3 border-t border-dashed border-pastel-border">
+                        <span class="text-sm text-stone-600"><i class="fa-solid fa-credit-card text-pastel-red mr-1.5"></i>信用卡待繳</span>
+                        <span class="text-sm font-bold font-rounded text-pastel-red">-${fmt(s.cardDebt)}</span>
+                    </div>` : ''}
                     <div class="flex justify-between items-center mt-3 pt-3 border-t border-dashed border-pastel-border">
                         <span class="text-sm font-bold text-stone-700">淨資產</span>
                         <span class="text-lg font-bold font-rounded text-stone-800">${fmt(net)}</span></div>
@@ -2300,10 +2317,126 @@ function hexA(hex, a) {
     }
 
     /* ---------- 第二層：待辦（三類合併成一張，但個別項目仍直接列出） ---------- */
+    /* ---------- 信用卡帳單待辦 ----------
+       只列「我看得到的卡」，所以二哥的首頁不可能跳出爸爸的帳單。 */
+    function cardDues() {
+        const today = todayISO();
+        return myCards().map(c => {
+            const st = cardStatement(c, today);
+            if (!st || !st.closed.due) return null;
+            /* 應繳＝上期結帳日前的所有消費淨額 − 已經繳過的全部金額。
+               這樣未繳的部分會自然滾到下一期，不必額外做結轉的簿記。 */
+            const billed = statementAmount(c.item_name, '0000-01-01', st.closed.end);
+            const paid = paidOnCard(c.item_name);
+            const due = Math.round(billed - paid);
+            if (due <= 0) return null;
+            return {
+                card: c, name: c.item_name, due,
+                thisPeriod: st.closed.amount,
+                carry: Math.round(due - st.closed.amount),   // 上期沒繳完滾過來的
+                dueDate: st.closed.due, statementId: `${c.item_name}|${st.closed.end}`,
+                payFrom: c.auto_pay_tag || '',
+                /* carry > 0 代表更早的帳單沒繳完，而那一期的繳款日必然已經過了 ——
+                   只比對本期的到期日，會把「早就遲繳」顯示成「今天到期」。 */
+                overdue: st.closed.due < today || Math.round(due - st.closed.amount) > 0
+            };
+        }).filter(Boolean);
+    }
+    /** 這張卡到目前為止繳過的總額（轉帳進卡片的都算） */
+    function paidOnCard(name) {
+        return (STATE.transactions || []).reduce((sum, t) => {
+            if (t.status === '作廢' || t.status === '已修訂' || t.is_rollup) return sum;
+            if (t.entry_type !== '轉帳' || t.related_id !== name) return sum;
+            return sum + Math.round(Number(t.amount) || 0);
+        }, 0);
+    }
+    function cardDueSection() {
+        const list = cardDues();
+        if (!list.length) return '';
+        return `<div class="space-y-2">
+            <div class="text-xs font-bold text-stone-500">信用卡帳單</div>
+            ${list.map(d => `
+                <button onclick="openCardPay('${esc(d.name)}')"
+                    class="w-full text-left p-3 rounded-tile border tactile active:bg-white
+                           ${d.overdue ? 'bg-pastel-redLight border-pastel-red/30' : 'bg-pastel-bg border-pastel-border'}">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-credit-card ${d.overdue ? 'text-pastel-red' : 'text-pastel-blue'}"></i>
+                        <span class="text-[13px] font-bold text-stone-800 truncate">${esc(d.name)}</span>
+                        <span class="ml-auto font-bold font-rounded ${d.overdue ? 'text-pastel-red' : 'text-stone-800'}">${fmt(d.due)}</span>
+                        <i class="fa-solid fa-chevron-right text-[10px] text-pastel-muted"></i></div>
+                    <div class="text-[10px] text-pastel-muted mt-1">
+                        ${d.overdue ? '已逾期 ・ ' : ''}${esc(d.dueDate)} 到期${d.payFrom ? ` ・ 由 ${esc(d.payFrom)} 扣繳` : ''}
+                        ${d.carry > 0 ? ` ・ 含上期未繳 ${fmt(d.carry)}` : ''}</div>
+                </button>`).join('')}
+        </div>`;
+    }
+
+    /* 繳卡費：金額預帶「應繳全額」但可以改成部分繳款。
+       利息不猜 —— 台灣各家的計息起算日不同，而我們只有消費日沒有入帳日，
+       算不準的數字比不算更危險。改成讓使用者照帳單抄一個數字進來。 */
+    function openCardPay(name) {
+        const d = cardDues().find(x => x.name === name);
+        if (!d) return;
+        buzz();
+        openSheet(`
+            <h3 class="text-lg font-bold text-stone-800 mb-1">繳 ${esc(name)}</h3>
+            <p class="text-[11px] text-pastel-muted mb-4">${esc(d.dueDate)} 到期
+                ${d.carry > 0 ? ` ・ 含上期未繳 ${fmt(d.carry)}` : ''}</p>
+            <div class="space-y-3">
+                <div><div class="text-xs font-bold text-stone-500 mb-1">繳款金額</div>
+                    <input id="cpAmt" type="number" inputmode="decimal" value="${d.due}"
+                        class="field w-full py-3 px-3 rounded-tile bg-pastel-bg border border-pastel-border text-lg font-bold font-rounded text-right">
+                    <div class="text-[10px] text-pastel-muted mt-1">應繳 ${fmt(d.due)}。少繳的部分會留到下一期，不會消失。</div></div>
+                <div><div class="text-xs font-bold text-stone-500 mb-1">從哪個帳戶扣</div>
+                    <select id="cpFrom" class="field w-full py-2.5 px-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
+                        ${visibleTags().filter(x => !isCreditCard(x))
+                .map(x => `<option ${d.payFrom === x.item_name ? 'selected' : ''}>${esc(x.item_name)}</option>`).join('')}
+                    </select></div>
+                <div><div class="text-xs font-bold text-stone-500 mb-1">這期的循環利息（選填）</div>
+                    <input id="cpInt" type="number" inputmode="decimal" placeholder="照帳單上的數字填"
+                        class="field w-full py-2.5 px-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm text-right">
+                    <div class="text-[10px] text-pastel-muted mt-1">會另外記成一筆「貸款利息」支出。系統不自己算 —— 各家的計息方式不同，算不準反而誤導。</div></div>
+            </div>
+            <button id="btnCardPay" onclick="confirmCardPay('${esc(name)}')"
+                class="w-full mt-5 py-3.5 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile">記錄扣繳</button>`);
+    }
+    async function confirmCardPay(name) {
+        const d = cardDues().find(x => x.name === name);
+        if (!d) return;
+        const amt = Math.round(Number(document.getElementById('cpAmt')?.value) || 0);
+        const from = document.getElementById('cpFrom')?.value || '';
+        const interest = Math.round(Number(document.getElementById('cpInt')?.value) || 0);
+        if (amt <= 0) { buzz(30); return toast('金額必須大於 0', true); }
+        if (!from) { buzz(30); return toast('請選擇扣款帳戶', true); }
+        closeSheet();
+        const done = btnBusy('btnCardPay', '記錄中…');
+        try {
+            await api.call('addTransaction', {
+                txn: {
+                    date: todayISO(), entry_type: '轉帳', category: '', tag: from, related_id: name,
+                    amount: amt, note: `繳 ${name} 卡費`, nature: '純個人',
+                    statement_id: d.statementId
+                }
+            });
+            if (interest > 0) {
+                await api.call('addTransaction', {
+                    txn: {
+                        date: todayISO(), entry_type: '支出', category: '貸款利息', tag: name,
+                        amount: interest, note: `${name} 循環利息`, nature: '純個人'
+                    }
+                });
+            }
+            await refreshData();
+            const left = d.due - amt;
+            toast(left > 0 ? `已記錄，還有 ${fmt(left)} 留到下一期` : '已記錄扣繳');
+        } catch (e) { toast(e.message, true); }
+        finally { if (done) done(); }
+    }
+
     function todoCard() {
-        const secs = [reminderSection(), pendingSection(), receivableSection()].filter(Boolean);
+        const secs = [cardDueSection(), reminderSection(), pendingSection(), receivableSection()].filter(Boolean);
         if (!secs.length) return '';
-        const n = dueReminders().length + myPendingSettlements().length + othersOweMe().length;
+        const n = cardDues().length + dueReminders().length + myPendingSettlements().length + othersOweMe().length;
         return `<div class="bg-white rounded-card shadow-card border border-pastel-border/60 border-l-4 border-l-pastel-accent p-5 space-y-4">
             <div class="flex justify-between items-center">
                 <span class="text-sm font-bold text-stone-800"><i class="fa-solid fa-list-check text-pastel-accent mr-1.5"></i>待辦</span>
@@ -2317,8 +2450,9 @@ function hexA(hex, a) {
         const x = myPendingSettlements().find(i => i.srcId === srcId); if (!x) return;
         openSheet(`
             <h3 class="text-lg font-bold text-stone-800 mb-1">歸還給 ${esc(x.payerName)}</h3>
-            <p class="text-xs text-pastel-muted mb-5">${esc(x.note || x.category || '')} ・ 應付 ${fmt(x.expected)}</p>
-            <div class="space-y-4">
+            <p class="text-xs text-pastel-muted mb-3">${esc(x.note || x.category || '')} ・ 應付 ${fmt(x.expected)}</p>
+            ${x.itemType === 'pool' ? '' : payeeBlock((STATE.members || []).find(m => m.member_id === x.payerId))}
+            <div class="space-y-4 mt-4">
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">歸還金額（可部分歸還）</label>
                     <input id="rpAmt" type="number" inputmode="decimal" value="${x.remaining}" class="w-full p-3.5 rounded-tile bg-pastel-accentLight border-2 border-pastel-accent/40 text-stone-800 font-bold text-xl font-rounded"></div>
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">日期</label>
@@ -4750,6 +4884,7 @@ function hexA(hex, a) {
                 <p class="text-[11px] text-pastel-muted text-center">${i.tier === 5 ? '您已達到最高殿堂光環！' : `距離解鎖下一階段光環還差 ${i.next - i.days} 天`}</p>
             </div>
 
+            ${payeeCard()}
             ${growthCard()}
             ${taskGroup('今日任務', 'fa-sun', dailyTasks())}
             ${taskGroup('本週任務', 'fa-calendar-week', weeklyTasks())}
@@ -4765,6 +4900,94 @@ function hexA(hex, a) {
         m.classList.remove('opacity-0');
         document.getElementById('profileModalContent').classList.remove('translate-y-full');
     }
+    /* ---------- 收款資訊 ----------
+       實務上要還錢時，得先私訊問對方帳號 —— 對方不一定在線上，這一等就是一天。
+       在自己的角色卡先填好，別人要還款時就直接複製，不必開口問。 */
+    const payeeOf = m => ({ bank: String(m?.payee_bank || ''), account: String(m?.payee_account || '') });
+    const payeeText = m => { const p = payeeOf(m); return [p.bank, p.account].filter(Boolean).join(' '); };
+    const hasPayee = m => !!payeeText(m);
+
+    function payeeCard() {
+        const p = payeeOf(STATE.me);
+        return `<div class="bg-pastel-bg rounded-tile p-4 border border-pastel-border mb-5">
+            <div class="text-sm font-bold text-stone-700 mb-1"><i class="fa-solid fa-building-columns mr-1.5 text-pastel-blue"></i>我的收款資訊</div>
+            <p class="text-[11px] text-pastel-muted mb-3 leading-relaxed">
+                填好之後，家人要還錢給你時可以直接複製，不必再私訊問。家人看得到，其他人看不到。</p>
+            <div class="space-y-2">
+                <input id="payeeBank" value="${esc(p.bank)}" placeholder="銀行（例：822 中信）"
+                    class="field w-full py-2.5 px-3 rounded-lg bg-white border border-pastel-border text-sm">
+                <input id="payeeAccount" value="${esc(p.account)}" placeholder="帳號" inputmode="numeric"
+                    class="field w-full py-2.5 px-3 rounded-lg bg-white border border-pastel-border text-sm">
+            </div>
+            <button id="btnPayee" onclick="savePayee()" class="w-full mt-3 py-2.5 bg-white border border-pastel-border text-stone-700 font-bold rounded-lg text-xs tactile">儲存收款資訊</button>
+        </div>`;
+    }
+    async function savePayee() {
+        const bank = (document.getElementById('payeeBank')?.value || '').trim();
+        const account = (document.getElementById('payeeAccount')?.value || '').trim();
+        buzz();
+        const done = btnBusy('btnPayee', '儲存中…');
+        try {
+            await api.call('updateMember', { patch: { payee_bank: bank, payee_account: account } });
+            if (STATE.me) { STATE.me.payee_bank = bank; STATE.me.payee_account = account; }
+            const m = (STATE.members || []).find(x => x.member_id === STATE.me?.member_id);
+            if (m) { m.payee_bank = bank; m.payee_account = account; }
+            toast('已儲存');
+        } catch (e) { toast(e.message, true); }
+        finally { if (done) done(); }
+    }
+    /** 收款資訊小卡＋一鍵複製，還款流程與成員頁共用 */
+    function payeeBlock(m) {
+        if (!hasPayee(m)) {
+            return `<div class="p-3 rounded-tile bg-pastel-bg border border-dashed border-pastel-border text-[11px] text-pastel-muted leading-relaxed">
+                ${esc(m?.nickname || '對方')}還沒填收款資訊。可以請他到「設定 → 點自己的頭像 → 我的收款資訊」填一次，之後大家都不用再問。</div>`;
+        }
+        const p = payeeOf(m);
+        return `<div class="p-3 rounded-tile bg-pastel-blueLight border border-pastel-blue/25">
+            <div class="flex items-start gap-2">
+                <div class="min-w-0 flex-1">
+                    <div class="text-[10px] text-pastel-blue font-bold mb-0.5">收款資訊</div>
+                    <div class="selectable text-[13px] font-bold text-stone-800 break-all">${esc(p.bank)}</div>
+                    <div class="selectable text-[13px] font-bold text-stone-800 font-rounded break-all">${esc(p.account)}</div>
+                </div>
+                <button onclick="copyPayee('${esc(m.member_id)}')"
+                    class="flex-shrink-0 px-3 py-2 rounded-lg bg-white border border-pastel-blue/30 text-pastel-blue text-[11px] font-bold tactile">
+                    <i class="fa-solid fa-copy mr-1"></i>複製</button>
+            </div></div>`;
+    }
+    /* 點成員頭像 → 看他的基本資料與收款資訊。
+       這樣要還錢的人自己去拿就好，不必開口問。 */
+    function openMemberCard(memberId) {
+        const m = (STATE.members || []).find(x => x.member_id === memberId);
+        if (!m) return;
+        buzz();
+        const i = getLevelInfo(m.streak_days);
+        const isMe = m.member_id === STATE.me?.member_id;
+        const owe = othersOweMe().filter(x => x.memberId === memberId).reduce((a, b) => a + b.remaining, 0);
+        openSheet(`
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-14 h-14 rounded-full border-[3px] ${i.border} ${i.bg} overflow-hidden flex items-center justify-center text-2xl flex-shrink-0">${avatarInner(m.avatar_emoji)}</div>
+                <div class="min-w-0">
+                    <h3 class="text-lg font-bold text-stone-800 truncate">${esc(m.nickname)}${isMe ? '（我）' : ''}</h3>
+                    <div class="text-[11px] ${i.color} font-bold">${esc(i.name)}光環 ・ 連續 ${Number(m.streak_days) || 0} 天</div>
+                </div>
+            </div>
+            ${owe > 0.01 ? `<div class="mb-3 p-3 rounded-tile bg-pastel-greenLight border border-pastel-green/25 flex justify-between items-center">
+                <span class="text-xs font-bold text-stone-700">還沒還我</span>
+                <span class="font-bold font-rounded text-pastel-green">${fmt(owe)}</span></div>` : ''}
+            ${payeeBlock(m)}
+            ${isMe ? `<button onclick="closeSheet();openProfileModal()" class="w-full mt-4 py-3 bg-pastel-bg border border-pastel-border text-stone-700 font-bold rounded-tile text-sm tactile">編輯我的收款資訊</button>` : ''}`);
+    }
+
+    async function copyPayee(memberId) {
+        const m = (STATE.members || []).find(x => x.member_id === memberId);
+        const txt = payeeText(m);
+        if (!txt) return;
+        buzz();
+        try { await navigator.clipboard.writeText(txt); toast('已複製收款資訊'); }
+        catch (e) { prompt('複製這段：', txt); }
+    }
+
     /* 綁累積筆數：只進不退，即使連續紀錄斷掉，植物依然穩穩長大 */
     const GROWTH = [
         { id: 0, name: '種子', icon: 'fa-seedling', min: 0, next: 50, color: '#9A918A', word: '剛播下，先記個 50 筆看看' },
@@ -4937,9 +5160,10 @@ function hexA(hex, a) {
             const i = getLevelInfo(m.streak_days);
             const isMe = m.member_id === STATE.me?.member_id;
             return `<div class="flex flex-col items-center gap-1.5 min-w-0">
-                        <div class="relative">
+                        <button onclick="openMemberCard('${esc(m.member_id)}')" class="relative tactile">
                             <div class="w-14 h-14 rounded-full border-[3px] ${i.border} ${i.bg} overflow-hidden flex items-center justify-center text-2xl">${avatarInner(m.avatar_emoji)}</div>
-                        </div>
+                            ${hasPayee(m) ? `<span class="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-white border border-pastel-border flex items-center justify-center text-[9px] text-pastel-blue"><i class="fa-solid fa-building-columns"></i></span>` : ''}
+                        </button>
                         <div class="text-[11px] font-bold text-stone-700 truncate w-full text-center mt-1">${esc(m.nickname)}${isMe ? ' ·我' : ''}</div>
                         <div class="text-[10px] ${i.color} font-bold truncate w-full text-center leading-tight">${esc(i.name)}</div>
                         <div class="text-[10px] text-pastel-muted"><i class="fa-solid fa-fire"></i> ${Number(m.streak_days) || 0}</div>
