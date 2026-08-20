@@ -19,7 +19,20 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.3.1/css/all.min.css">
     <!-- 拖曳排序。先試同源的副本（Service Worker 快取得到、離線也能用），
          沒有才退回 CDN。版本固定，不用 @latest —— 上游改版不該在半夜弄壞使用者的 App。 -->
-    <script src="./sortable.min.js" onerror="this.remove();document.write('<script src=\'https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js\'><\/script>')"></script>
+    <script src="./sortable.min.js" onerror="loadSortableFromCDN(this)"></script>
+    <script>
+        /* 同源的副本載不到時退回 CDN。
+           不用 document.write —— 它會擋住解析，而且在非同步或已載入完成的情境下
+           會把整份文件清空。改成動態插入 script，失敗也只是排序功能不可用。 */
+        function loadSortableFromCDN(el) {
+            if (el) el.remove();
+            if (window.Sortable) return;
+            const s = document.createElement('script');
+            s.src = 'https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js';
+            s.async = true;
+            document.head.appendChild(s);
+        }
+    </script>
     <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@500;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
         tailwind.config = {
@@ -584,7 +597,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.12.0',
+        VERSION: 'v6.12.1',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -760,7 +773,7 @@ const PREF = {
 const buzz = (ms) => { try { navigator.vibrate && navigator.vibrate(ms || 8); } catch (e) { } };
 
 /* 新增頁狀態（自建鍵盤用） */
-let addState = { mode: 'expense', expr: '0', cat: '', tag: '', nature: '', date: todayISO(), note: '', from: '', to: '', more: false };
+let addState = { mode: 'expense', expr: '0', cat: '', tag: '', nature: '', date: todayISO(), note: '', from: '', to: '' };
     let currentMode = 'personal';
     let currentTab = 'dashboard';
     let isAddFormExpense = true;
@@ -772,7 +785,6 @@ let addState = { mode: 'expense', expr: '0', cat: '', tag: '', nature: '', date:
 
 /* 分類顏色：讓每個分類有自己的識別色，明細與圖表一致 */
 const CAT_PALETTE = ['#F8A048', '#3090F8', '#40B868', '#F0A8B0', '#F8C850', '#88D8F8', '#A084E8', '#F05838'];
-const FALLBACK_HEX = CAT_PALETTE;
 function findItem(name) {
     return STATE.categories.find(x => x.item_name === name)
         || STATE.tags.find(x => x.item_name === name)
@@ -785,7 +797,7 @@ function catColor(name) {
     // 保證同名永遠同色、不同名盡量不同色
     let h = 0;
     for (let i = 0; i < String(name).length; i++) h = (h * 31 + String(name).charCodeAt(i)) >>> 0;
-    return FALLBACK_HEX[h % FALLBACK_HEX.length];
+    return CAT_PALETTE[h % CAT_PALETTE.length];
 }
 function hexA(hex, a) {
     const h = String(hex).replace('#', '');
@@ -1215,8 +1227,12 @@ function hexA(hex, a) {
             mine.forEach(t => {
                 const a = Number(t.amount) || 0;
                 if (inMonth(t.date, ym)) {
-                    if (t.entry_type === '支出' && t.payer_id === meId) s.monthlyExpense += a;
+                    if (t.entry_type === '支出' && t.payer_id === meId) s.monthlyExpense += myShareOf(t);
                     if (t.entry_type === '收入' && t.payer_id === meId) s.monthlyIncome += a;
+                    /* 還款：家人幫我代墊的那一天，我的錢包沒動、也沒有消費決策，
+                       真正的支出發生在我按下還款的當下。所以在這裡才計入。
+                       反過來別人還我的錢不算我的支出 —— 我當初代墊的部分本來就沒算進去。 */
+                    if (t.entry_type === '還款' && t.payer_id === meId && t.related_id !== meId) s.monthlyExpense += a;
                 }
                 /* 信用卡：刷卡的當下錢還沒離開口袋，離開的是「額度」。
                    所以支出計入當月收支，但不扣現金，改記成卡片負債；
@@ -1247,8 +1263,11 @@ function hexA(hex, a) {
                 .forEach(t => s.poolOwesMe -= Number(t.amount) || 0);
             s.iOweOthers = myPendingSettlements().reduce((x, y) => x + y.remaining, 0);
             const cm = {};
+            // 分類統計用同一個口徑，否則圓餅圖加起來會跟上面的總額對不起來
             mine.filter(t => t.entry_type === '支出' && t.payer_id === meId && inMonth(t.date, ym))
-                .forEach(t => { const k = t.category || '未分類'; cm[k] = (cm[k] || 0) + Number(t.amount); });
+                .forEach(t => { const k = t.category || '未分類'; cm[k] = (cm[k] || 0) + myShareOf(t); });
+            mine.filter(t => t.entry_type === '還款' && t.payer_id === meId && t.related_id !== meId && inMonth(t.date, ym))
+                .forEach(t => { const k = t.category || '代墊歸還'; cm[k] = (cm[k] || 0) + Math.round(Number(t.amount) || 0); });
             s.byCategory = Object.entries(cm).sort((a, b) => b[1] - a[1]);
         } else {
             const fam = rows.filter(isFamilyBook);
@@ -1609,7 +1628,7 @@ function hexA(hex, a) {
         const t = todayISO(), mine = myTxns().filter(x => x.date === t);
         const total = computeSummary('personal').monthlyExpense;
         const budget = budgetFor('personal', '');
-        const n = daysInYM(currentYM()), day = Number(t.slice(8, 10));
+        const n = daysInYM(currentYM());
         const dailyQuota = budget ? budget / n : 0;
         const todayExp = mine.filter(x => x.entry_type === '支出').reduce((a, b) => a + Number(b.amount), 0);
         return [
@@ -3954,6 +3973,19 @@ function hexA(hex, a) {
         paintGoalRow(); paintTagRow();
     }
 
+    /* 一筆我付的錢裡面，真正屬於我的支出是多少。
+       代墊 1200、其他人分攤 800，我的支出是 400 —— 那 800 是借出去的錢，不是花掉的。
+       先前這裡算的是全額，導致代墊愈多、個人預算看起來爆得愈兇，
+       而別人還錢回來時又完全沒有反映。 */
+    function myShareOf(t) {
+        const a = Math.round(Number(t.amount) || 0);
+        if (t.entry_type !== '支出') return a;
+        if (t.nature !== '家庭代墊' && t.nature !== '私人拆帳') return a;
+        const sp = parseSplit(t);
+        if (!t.split_detail || !sp.length) return 0;      // 沒填分攤＝整筆都是別人要還的
+        return Math.max(0, a - sp.reduce((x, y) => x + (Number(y.amount) || 0), 0));
+    }
+
     /* ---------- 帳戶標籤的歸屬過濾 ----------
        個人模式：家庭公用 ＋ 自己的個人帳戶
        家庭模式：只有家庭公用 —— 公帳不該由個人的口袋直接扣款，
@@ -4344,7 +4376,6 @@ function hexA(hex, a) {
         paintSplitSummary();
         rememberRatio();
     }
-    function splitEven() { setSplitMode('even'); }
     function splitList() {
         // split_detail 只記錄別人欠的錢，自己那一份是自己吸收，不是債務
         return Object.entries(addState.splits || {})
@@ -4361,7 +4392,7 @@ function hexA(hex, a) {
     function initAddForm(keepValues) {
         if (!keepValues) {
             addState = {
-                mode: 'expense', expr: '0', cat: '', note: '', date: todayISO(), more: false,
+                mode: 'expense', expr: '0', cat: '', note: '', date: todayISO(),
                 tag: PREF.get('tag', '') || (STATE.tags[0]?.item_name || ''),
                 nature: PREF.get('nature', '純個人'),
                 from: PREF.get('tag', '') || (STATE.tags[0]?.item_name || ''),
@@ -4569,7 +4600,7 @@ function hexA(hex, a) {
         addState = {
             mode: t.entry_type === '收入' ? 'income' : (t.entry_type === '轉帳' ? 'transfer' : 'expense'),
             expr: String(t.amount), cat: t.category, tag: t.tag, nature: t.nature,
-            date: t.date, note: t.note || '', more: true, from: t.tag, to: t.related_id || '',
+            date: t.date, note: t.note || '', from: t.tag, to: t.related_id || '',
             /* 既有紀錄的分攤金額是既成事實，一律用金額模式載入，
                否則切回均分會把原本談好的數字覆寫掉。 */
             splitMode: 'amt', pcts: {},
@@ -4670,7 +4701,6 @@ function hexA(hex, a) {
             nature: t.nature,
             date: todayISO(),             // 一律改成今天
             note: t.note || '',
-            more: true,
             from: t.tag, to: t.related_id || '',
             replaceAmt: true,             // 金額視為已選取
             poolPayer: t.payer_id === 'family_pool' ? 'pool' : 'me', poolPayerLocked: t.nature === '家庭公帳',
@@ -4903,6 +4933,45 @@ function hexA(hex, a) {
     /* ---------- 收款資訊 ----------
        實務上要還錢時，得先私訊問對方帳號 —— 對方不一定在線上，這一等就是一天。
        在自己的角色卡先填好，別人要還款時就直接複製，不必開口問。 */
+    /* 台灣常用金融機構代碼。使用者可以自己打，但下拉能省掉查代碼的麻煩，
+       也避免把「中國信託」記成 812（實際是 822）這種錯。 */
+    const BANKS = [
+        ['004', '臺灣銀行'], ['005', '土地銀行'], ['006', '合作金庫'], ['007', '第一銀行'],
+        ['008', '華南銀行'], ['009', '彰化銀行'], ['011', '上海商銀'], ['012', '台北富邦'],
+        ['013', '國泰世華'], ['016', '高雄銀行'], ['017', '兆豐銀行'], ['021', '花旗銀行'],
+        ['048', '王道銀行'], ['050', '臺灣企銀'], ['052', '渣打銀行'], ['053', '台中銀行'],
+        ['054', '京城銀行'], ['081', '滙豐銀行'], ['101', '瑞興銀行'], ['102', '華泰銀行'],
+        ['103', '臺灣新光銀行'], ['108', '陽信銀行'], ['118', '板信銀行'], ['147', '三信商銀'],
+        ['700', '中華郵政'], ['803', '聯邦銀行'], ['805', '遠東商銀'], ['806', '元大銀行'],
+        ['807', '永豐銀行'], ['808', '玉山銀行'], ['809', '凱基銀行'], ['812', '台新銀行'],
+        ['816', '安泰銀行'], ['822', '中國信託'], ['823', '將來銀行'], ['824', 'LINE Bank'],
+        ['826', '樂天銀行']
+    ];
+    /* 模糊比對：打數字比代碼、打字比名稱。每按一鍵就重算，不必按送出。 */
+    function matchBanks(q) {
+        const s2 = String(q || '').trim();
+        if (!s2) return BANKS.slice(0, 8);
+        return BANKS.filter(b => b[0].indexOf(s2) === 0 || b[1].indexOf(s2) >= 0).slice(0, 8);
+    }
+    function paintBankList(q) {
+        const box = document.getElementById('bankList'); if (!box) return;
+        const hits = matchBanks(q);
+        if (!hits.length) { box.classList.add('js-hide'); box.innerHTML = ''; return; }
+        box.innerHTML = hits.map(b => `<button type="button" onclick="pickBank('${b[0]}','${esc(b[1])}')"
+            class="flex-shrink-0 px-3 py-1.5 rounded-full bg-pastel-bg border border-pastel-border text-[11px] text-stone-700 tactile">
+            <span class="font-rounded font-bold">${b[0]}</span> ${esc(b[1])}</button>`).join('');
+        box.classList.remove('js-hide');
+    }
+    function pickBank(code, name) {
+        buzz();
+        const el = document.getElementById('payeeBank');
+        if (el) el.value = `${code} ${name}`;
+        paintBankList('');
+        document.getElementById('bankList')?.classList.add('js-hide');
+    }
+    /* 從「012 台北富邦」這種字串裡取出純代碼，複製時才不會把代碼跟帳號黏在一起 */
+    const bankCodeOf = v => (String(v || '').match(/\d{3}/) || [''])[0];
+
     const payeeOf = m => ({ bank: String(m?.payee_bank || ''), account: String(m?.payee_account || '') });
     const payeeText = m => { const p = payeeOf(m); return [p.bank, p.account].filter(Boolean).join(' '); };
     const hasPayee = m => !!payeeText(m);
@@ -4914,10 +4983,14 @@ function hexA(hex, a) {
             <p class="text-[11px] text-pastel-muted mb-3 leading-relaxed">
                 填好之後，家人要還錢給你時可以直接複製，不必再私訊問。家人看得到，其他人看不到。</p>
             <div class="space-y-2">
-                <input id="payeeBank" value="${esc(p.bank)}" placeholder="銀行（例：822 中信）"
+                <input id="payeeBank" type="text" value="${esc(p.bank)}" placeholder="銀行代碼或名稱，例：012 或 富邦"
+                    oninput="paintBankList(this.value)" onfocus="paintBankList(this.value)"
+                    autocomplete="off"
                     class="field w-full py-2.5 px-3 rounded-lg bg-white border border-pastel-border text-sm">
-                <input id="payeeAccount" value="${esc(p.account)}" placeholder="帳號" inputmode="numeric"
-                    class="field w-full py-2.5 px-3 rounded-lg bg-white border border-pastel-border text-sm">
+                <div id="bankList" class="js-hide flex gap-2 overflow-x-auto hide-scrollbar pb-0.5"></div>
+                <input id="payeeAccount" type="text" value="${esc(p.account)}" placeholder="帳號（開頭的 0 不會被吃掉）"
+                    inputmode="numeric" autocomplete="off"
+                    class="field w-full py-2.5 px-3 rounded-lg bg-white border border-pastel-border text-sm font-rounded">
             </div>
             <button id="btnPayee" onclick="savePayee()" class="w-full mt-3 py-2.5 bg-white border border-pastel-border text-stone-700 font-bold rounded-lg text-xs tactile">儲存收款資訊</button>
         </div>`;
@@ -4943,16 +5016,25 @@ function hexA(hex, a) {
                 ${esc(m?.nickname || '對方')}還沒填收款資訊。可以請他到「設定 → 點自己的頭像 → 我的收款資訊」填一次，之後大家都不用再問。</div>`;
         }
         const p = payeeOf(m);
-        return `<div class="p-3 rounded-tile bg-pastel-blueLight border border-pastel-blue/25">
-            <div class="flex items-start gap-2">
+        /* 帳號與代碼分開複製。
+           貼到網路銀行的欄位時，代碼跟帳號是兩格 ——
+           複製成一整串反而要手動刪掉前三碼，比不複製還麻煩。 */
+        return `<div class="p-3 rounded-tile bg-pastel-blueLight border border-pastel-blue/25 space-y-2">
+            <div class="text-[10px] text-pastel-blue font-bold">收款資訊</div>
+            ${p.bank ? `<div class="flex items-center gap-2">
                 <div class="min-w-0 flex-1">
-                    <div class="text-[10px] text-pastel-blue font-bold mb-0.5">收款資訊</div>
-                    <div class="selectable text-[13px] font-bold text-stone-800 break-all">${esc(p.bank)}</div>
-                    <div class="selectable text-[13px] font-bold text-stone-800 font-rounded break-all">${esc(p.account)}</div>
-                </div>
-                <button onclick="copyPayee('${esc(m.member_id)}')"
+                    <div class="text-[9px] text-pastel-muted">銀行</div>
+                    <div class="selectable text-[13px] font-bold text-stone-800 break-all">${esc(p.bank)}</div></div>
+                <button onclick="copyText('${esc(bankCodeOf(p.bank) || p.bank)}','已複製銀行代碼')"
+                    class="flex-shrink-0 px-2.5 py-1.5 rounded-lg bg-white border border-pastel-blue/30 text-pastel-blue text-[10px] font-bold tactile">
+                    <i class="fa-solid fa-copy mr-1"></i>代碼</button></div>` : ''}
+            <div class="flex items-center gap-2">
+                <div class="min-w-0 flex-1">
+                    <div class="text-[9px] text-pastel-muted">帳號</div>
+                    <div class="selectable text-[13px] font-bold text-stone-800 font-rounded break-all">${esc(p.account)}</div></div>
+                <button onclick="copyText('${esc(p.account)}','已複製帳號')"
                     class="flex-shrink-0 px-3 py-2 rounded-lg bg-white border border-pastel-blue/30 text-pastel-blue text-[11px] font-bold tactile">
-                    <i class="fa-solid fa-copy mr-1"></i>複製</button>
+                    <i class="fa-solid fa-copy mr-1"></i>帳號</button>
             </div></div>`;
     }
     /* 點成員頭像 → 看他的基本資料與收款資訊。
@@ -4979,12 +5061,10 @@ function hexA(hex, a) {
             ${isMe ? `<button onclick="closeSheet();openProfileModal()" class="w-full mt-4 py-3 bg-pastel-bg border border-pastel-border text-stone-700 font-bold rounded-tile text-sm tactile">編輯我的收款資訊</button>` : ''}`);
     }
 
-    async function copyPayee(memberId) {
-        const m = (STATE.members || []).find(x => x.member_id === memberId);
-        const txt = payeeText(m);
+    async function copyText(txt, msg) {
         if (!txt) return;
         buzz();
-        try { await navigator.clipboard.writeText(txt); toast('已複製收款資訊'); }
+        try { await navigator.clipboard.writeText(txt); toast(msg || '已複製'); }
         catch (e) { prompt('複製這段：', txt); }
     }
 
@@ -5934,28 +6014,9 @@ ${L.standalone ? 'PWA' : 'WEB(Safari)'}  dpr=${window.devicePixelRatio}  statusB
     }
 
     function bindLayout() {
-        // 讀出安全區數值供診斷用
-        const probe = document.createElement('div');
-        probe.style.cssText = 'position:fixed;bottom:0;height:env(safe-area-inset-bottom,0px);width:0';
-        document.body.appendChild(probe);
-        const probeT = document.createElement('div');
-        probeT.style.cssText = 'position:fixed;top:0;height:env(safe-area-inset-top,0px);width:0';
-        document.body.appendChild(probeT);
-        const sat = Math.round(probeT.getBoundingClientRect().height);
-        probeT.remove();
-        document.documentElement.style.setProperty('--sat', sat + 'px');
-        // 修正 v4.5.0 的誤判：iOS PWA 確實從 Y=0 開始繪製（所以這段留白是必要的），
-        // 少報的是 innerHeight 而不是安全區。直接沿用安全區原值。
-        // 冷啟動時 iOS 可能尚未算好安全區而回報 0，此時不要寫入變數，
-        // 讓 CSS 的 env() 自行生效；之後每次重量若拿到有效值再覆蓋。
-        if (sat > 0) document.documentElement.style.setProperty('--topPad', sat + 'px');
-        let sab = Math.round(probe.getBoundingClientRect().height);
-        probe.remove();
-        // iOS 偶爾在 standalone 下把 env(safe-area-inset-bottom) 回報成 0，
-        // 但機身其實有 Home Indicator。以「無實體 Home 鍵機型」為判準補上固定值。
-        const standalone = !!(window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches);
-        if (sab === 0 && standalone && window.innerHeight >= 780) sab = 20;
-        document.documentElement.style.setProperty('--sab', sab + 'px');
+        // 安全區的量測邏輯與 measureSafeAreas 完全相同，直接沿用同一份，
+        // 不要在這裡再抄一次 —— 兩份會各自演化，然後某天開始給出不同的值。
+        measureSafeAreas();
 
         syncFrameHeight();
         // 導覽列一開始帶著 js-hide（display:none），量到的高度必然是 0。
