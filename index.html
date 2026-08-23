@@ -597,7 +597,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.12.1',
+        VERSION: 'v6.12.2',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -1127,6 +1127,8 @@ function hexA(hex, a) {
             t.settle_member_id === memberId).reduce((a, b) => a + (Number(b.amount) || 0), 0);
     }
     /** 我被指定、還沒還完的所有項目（公帳代墊分攤 ＋ 私人拆帳，統一視圖） */
+    const memberOf = id => (STATE.members || []).find(m => m.member_id === id);
+
     function myPendingSettlements() {
         const meId = STATE.me?.member_id;
         const out = [];
@@ -2241,10 +2243,32 @@ function hexA(hex, a) {
                     </div>`).join('')}
             </div>`;
         };
+        /* 逐筆明細之外還要有「給每個人各多少」——
+           實際要轉帳的時候，你需要的是「給大哥 400」這個數字，
+           一筆一筆自己加很容易加錯，而且轉錯人是收不回來的。 */
+        const byPayer = {};
+        list.forEach(x => {
+            const k = x.payerId;
+            byPayer[k] = byPayer[k] || { name: x.payerName, id: k, sum: 0, n: 0 };
+            byPayer[k].sum += x.remaining; byPayer[k].n++;
+        });
+        const payers = Object.values(byPayer).sort((a, b) => b.sum - a.sum);
+
         return `<div class="space-y-3">
             <div class="flex justify-between items-center">
                 <span class="text-xs font-bold text-stone-600"><i class="fa-solid fa-file-invoice-dollar text-pastel-red mr-1.5"></i>我要還給別人</span>
                 <span class="text-[11px] text-pastel-muted">${list.length} 筆 ・ <b class="text-pastel-red font-rounded">${fmt(total)}</b></span></div>
+            <div class="space-y-1.5">
+                ${payers.map(p => `
+                    <button onclick="openPayeeTotal('${esc(p.id)}')"
+                        class="w-full flex items-center gap-2 p-2.5 rounded-tile bg-pastel-redLight border border-pastel-red/20 tactile active:bg-white">
+                        <span class="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center text-sm flex-shrink-0">${avatarInner(memberOf(p.id)?.avatar_emoji)}</span>
+                        <span class="text-[13px] font-bold text-stone-800 truncate">給 ${esc(p.name)}</span>
+                        <span class="text-[10px] text-pastel-muted flex-shrink-0">${p.n} 筆</span>
+                        <span class="ml-auto font-bold font-rounded text-pastel-red">${fmt(p.sum)}</span>
+                        <i class="fa-solid fa-chevron-right text-[10px] text-pastel-muted"></i>
+                    </button>`).join('')}
+            </div>
             ${grp('pool', '公帳代墊分攤', 'fa-users')}
             ${grp('private', '私人拆帳', 'fa-user-group')}
             ${priv.length > 1 ? `<button onclick="repayAll('private')" class="w-full py-2.5 bg-stone-800 text-white font-bold rounded-tile text-xs tactile">一鍵歸還全部私人拆帳（${fmt(priv.reduce((a, b) => a + b.remaining, 0))}）</button>` : ''}
@@ -2477,7 +2501,7 @@ function hexA(hex, a) {
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">日期</label>
                     <input id="rpDate" type="date" value="${todayISO()}" class="w-full py-3 px-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm"></div>
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">備註</label>
-                    <input id="rpNote" value="${esc(`${x.payerName}代墊：${x.category || x.note || ''}`)}" class="w-full p-3.5 rounded-tile bg-pastel-bg border border-pastel-border text-sm"></div>
+                    <input id="rpNote" value="${esc(`還款給${x.payerName}・${x.note || x.category || ''}`)}" class="w-full p-3.5 rounded-tile bg-pastel-bg border border-pastel-border text-sm"></div>
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">從哪個帳戶付</label>
                     <select id="rpTag" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
                         ${tagChoices(PREF.get('tag', '')).map(t => `<option ${PREF.get('tag', '') === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
@@ -2488,7 +2512,9 @@ function hexA(hex, a) {
     function buildRepayTxn(x, amount, date, note, tag) {
         return {
             date: date || todayISO(), entry_type: '還款', category: '', tag: tag || '結算',
-            amount, note: note || `${x.payerName}代墊：${x.category || x.note || ''}`,
+            /* 備註不能寫成「爸爸代墊：日常採購」—— 那跟原始那筆代墊長得一模一樣，
+               明細裡兩列並排時會被當成重複入帳。開頭就標明這是還款。 */
+            amount, note: note || `還款給${x.payerName}・${x.note || x.category || ''}`,
             nature: x.itemType === 'pool' ? '家庭代墊' : '私人拆帳',
             member_id: STATE.me.member_id, payer_id: STATE.me.member_id,
             related_id: x.payerId, parent_txn_id: x.srcId, settle_member_id: STATE.me.member_id
@@ -2508,9 +2534,57 @@ function hexA(hex, a) {
     }
 
     /** scope: 'private' 只還私人拆帳；'all' 連公帳代墊一起（一律走路徑 A 直接還款） */
-    async function repayAll(scope) {
+    /* 點「給大哥 400」→ 看清楚是哪幾筆、他的收款資訊、以及一次還清的按鈕。
+       總額能讓你知道要轉多少，明細能讓你確認沒轉錯。 */
+    function openPayeeTotal(payerId) {
+        const list = myPendingSettlements().filter(x => x.payerId === payerId);
+        if (!list.length) return;
+        buzz();
+        const m = memberOf(payerId);
+        const sum = list.reduce((a, b) => a + b.remaining, 0);
+        openSheet(`
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-12 h-12 rounded-full overflow-hidden flex items-center justify-center text-xl flex-shrink-0 bg-pastel-bg">${avatarInner(m?.avatar_emoji)}</div>
+                <div class="min-w-0">
+                    <h3 class="text-lg font-bold text-stone-800 truncate">要還給 ${esc(nameOf(payerId))}</h3>
+                    <div class="text-[11px] text-pastel-muted">${list.length} 筆代墊</div></div>
+                <div class="ml-auto text-right flex-shrink-0">
+                    <div class="text-2xl font-bold font-rounded text-pastel-red">${fmt(sum)}</div>
+                    <div class="text-[10px] text-pastel-muted">合計要轉</div></div>
+            </div>
+            ${payeeBlock(m)}
+            <div class="space-y-2 mt-3 max-h-[42vh] overflow-y-auto hide-scrollbar">
+                ${list.map(x => `
+                    <div class="p-3 rounded-tile bg-pastel-bg border border-pastel-border">
+                        <div class="flex items-start gap-2">
+                            <div class="min-w-0 flex-1">
+                                <div class="text-[13px] font-bold text-stone-800 truncate">${esc(x.note || x.category || '（無備註）')}</div>
+                                <div class="text-[10px] text-pastel-muted">${esc(x.date)} ・ ${esc(x.category || '未分類')}
+                                    ・ ${x.itemType === 'pool' ? '公帳代墊' : '私人拆帳'} ・ 你的分攤 ${fmt(x.expected)}</div>
+                            </div>
+                            <div class="font-bold font-rounded text-pastel-red flex-shrink-0">${fmt(x.remaining)}</div>
+                        </div>
+                        <button onclick="closeSheet();openTxnSheet('${esc(x.srcId)}')"
+                            class="w-full mt-2 py-1.5 rounded-lg bg-white border border-pastel-border text-[11px] font-bold text-stone-600 tactile">看這筆原始代墊</button>
+                    </div>`).join('')}
+            </div>
+            <button onclick="closeSheet();repayAllTo('${esc(payerId)}')"
+                class="w-full mt-4 py-3.5 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile">
+                <i class="fa-solid fa-hand-holding-dollar mr-1.5"></i>一次還清 ${fmt(sum)}</button>`);
+    }
+    async function repayAllTo(payerId) {
+        await repayAll('all', x => x.payerId === payerId);
+    }
+
+    let _repayAllBusy = false;
+    async function repayAll(scope, extraFilter) {
+        /* 這個迴圈會跑好幾秒，期間按鈕仍在畫面上。
+           使用者看不到反應就會再按一次 —— 那會把整批還款重跑一遍，
+           產生一模一樣的重複紀錄，而且金額全錯。 */
+        if (_repayAllBusy) { toast('還在處理上一批，請稍候', true); return; }
         const all = myPendingSettlements();
-        const list = scope === 'private' ? all.filter(x => x.itemType === 'private') : all;
+        let list = scope === 'private' ? all.filter(x => x.itemType === 'private') : all;
+        if (extraFilter) list = list.filter(extraFilter);
         if (!list.length) return;
         const total = list.reduce((a, b) => a + b.remaining, 0);
         const pool = list.filter(x => x.itemType === 'pool');
@@ -2519,15 +2593,19 @@ function hexA(hex, a) {
             ? `\n\n注意：其中 ${pool.length} 筆是公帳代墊，將以「直接還款」處理；\n若你原本想讓公帳月結，請改用逐筆的「記為公帳扣抵」。`
             : '';
         if (!confirm(`將產生 ${list.length} 筆還款交易，合計 ${fmt(total)}：\n\n${detail}${warn}\n\n確定嗎？`)) return;
+        _repayAllBusy = true;
+        toast(`處理中… 共 ${list.length} 筆`);
         let okN = 0, failN = 0;
-        for (const x of list) {
-            try {
-                await api.call('addTransaction', { txn: buildRepayTxn(x, x.remaining) });
-                if (x.marked) { try { await api.call('deleteIntent', { intent_id: `${x.srcId}|${STATE.me.member_id}` }); } catch (e2) { } }
-                okN++;
-            } catch (e) { failN++; }
-        }
-        await refreshData();
+        try {
+            for (const x of list) {
+                try {
+                    await api.call('addTransaction', { txn: buildRepayTxn(x, x.remaining) });
+                    if (x.marked) { try { await api.call('deleteIntent', { intent_id: `${x.srcId}|${STATE.me.member_id}` }); } catch (e2) { } }
+                    okN++;
+                } catch (e) { failN++; }
+            }
+            await refreshData();
+        } finally { _repayAllBusy = false; }
         toast(failN ? `成功 ${okN} 筆、失敗 ${failN} 筆` : `已歸還 ${okN} 筆`, !!failN);
     }
 
@@ -3688,6 +3766,29 @@ function hexA(hex, a) {
             </div>`);
     }
 
+    /* 還款那一列只寫得下「還款給爸爸」，看不出還的是哪一筆代墊。
+       把原始代墊的完整內容接在詳情裡：日期、備註、全額、我的分攤，
+       以及一個直接跳過去的按鈕。沒有這個，還了錢卻對不出是哪一筆。 */
+    function sourceAdvanceBlock(t) {
+        if (t.entry_type !== '還款' || !t.parent_txn_id) return '';
+        const src = (STATE.transactions || []).find(x => x.txn_id === t.parent_txn_id);
+        if (!src) {
+            return `<div class="mt-4 p-3 rounded-tile bg-pastel-bg border border-dashed border-pastel-border text-[11px] text-pastel-muted">
+                找不到對應的原始代墊（可能已被作廢）。</div>`;
+        }
+        const mineShare = parseSplit(src).find(x => x.member_id === t.payer_id);
+        return `<div class="mt-4">
+            <div class="text-xs font-bold text-stone-600 mb-2"><i class="fa-solid fa-link mr-1.5 text-pastel-blue"></i>這筆還的是</div>
+            <div class="p-3 rounded-tile bg-pastel-blueLight border border-pastel-blue/25">
+                <div class="selectable text-[13px] font-bold text-stone-800">${esc(src.note || src.category || '（無備註）')}</div>
+                <div class="text-[10px] text-pastel-muted mt-0.5">
+                    ${esc(src.date)} ・ ${esc(src.category || '未分類')} ・ ${esc(nameOf(src.payer_id))}代墊 ${fmt(src.amount)}
+                    ${mineShare ? ` ・ 分攤給你 ${fmt(mineShare.amount)}` : ''}</div>
+                <button onclick="closeSheet();openTxnSheet('${esc(src.txn_id)}')"
+                    class="w-full mt-2 py-1.5 rounded-lg bg-white border border-pastel-blue/30 text-[11px] font-bold text-pastel-blue tactile">看原始代墊的完整內容</button>
+            </div></div>`;
+    }
+
     function openTxnSheet(id) {
         const t = STATE.transactions.find(x => x.txn_id === id); if (!t) return;
         // 同類清單項目改用留白引導視覺，不再逐列畫線
@@ -3697,6 +3798,7 @@ function hexA(hex, a) {
             <div class="text-3xl font-bold font-rounded mb-4 ${t.entry_type === '支出' ? 'text-pastel-red' : 'text-pastel-green'}">${t.entry_type === '支出' ? '-' : '+'}${fmt(t.amount)}</div>
             ${row('日期', t.date)}${row('類型', t.entry_type)}${row('分類', t.category || '—')}${row('帳戶', displayTag(t.tag) || '—')}
             ${row('費用歸屬', t.nature || '—')}${row('記帳者', nameOf(t.member_id))}${t.recurring_rule_id ? row('來源', '重複性收支自動產生') : ''}
+            ${sourceAdvanceBlock(t)}
             ${t.receipt_file_id ? `
             <div class="mt-4">
                 <div class="text-xs font-bold text-stone-600 mb-2"><i class="fa-solid fa-receipt mr-1.5 text-pastel-accent"></i>單據</div>
