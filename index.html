@@ -59,7 +59,9 @@
                     },
                     boxShadow: {
                         'soft': '0 10px 30px rgba(248, 160, 72, 0.22)',
-                        'card': '0 4px 18px rgba(160, 130, 100, 0.07)',
+                        /* 卡片改用「淡、擴散範圍大」的環境光陰影。
+                           原本 4px 的短陰影在視覺上接近一圈輪廓，跟邊框疊起來就是雜訊。 */
+                        'card': '0 8px 24px -4px rgba(60, 50, 40, 0.05), 0 2px 6px rgba(160, 130, 100, 0.04)',
                         'glow-gold': '0 0 16px rgba(248, 200, 80, 0.75)'
                     }
                 }
@@ -161,6 +163,15 @@
         }
         .drag-handle:active { cursor:grabbing; }
 
+        /* 可點元件的觸控範圍一律 ≥44px（Apple 的最小建議值）。
+           圖示小沒關係 —— 用 padding 撐開可按範圍，再用負 margin 把版面拉回原位，
+           所以外觀不變、但按得到。「按了好幾次沒反應」已經出過兩次，都是這個原因。 */
+        .tap44 {
+            min-width:44px; min-height:44px;
+            display:inline-flex; align-items:center; justify-content:center;
+            padding:12px; margin:-12px;
+        }
+
         /* ---------- 文字選取：全域鎖死、白名單開放 ----------
            touch-action:none 只能擋掉「把滑動當成捲動」，擋不掉 iOS 把長按當成選取文字。
            拖曳排序時跳出「拷貝／查詢／翻譯」那條選單，就是這個原因。
@@ -173,6 +184,10 @@
         .selectable {
             -webkit-user-select:text; user-select:text; -webkit-touch-callout:default; cursor:text;
         }
+        /* ── 深度層級 ──
+           頁面底(奶油) → 卡片(白＋淡陰影，無框) → 卡內區塊(奶油，無框無陰影) → 輸入框(白＋1px 框)
+           邊框只保留給「可以點、可以打字」的元件：看到框線就代表可以互動。
+           先前邊框、陰影、底色三種手法隨機混用，同一層級的東西長得不一樣。 */
         input, select, textarea { font-size:16px; }
 
         /* iOS 的空白日期欄位會塌成比其他欄位矮一截 —— 沒有值就沒有內容撐開高度。
@@ -396,7 +411,11 @@
         .pop { animation:popIn .35s cubic-bezier(.34,1.56,.64,1) both; }
 
         /* 等寬數字：金額直排時不會左右跳動，是財務介面精緻感的關鍵 */
-        .num, .font-rounded, input[type="number"] { font-variant-numeric: tabular-nums; font-feature-settings:"tnum" 1; }
+        /* 金額一律等寬。先前只掛在 .font-rounded 上，沒帶到那個 class 的金額
+           在明細列裡會左右參差 —— 帳本最需要的就是數字切得齊。 */
+        .num, .font-rounded, .money, input[type="number"], input[inputmode="decimal"], input[inputmode="numeric"] {
+            font-variant-numeric: tabular-nums; font-feature-settings:"tnum" 1;
+        }
         .num-sym { opacity:.45; font-weight:600; }   /* $ 與千分位降一階，凸顯數字本體 */
 
         /* 卡片依序入場 */
@@ -546,7 +565,7 @@
         <div id="lightboxHint" class="js-hide absolute bottom-8 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-full bg-black/60 text-white text-[11px] font-bold">
             <i class="fa-solid fa-circle-notch fa-spin mr-1.5"></i>載入原圖中…</div>
         <button onclick="event.stopPropagation();closeLightbox()" aria-label="關閉"
-                class="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/90 text-stone-700 flex items-center justify-center shadow-lg">
+                class="tap44 absolute top-4 right-4 w-10 h-10 rounded-full bg-white/90 text-stone-700 flex items-center justify-center shadow-lg">
             <i class="fa-solid fa-xmark"></i></button>
     </div>
 
@@ -597,7 +616,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.12.2',
+        VERSION: 'v6.13.0',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -1344,7 +1363,7 @@ function hexA(hex, a) {
         document.getElementById('otpBoxes').innerHTML = Array.from({ length: 8 }, (_, i) => {
             const ch = v[i] || '';
             const active = focused && i === Math.min(v.length, 7) && v.length < 8;
-            return `<div class="flex-1 aspect-[3/4] max-w-[38px] rounded-xl border-2 flex items-center justify-center font-bold text-lg font-rounded transition-all
+            return `<div class="flex-1 aspect-[3/4] max-w-[38px] rounded-tile border-2 flex items-center justify-center font-bold text-lg font-rounded transition-all
                 ${ch ? 'bg-pastel-accentLight border-pastel-accent text-pastel-accent'
                      : active ? 'bg-white border-pastel-accent' : 'bg-pastel-bg border-pastel-border'}">${esc(ch)}</div>`;
         }).join('');
@@ -1681,7 +1700,7 @@ function hexA(hex, a) {
                 <i class="fa-solid fa-bell fa-shake text-pastel-yellow"></i> 待確認的重複性收支
                 <span class="text-[10px] bg-pastel-yellowLight text-[#D9A216] px-2 py-0.5 rounded-full">${due.length}</span></div>
             ${due.map(r => `
-                <div class="bg-pastel-bg rounded-tile p-3 border border-pastel-border">
+                <div class="bg-pastel-bg rounded-tile p-3">
                     <div class="flex justify-between items-center gap-2 mb-2">
                         <div class="min-w-0">
                             <div class="font-bold text-sm text-stone-800 truncate">${esc(r.name)}</div>
@@ -1955,7 +1974,8 @@ function hexA(hex, a) {
        ========================================================== */
 
     function pieHtml(byCategory, total) {
-        if (!total) return `<div class="flex flex-col items-center py-6 gap-2"><img src="./av46.png" alt="" class="w-14 h-14 opacity-70"><span class="text-xs text-pastel-muted">本月尚無支出紀錄</span></div>`;
+        if (!total) return `<div class="flex flex-col items-center py-6 gap-2"><img src="./av46.png" alt="" class="w-14 h-14 opacity-70"><span class="text-xs text-pastel-muted">本月還沒有支出</span>
+            <button onclick="switchTab('add')" class="mt-1 px-4 py-2 rounded-full bg-pastel-accent text-white text-xs font-bold tactile">記第一筆</button></div>`;
         const top = byCategory.slice(0, 4), rest = byCategory.slice(4).reduce((a, b) => a + b[1], 0);
         const items = rest > 0 ? [...top, ['其他', rest]] : top;
         let off = 0;
@@ -2043,7 +2063,7 @@ function hexA(hex, a) {
                 <div class="bg-stone-800 text-white rounded-card p-5 shadow-sm space-y-4">
                     <div class="flex justify-between items-center text-sm text-stone-300 border-b border-stone-600/50 pb-3">
                         <span class="font-bold truncate"><i class="fa-solid fa-users mr-2 text-pastel-accent"></i>${esc(STATE.familyName || '家庭公帳')}</span>
-                        <span class="bg-pastel-yellow/20 text-pastel-yellow px-2.5 py-1 rounded-md text-[10px] font-bold flex-shrink-0">${currentYM().replace('-', '/')}</span></div>
+                        <span class="bg-pastel-yellow/20 text-pastel-yellow px-2.5 py-1 rounded-lg text-[10px] font-bold flex-shrink-0">${currentYM().replace('-', '/')}</span></div>
                     <div><div class="text-xs text-stone-400 mb-1">公帳資金餘額</div>
                         <div class="text-3xl font-bold text-white font-rounded tracking-wide">${fmt(s.poolBalance)}</div></div>
                 </div>
@@ -2053,11 +2073,11 @@ function hexA(hex, a) {
                     <h3 class="text-sm font-bold text-stone-800"><i class="fa-solid fa-hand-holding-dollar text-pastel-accent mr-1.5"></i> 公帳待結算核銷</h3>
                     <div class="space-y-3">
                         <div class="text-xs font-bold text-pastel-muted border-b border-pastel-border pb-1">公帳需還款給成員</div>
-                        ${s.poolOwesMembers.length ? s.poolOwesMembers.map(r => settleRow(r, 'pool2member')).join('') : `<div class="text-xs text-pastel-muted py-2">目前沒有待還款項目 <i class="fa-solid fa-circle-check text-pastel-green ml-1"></i></div>`}
+                        ${s.poolOwesMembers.length ? s.poolOwesMembers.map(r => settleRow(r, 'pool2member')).join('') : `<div class="text-xs text-pastel-muted py-2">公帳目前不欠任何人 <i class="fa-solid fa-circle-check text-pastel-green ml-1"></i></div>`}
                     </div>
                     <div class="space-y-3 pt-2">
                         <div class="text-xs font-bold text-pastel-muted border-b border-pastel-border pb-1">成員需繳回公帳</div>
-                        ${s.membersOwePool.length ? s.membersOwePool.map(r => settleRow(r, 'member2pool')).join('') : `<div class="text-xs text-pastel-muted py-2">目前沒有待繳回項目 <i class="fa-solid fa-circle-check text-pastel-green ml-1"></i></div>`}
+                        ${s.membersOwePool.length ? s.membersOwePool.map(r => settleRow(r, 'member2pool')).join('') : `<div class="text-xs text-pastel-muted py-2">沒有人欠公帳 <i class="fa-solid fa-circle-check text-pastel-green ml-1"></i></div>`}
                     </div>
                 </div>`;
         }
@@ -2139,8 +2159,8 @@ function hexA(hex, a) {
                 <i class="fa-solid fa-plus"></i>設定分類預算</button>`;
 
         if (!total) {
-            return `<div class="bg-white rounded-[28px] shadow-card border border-pastel-border/60 p-1 hero-shell">
-                <button onclick="openBudgetSheet()" class="w-full text-left rounded-[24px] bg-pastel-accentLight p-5 flex items-center gap-4 tactile-card">
+            return `<div class="bg-white rounded-card shadow-card border border-pastel-border/60 p-1 hero-shell">
+                <button onclick="openBudgetSheet()" class="w-full text-left rounded-card bg-pastel-accentLight p-5 flex items-center gap-4 tactile-card">
                     <img src="./av48.png" alt="" class="w-12 h-12 flex-shrink-0">
                     <div class="min-w-0"><div class="font-bold text-sm text-stone-800">設定${isFam ? '公帳' : '每月'}預算</div>
                     <div class="text-xs text-pastel-muted mt-0.5">知道「還能花多少」，比知道「花了多少」更有用</div></div>
@@ -2154,8 +2174,8 @@ function hexA(hex, a) {
         const daily = Math.max(left, 0) / Math.max(n - day + 1, 1);
         const mood = getMascotState(used / total * 100, s.monthlyExpense > 0 || s.monthlyIncome > 0);
 
-        return `<div class="bg-white rounded-[28px] shadow-card border border-pastel-border/60 p-1 hero-shell">
-            <div onclick="openBudgetSheet()" class="relative rounded-[24px] p-5 text-white overflow-hidden tactile-card"
+        return `<div class="bg-white rounded-card shadow-card border border-pastel-border/60 p-1 hero-shell">
+            <div onclick="openBudgetSheet()" class="relative rounded-card p-5 text-white overflow-hidden tactile-card"
                  style="background:linear-gradient(135deg, ${mood.card[0]} 0%, ${mood.card[1]} 100%);transition:background .6s ease">
                 <div class="absolute right-0 bottom-0 w-24 h-24 pointer-events-none">
                     <img src="./${mood.av}.png" alt="" class="w-full h-full opacity-90">
@@ -2190,7 +2210,7 @@ function hexA(hex, a) {
                         <div class="w-9 h-9 rounded-tile flex items-center justify-center flex-shrink-0" style="background:${hexA(catColor(c.item_name), .16)};color:${catColor(c.item_name)}"><i class="fa-solid ${esc(normIcon(c.icon_emoji, c.item_group))}"></i></div>
                         <span class="text-sm text-stone-700 flex-1 truncate">${esc(c.item_name)}</span>
                         <input type="number" inputmode="numeric" data-cat="${esc(c.item_name)}" value="${budgetFor(scope, c.item_name) || ''}" placeholder="—"
-                            class="bud-inp w-24 p-2.5 rounded-xl bg-pastel-bg border border-pastel-border text-sm text-right font-rounded">
+                            class="bud-inp w-24 p-2.5 rounded-tile bg-pastel-bg border border-pastel-border text-sm text-right font-rounded">
                     </div>`).join('')}
                 <button onclick="saveBudgets('${scope}')" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm mt-2">儲存預算</button>
             </div>`);
@@ -2228,7 +2248,7 @@ function hexA(hex, a) {
             return `<div class="space-y-2">
                 <div class="text-[11px] font-bold text-pastel-muted"><i class="fa-solid ${icon} mr-1.5"></i>${label}</div>
                 ${items.map(x => `
-                    <div class="bg-pastel-bg rounded-tile p-3 border border-pastel-border">
+                    <div class="bg-pastel-bg rounded-tile p-3">
                         <div class="flex justify-between items-start gap-2 mb-2">
                             <div class="min-w-0">
                                 <div class="font-bold text-sm text-stone-800 truncate">${esc(x.payerName)}代墊：${esc(x.note || x.category || '—')}</div>
@@ -2335,7 +2355,7 @@ function hexA(hex, a) {
             <div class="space-y-2 max-h-[52vh] overflow-y-auto hide-scrollbar">
                 ${all.map(x => {
             const done = x.expected - x.remaining;
-            return `<div class="p-3 rounded-tile bg-pastel-bg border border-pastel-border">
+            return `<div class="p-3 rounded-tile bg-pastel-bg">
                         <div class="flex items-start gap-2.5">
                             <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-xs"
                                  style="background:${hexA(catColor(x.category), .16)};color:${catColor(x.category)}">
@@ -2555,7 +2575,7 @@ function hexA(hex, a) {
             ${payeeBlock(m)}
             <div class="space-y-2 mt-3 max-h-[42vh] overflow-y-auto hide-scrollbar">
                 ${list.map(x => `
-                    <div class="p-3 rounded-tile bg-pastel-bg border border-pastel-border">
+                    <div class="p-3 rounded-tile bg-pastel-bg">
                         <div class="flex items-start gap-2">
                             <div class="min-w-0 flex-1">
                                 <div class="text-[13px] font-bold text-stone-800 truncate">${esc(x.note || x.category || '（無備註）')}</div>
@@ -2632,7 +2652,7 @@ function hexA(hex, a) {
             <p class="text-[11px] text-pastel-muted">成員已標記「由公帳月結」的分攤，確認撥款後才會寫入實際交易。</p>
             ${(STATE.intents || []).map(i => {
                 const src = STATE.transactions.find(t => t.txn_id === i.parent_txn_id);
-                return `<div class="bg-pastel-bg rounded-tile p-3 border border-pastel-border flex justify-between items-center gap-2">
+                return `<div class="bg-pastel-bg rounded-tile p-3 flex justify-between items-center gap-2">
                     <div class="min-w-0">
                         <div class="font-bold text-sm text-stone-800 truncate">${esc(nameOf(i.member_id))} → ${esc(nameOf(i.payer_id))}</div>
                         <div class="text-[10px] text-pastel-muted truncate">${esc(src ? (src.note || src.category) : '—')}</div></div>
@@ -2721,7 +2741,7 @@ function hexA(hex, a) {
                                 <div class="font-bold text-stone-800 text-base truncate"><i class="fa-solid ${esc(g.icon || 'fa-piggy-bank')} mr-1.5 text-pastel-accent"></i>${esc(g.name)}</div>
                                 <div class="text-[11px] text-pastel-muted truncate">${esc(g.scope === 'family' ? '家庭共同' : '個人')} ・ ${esc(nameOf(g.owner_id))}</div>
                             </div>
-                            <button onclick="openGoalMenu('${esc(g.goal_id)}')" aria-label="更多" class="w-8 h-8 -mt-1 -mr-1 rounded-full flex items-center justify-center text-stone-400 flex-shrink-0 tactile"><i class="fa-solid fa-ellipsis"></i></button>
+                            <button onclick="openGoalMenu('${esc(g.goal_id)}')" aria-label="更多" class="tap44 w-8 h-8 -mt-1 -mr-1 rounded-full flex items-center justify-center text-stone-400 flex-shrink-0 tactile"><i class="fa-solid fa-ellipsis"></i></button>
                         </div>
                         <div class="mt-2 text-2xl font-bold font-rounded text-stone-800 tracking-tight truncate">
                             <span class="num-sym text-base">$</span>${Number(saved).toLocaleString('en-US')}</div>
@@ -2733,7 +2753,7 @@ function hexA(hex, a) {
                 <div class="flex items-center gap-2">
                     <div class="flex gap-1.5 overflow-x-auto hide-scrollbar flex-1 min-w-0">
                         ${coins.length ? coins.slice(-10).map(c => coinSvg(c, 28)).join('')
-                : '<span class="text-[11px] text-pastel-muted self-center">還沒有籌碼，投第一枚吧</span>'}
+                : '<span class="text-[11px] text-pastel-muted self-center">還沒有籌碼。存進第一筆就會拿到一枚</span>'}
                     </div>
                     ${coins.length ? `<span class="text-[11px] text-pastel-muted flex-shrink-0">${coins.length} 枚${gold ? `・金 ${gold}` : ''}</span>` : ''}
                 </div>
@@ -2822,14 +2842,14 @@ function hexA(hex, a) {
 
             <div class="grid grid-cols-3 gap-2 mb-5 text-center">
                 ${[['累計劃撥', fmt(saved), 'text-stone-800'], ['已貼標花用', fmt(spent), 'text-pastel-red'], ['目前保留額', fmt(reserved), 'text-pastel-green']]
-                .map(([l, v, c]) => `<div class="bg-pastel-bg rounded-tile p-3 border border-pastel-border min-w-0">
+                .map(([l, v, c]) => `<div class="bg-pastel-bg rounded-tile p-3 min-w-0">
                     <div class="text-[10px] text-pastel-muted mb-0.5">${l}</div>
                     <div class="text-sm font-bold font-rounded truncate ${c}">${v}</div></div>`).join('')}
             </div>
 
             <div class="mb-5">
                 <div class="text-xs font-bold text-stone-600 mb-2">籌碼牆 ${coins.length} 枚</div>
-                ${coins.length ? `<div class="flex flex-wrap gap-2.5 p-3.5 rounded-tile bg-pastel-bg border border-pastel-border">${coins.map(c => coinSvg(c, 36)).join('')}</div>
+                ${coins.length ? `<div class="flex flex-wrap gap-2.5 p-3.5 rounded-tile bg-pastel-bg">${coins.map(c => coinSvg(c, 36)).join('')}</div>
                 <div class="flex flex-wrap gap-3 mt-2">${Object.entries(byMember).map(([mid, n]) =>
                     `<span class="text-[11px] text-pastel-muted">${esc(nameOf(mid))} ${n} 枚</span>`).join('')}</div>`
                 : '<div class="text-[11px] text-pastel-muted">還沒有籌碼</div>'}
@@ -2839,18 +2859,18 @@ function hexA(hex, a) {
                 <div class="text-xs font-bold text-stone-600 mb-2">劃撥紀錄</div>
                 <div class="space-y-2">
                 ${deps.length ? deps.map(t => `
-                    <div class="flex justify-between items-center bg-pastel-bg rounded-tile px-3 py-3 border border-pastel-border">
+                    <div class="flex justify-between items-center bg-pastel-bg rounded-tile px-3 py-3">
                         <div class="min-w-0"><div class="text-sm font-bold text-stone-800 truncate">${esc(nameOf(t.payer_id))}${t.settle_member_id === 'RELEASE' ? (String(t.note).indexOf('結案') === 0 ? '（結案釋出）' : '（提取）') : ''}</div>
                         <div class="text-[10px] text-pastel-muted">${esc(t.date)} ・ ${esc(displayTag(t.tag) || '—')}</div></div>
                         <div class="font-bold font-rounded flex-shrink-0 ml-2 ${t.settle_member_id === 'RELEASE' ? 'text-pastel-muted' : 'text-pastel-green'}">${t.settle_member_id === 'RELEASE' ? '-' : '+'}${fmt(t.amount)}</div>
-                    </div>`).join('') : '<div class="text-[11px] text-pastel-muted">尚無劃撥</div>'}
+                    </div>`).join('') : '<div class="text-[11px] text-pastel-muted">還沒有存過。用上方的「存一筆」開始</div>'}
                 </div>
             </div>
 
             ${spends.length ? `<div class="mb-5">
                 <div class="text-xs font-bold text-stone-600 mb-2">貼標花費（會自動扣抵保留額）</div>
                 <div class="space-y-2">${spends.map(t => `
-                    <div class="flex justify-between items-center bg-pastel-bg rounded-tile px-3 py-3 border border-pastel-border">
+                    <div class="flex justify-between items-center bg-pastel-bg rounded-tile px-3 py-3">
                         <div class="min-w-0"><div class="text-sm font-bold text-stone-800 truncate">${esc(t.note || t.category || '—')}</div>
                         <div class="text-[10px] text-pastel-muted">${esc(t.date)} ・ ${esc(nameOf(t.payer_id))}</div></div>
                         <div class="font-bold font-rounded text-pastel-red flex-shrink-0 ml-2">-${fmt(t.amount)}</div>
@@ -2899,7 +2919,7 @@ function hexA(hex, a) {
                         class="field flex-1 w-full p-3.5 rounded-tile bg-pastel-bg border border-pastel-border text-stone-800"></div>
                 <div class="grid grid-cols-6 gap-2">
                     ${GOAL_ICONS.map(ic => `<button type="button" onclick="pickGoalIcon('${ic}')" ${mine ? '' : 'disabled'}
-                        class="aspect-square rounded-xl flex items-center justify-center border tactile ${d.icon === ic ? 'bg-pastel-accent text-white border-pastel-accent shadow-sm' : 'bg-pastel-bg text-stone-600 border-pastel-border'}">
+                        class="aspect-square rounded-tile flex items-center justify-center border tactile ${d.icon === ic ? 'bg-pastel-accent text-white border-pastel-accent shadow-sm' : 'bg-pastel-bg text-stone-600 border-pastel-border'}">
                         <i class="fa-solid ${ic}"></i></button>`).join('')}
                 </div>
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">目標金額</label>
@@ -2959,9 +2979,9 @@ function hexA(hex, a) {
                         class="w-full p-3.5 rounded-tile bg-pastel-accentLight border-2 border-pastel-accent/40 text-stone-800 font-bold text-2xl font-rounded"></div>
                 <div class="flex gap-2">
                     ${[500, 1000, gold, left].filter((v, i, a) => v > 0 && a.indexOf(v) === i).slice(0, 4)
-                .map(v => `<button onclick="document.getElementById('dpAmt').value=${v};paintCoinPreview('${esc(id)}')" class="flex-1 py-2 rounded-xl bg-pastel-bg border border-pastel-border text-xs font-bold text-stone-600 tactile">${fmt(v)}</button>`).join('')}
+                .map(v => `<button onclick="document.getElementById('dpAmt').value=${v};paintCoinPreview('${esc(id)}')" class="flex-1 py-2 rounded-tile bg-pastel-bg border border-pastel-border text-xs font-bold text-stone-600 tactile">${fmt(v)}</button>`).join('')}
                 </div>
-                <div id="coinPreview" class="flex items-center gap-3 p-3 rounded-tile bg-pastel-bg border border-pastel-border"></div>
+                <div id="coinPreview" class="flex items-center gap-3 p-3 rounded-tile bg-pastel-bg"></div>
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">從哪個帳戶劃撥</label>
                     <select id="dpTag" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
                         ${tagChoices(PREF.get('tag', '')).map(t => `<option ${PREF.get('tag', '') === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
@@ -3013,7 +3033,7 @@ function hexA(hex, a) {
                         class="w-full p-3.5 rounded-tile bg-pastel-accentLight border-2 border-pastel-accent/40 text-stone-800 font-bold text-2xl font-rounded"></div>
                 <div class="flex gap-2">
                     ${[Math.round(reserved / 2), reserved].filter((v, i, a) => v > 0 && a.indexOf(v) === i)
-                .map(v => `<button onclick="document.getElementById('wdAmt').value=${v}" class="flex-1 py-2 rounded-xl bg-pastel-bg border border-pastel-border text-xs font-bold text-stone-600 tactile">${fmt(v)}</button>`).join('')}
+                .map(v => `<button onclick="document.getElementById('wdAmt').value=${v}" class="flex-1 py-2 rounded-tile bg-pastel-bg border border-pastel-border text-xs font-bold text-stone-600 tactile">${fmt(v)}</button>`).join('')}
                 </div>
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">原因（選填）</label>
                     <input id="wdNote" placeholder="例如：臨時需要用錢" class="w-full p-3.5 rounded-tile bg-pastel-bg border border-pastel-border text-sm"></div>
@@ -3311,7 +3331,8 @@ function hexA(hex, a) {
         const dayExp = B.exp.slice(0, last);
         const totalI = cumI.length ? cumI[cumI.length - 1] : 0;
         const totalE = cumE.length ? cumE[cumE.length - 1] : 0;
-        if (!totalI && !totalE) return `<div class="flex flex-col items-center py-8 gap-2"><img src="./av14.png" alt="" class="w-14 h-14 opacity-70"><span class="text-xs text-pastel-muted">這個區間還沒有資料</span></div>`;
+        if (!totalI && !totalE) return `<div class="flex flex-col items-center py-8 gap-2"><img src="./av14.png" alt="" class="w-14 h-14 opacity-70"><span class="text-xs text-pastel-muted">這個區間還沒有資料</span>
+            <span class="text-[10px] text-pastel-muted">換一個區間，或先記幾筆帳</span></div>`;
 
         const budget = rangeBudget(statsRange, ym);
         const remain = budget ? cumE.map(v => budget - v) : [];
@@ -3350,7 +3371,7 @@ function hexA(hex, a) {
         <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 mt-3 pt-3 border-t border-pastel-border text-[11px]">
             <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 rounded bg-pastel-green"></span>收入累計 <b class="font-rounded">${fmt(totalI)}</b></span>
             <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 rounded bg-pastel-red"></span>支出累計 <b class="font-rounded">${fmt(totalE)}</b></span>
-            <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-sm bg-pastel-accent opacity-60"></span>每${B.unit}支出</span>
+            <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-lg bg-pastel-accent opacity-60"></span>每${B.unit}支出</span>
             ${budget ? `<span class="flex items-center gap-1.5"><span class="w-3 h-0.5 rounded" style="background:repeating-linear-gradient(90deg,#3090F8 0 4px,transparent 4px 7px)"></span>剩餘預算 <b class="font-rounded">${fmt(budget - totalE)}</b></span>` : '<span></span>'}
         </div>
         ${budget ? `<div class="mt-2.5 px-3 py-2 rounded-tile text-[11px] font-bold leading-relaxed ${crossAt || over ? 'bg-pastel-redLight text-pastel-red' : 'bg-pastel-greenLight text-pastel-green'}">
@@ -3367,7 +3388,7 @@ function hexA(hex, a) {
         return `<div class="flex items-center gap-2">
             <div class="flex bg-stone-200/40 p-1 rounded-tile flex-1">
                 ${[['week', '本週'], ['month', '月'], ['year', '年']].map(([v, l]) =>
-            `<button onclick="setStatsRange('${v}')" class="flex-1 py-2 rounded-xl text-xs font-bold transition-all tactile ${statsRange === v ? 'bg-white text-pastel-text shadow-sm' : 'text-pastel-muted'}">${l}</button>`).join('')}
+            `<button onclick="setStatsRange('${v}')" class="flex-1 py-2 rounded-tile text-xs font-bold transition-all tactile ${statsRange === v ? 'bg-white text-pastel-text shadow-sm' : 'text-pastel-muted'}">${l}</button>`).join('')}
             </div>
             ${statsRange === 'week' ? '' : `<button onclick="openMonthPicker()" class="px-3 h-10 rounded-tile bg-white border border-pastel-border text-xs font-bold text-stone-700 shadow-sm tactile whitespace-nowrap">${statsRange === 'year' ? viewYM.slice(0, 4) + ' 年' : esc(B.title)}<i class="fa-solid fa-caret-down text-pastel-muted text-[10px] ml-1.5"></i></button>`}
         </div>`;
@@ -3380,7 +3401,7 @@ function hexA(hex, a) {
         c.innerHTML = `
             <div class="flex justify-between items-center">
                 <h2 class="text-lg font-bold text-stone-800">${currentMode === 'personal' ? '我的明細' : '家庭公帳明細'}</h2>
-                <button id="btnSyncTop" onclick="refreshData()" aria-label="同步" class="w-10 h-10 -mr-1 rounded-full flex items-center justify-center text-stone-400 text-lg tactile active:bg-pastel-bg"><i class="fa-solid fa-rotate"></i></button>
+                <button id="btnSyncTop" onclick="refreshData()" aria-label="同步" class="tap44 w-10 h-10 -mr-1 rounded-full flex items-center justify-center text-stone-400 text-lg tactile active:bg-pastel-bg"><i class="fa-solid fa-rotate"></i></button>
             </div>
             ${toolbarRow()}
             ${summaryStrip()}
@@ -3423,15 +3444,15 @@ function hexA(hex, a) {
     }
     function toolbarRow() {
         const fc = activeFilterCount();
-        const btn = (icon, on, fn, badge) => `<button onclick="${fn}" class="relative w-9 h-9 rounded-full flex items-center justify-center border tactile ${on ? 'bg-pastel-accent text-white border-pastel-accent' : 'bg-white text-stone-500 border-pastel-border'}">
+        const btn = (icon, on, fn, badge) => `<button onclick="${fn}" class="tap44 relative w-9 h-9 rounded-full flex items-center justify-center border tactile ${on ? 'bg-pastel-accent text-white border-pastel-accent' : 'bg-white text-stone-500 border-pastel-border'}">
             <i class="fa-solid ${icon} text-sm"></i>${badge ? `<span class="absolute -top-1 -right-1 w-4 h-4 bg-pastel-accent text-white text-[9px] font-bold rounded-full flex items-center justify-center border border-white">${badge}</span>` : ''}</button>`;
         return `<div class="flex items-center gap-2">
             <div class="flex-1 flex items-center justify-between bg-white rounded-tile border border-pastel-border shadow-sm px-1 h-11 min-w-0">
                 ${filters.allTime
                 ? `<button onclick="toggleAllTime()" class="flex-1 h-full flex items-center justify-center gap-2 text-xs font-bold text-pastel-accent"><i class="fa-solid fa-infinity"></i>全部期間 ・ 回到單月</button>`
-                : `<button onclick="changeMonth(-1)" class="w-9 h-9 flex items-center justify-center text-stone-500"><i class="fa-solid fa-chevron-left text-sm"></i></button>
+                : `<button onclick="changeMonth(-1)" class="tap44 w-9 h-9 flex items-center justify-center text-stone-500"><i class="fa-solid fa-chevron-left text-sm"></i></button>
                    <button onclick="openMonthPicker()" class="flex-1 font-bold text-stone-800 text-sm truncate">${viewYM.slice(0, 4)} 年 ${Number(viewYM.slice(5, 7))} 月<i class="fa-solid fa-caret-down text-pastel-muted text-[10px] ml-1.5"></i></button>
-                   <button onclick="changeMonth(1)" class="w-9 h-9 flex items-center justify-center text-stone-500 ${viewYM >= currentYM() ? 'opacity-30' : ''}"><i class="fa-solid fa-chevron-right text-sm"></i></button>`}
+                   <button onclick="changeMonth(1)" class="tap44 w-9 h-9 flex items-center justify-center text-stone-500 ${viewYM >= currentYM() ? 'opacity-30' : ''}"><i class="fa-solid fa-chevron-right text-sm"></i></button>`}
             </div>
             ${btn('fa-magnifying-glass', _searchOpen || !!filters.q, 'toggleSearchBar()')}
             ${btn('fa-sliders', fc > 0, 'openFilterSheet()', fc || '')}
@@ -3694,7 +3715,7 @@ function hexA(hex, a) {
             return `<button ${dis ? 'disabled' : ''} onclick="setYM('${ym}')" class="py-3 rounded-tile text-sm font-bold ${ym === viewYM ? 'bg-pastel-accent text-white' : dis ? 'bg-pastel-bg text-stone-300' : 'bg-pastel-bg text-stone-700 border border-pastel-border'}">${m} 月</button>`;
         }).join('');
         openSheet(`<div class="flex justify-between items-center mb-5">
-                <button onclick="pickYear(${y - 1})" class="w-9 h-9 rounded-lg bg-pastel-bg text-stone-600"><i class="fa-solid fa-chevron-left"></i></button>
+                <button onclick="pickYear(${y - 1})" class="tap44 w-9 h-9 rounded-lg bg-pastel-bg text-stone-600"><i class="fa-solid fa-chevron-left"></i></button>
                 <h3 class="text-lg font-bold text-stone-800">${y} 年</h3>
                 <button onclick="pickYear(${y + 1})" ${y >= maxY ? 'disabled' : ''} class="w-9 h-9 rounded-lg bg-pastel-bg text-stone-600 ${y >= maxY ? 'opacity-30' : ''}"><i class="fa-solid fa-chevron-right"></i></button>
             </div><div class="grid grid-cols-3 gap-2.5">${months}</div>`);
@@ -3749,7 +3770,7 @@ function hexA(hex, a) {
         }).join('')}
                     </div></div>` : ''}
                 <div><label class="block text-xs font-bold text-stone-500 mb-2">收支類型</label>
-                    <div class="flex gap-2">${['all', 'expense', 'income'].map((v, i) => `<button onclick="setFilterType('${v}')" class="flex-1 py-2 rounded-xl text-sm font-bold ${filters.type === v ? 'bg-stone-800 text-white' : 'bg-pastel-bg text-stone-600 border border-pastel-border'}">${['全部', '支出', '收入'][i]}</button>`).join('')}</div></div>
+                    <div class="flex gap-2">${['all', 'expense', 'income'].map((v, i) => `<button onclick="setFilterType('${v}')" class="flex-1 py-2 rounded-tile text-sm font-bold ${filters.type === v ? 'bg-stone-800 text-white' : 'bg-pastel-bg text-stone-600 border border-pastel-border'}">${['全部', '支出', '收入'][i]}</button>`).join('')}</div></div>
                 <div><label class="block text-xs font-bold text-stone-500 mb-2">費用歸屬（可複選）</label>
                     <div class="flex flex-wrap gap-2">${natures.map(n => chip(n, filters.natures.includes(n), `toggleFilter('natures','${n}')`)).join('')}</div></div>
                 <div><label class="block text-xs font-bold text-stone-500 mb-2">分類（可複選）</label>
@@ -3802,7 +3823,7 @@ function hexA(hex, a) {
             ${t.receipt_file_id ? `
             <div class="mt-4">
                 <div class="text-xs font-bold text-stone-600 mb-2"><i class="fa-solid fa-receipt mr-1.5 text-pastel-accent"></i>單據</div>
-                <div id="rcBox" class="rounded-tile border border-pastel-border bg-pastel-bg overflow-hidden">
+                <div id="rcBox" class="rounded-tile bg-pastel-bg overflow-hidden">
                     <button onclick="loadReceipt('${esc(id)}')" class="w-full py-8 flex flex-col items-center gap-2 text-pastel-muted tactile">
                         <i class="fa-solid fa-image text-2xl"></i>
                         <span class="text-xs font-bold">點擊檢視單據照片</span></button>
@@ -3839,7 +3860,7 @@ function hexA(hex, a) {
                     const paid = paidFor(t.txn_id, m.member_id);
                     return `<div class="flex items-center gap-2">
                         <button type="button" onclick="toggleEditSplitMember('${esc(m.member_id)}')"
-                            class="w-6 h-6 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${on ? 'bg-pastel-accent border-pastel-accent text-white' : 'border-pastel-border bg-pastel-bg text-transparent'}">
+                            class="w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 ${on ? 'bg-pastel-accent border-pastel-accent text-white' : 'border-pastel-border bg-pastel-bg text-transparent'}">
                             <i class="fa-solid fa-check text-[10px]"></i></button>
                         <div class="flex-1 min-w-0">
                             <div class="text-sm text-stone-700 truncate">${esc(m.nickname)}</div>
@@ -4255,7 +4276,7 @@ function hexA(hex, a) {
         if (addState.mode === 'income') {
             c.innerHTML = `<div class="p-4 bg-pastel-greenLight border border-pastel-green/20 rounded-tile space-y-3">
                 <div class="font-bold text-pastel-green text-xs">收入歸屬</div>
-                <select id="inpNature" onchange="addState.nature=this.value;paintNatureHint()" class="w-full p-3 rounded-xl bg-white border border-pastel-green/20 text-stone-800 text-sm font-medium">
+                <select id="inpNature" onchange="addState.nature=this.value;paintNatureHint()" class="w-full p-3 rounded-tile bg-white border border-pastel-green/20 text-stone-800 text-sm font-medium">
                     <option value="純個人">個人收入（不進公帳）</option>
                     <option value="家庭公帳">直接入家庭公帳（錢沒經過我）</option>
                     <option value="公帳注資">我出錢注入公帳（從我的現金）</option></select>
@@ -4263,7 +4284,7 @@ function hexA(hex, a) {
         } else if (currentMode === 'personal') {
             c.innerHTML = `<div class="p-4 bg-pastel-accentLight border border-pastel-accent/25 rounded-tile space-y-3">
                 <div class="font-bold text-pastel-accent text-xs">費用歸屬與代墊</div>
-                <select id="inpNature" onchange="addState.nature=this.value;toggleSplitConfig()" class="w-full p-3 rounded-xl bg-white border border-pastel-accent/25 text-stone-800 text-sm font-medium">
+                <select id="inpNature" onchange="addState.nature=this.value;toggleSplitConfig()" class="w-full p-3 rounded-tile bg-white border border-pastel-accent/25 text-stone-800 text-sm font-medium">
                     <option value="純個人">純個人私費（不進家庭表）</option>
                     <option value="家庭代墊">我先代墊，公帳要還我</option>
                     <option value="家庭公帳">我出錢請客（算家庭支出，不用還我）</option>
@@ -4402,7 +4423,7 @@ function hexA(hex, a) {
         const MODES = [['even', '平均分攤', 'fa-users'], ['pct', '比例分攤', 'fa-percent'], ['amt', '手動輸入', 'fa-dollar-sign']];
 
         b.innerHTML = `
-            <div class="p-3 bg-white rounded-xl border border-pastel-accent/25 space-y-3">
+            <div class="p-3 bg-white rounded-tile border border-pastel-accent/25 space-y-3">
                 <div class="font-bold text-stone-700 text-xs">${isPool ? '分攤給誰？' : '與誰拆帳？'}</div>
                 <div class="flex gap-3 overflow-x-auto hide-scrollbar pb-1 pt-1">
                     ${splitParticipants().map(m => {
@@ -4418,21 +4439,48 @@ function hexA(hex, a) {
                     : md === 'even' ? `<span class="text-[11px] font-bold text-stone-800 font-rounded">${fmt(addState.splits[m.member_id] || 0)}</span>`
                         : `<input type="number" inputmode="decimal" value="${esc(val)}"
                                     oninput="${md === 'pct' ? `setSplitPct('${esc(m.member_id)}', this.value)` : `setSplitAmount('${esc(m.member_id)}', this.value)`}"
-                                    class="w-full py-1 px-1 rounded-md border border-pastel-border bg-pastel-bg text-[11px] text-center font-rounded text-stone-800"
+                                    class="w-full py-1 px-1 rounded-lg border border-pastel-border bg-pastel-bg text-[11px] text-center font-rounded text-stone-800"
                                     placeholder="${md === 'pct' ? '%' : '$'}">`}
                         </div>`;
         }).join('')}
                 </div>
-                <div class="flex bg-pastel-bg rounded-full p-0.5 border border-pastel-border">
+                <div class="flex bg-pastel-bg rounded-full p-0.5">
                     ${MODES.map(([k, label, ic]) => `<button type="button" onclick="setSplitMode('${k}')"
                         class="flex-1 py-1.5 rounded-full text-[11px] font-bold transition-all ${md === k ? 'bg-white text-stone-800 shadow-sm' : 'text-pastel-muted'}">
                         <i class="fa-solid ${ic} mr-1 text-[9px]"></i>${label}</button>`).join('')}
                 </div>
+                <div id="splitRatioBar" class="flex h-2 rounded-full overflow-hidden bg-stone-100"></div>
                 <div id="splitSummary" class="text-[11px] pt-2 border-t border-pastel-border"></div>
             </div>`;
         paintSplitSummary();
     }
+    /* 分攤比例條：把「誰佔多少」變成看得到的寬度。
+       數字要逐個讀才知道分配合不合理，一條橫條一眼就知道；
+       超額時整條轉紅，比一行文字警告更難忽略。 */
+    function paintSplitBar() {
+        const bar = document.getElementById('splitRatioBar'); if (!bar) return;
+        const total = splitTotal();
+        const ids = Object.keys(addState.splits || {});
+        if (!total || !ids.length) { bar.innerHTML = ''; return; }
+        const over = allocated() > total + 0.01;
+        const segs = ids.map(id => {
+            const v = Math.max(0, Number(addState.splits[id]) || 0);
+            const m = (STATE.members || []).find(x => x.member_id === id);
+            const isMe = id === ME_ID();
+            return {
+                pct: Math.min(100, v / total * 100),
+                // 自己吸收的那段用低飽和，別人欠的用該成員的光環色 —— 一眼分得出「我的」與「別人的」
+                color: over ? '#F05838' : isMe ? '#C9BFB2' : getLevelInfo(m?.streak_days).ring,
+                label: (isMe ? '我' : (m?.nickname || '')) + ' ' + fmt(v)
+            };
+        }).filter(x => x.pct > 0.5);
+        const used = segs.reduce((a, b) => a + b.pct, 0);
+        bar.innerHTML = segs.map(x =>
+            `<div style="width:${x.pct}%;background:${x.color}" title="${esc(x.label)}"></div>`).join('')
+            + (used < 99.5 ? `<div style="width:${100 - used}%" class="bg-stone-200"></div>` : '');
+    }
     function paintSplitSummary() {
+        paintSplitBar();
         const el = document.getElementById('splitSummary'); if (!el) return;
         const total = splitTotal(), others = splitSum(), mine = selfAmount(), used = allocated();
         const over = used > total + 0.01;
@@ -4521,7 +4569,7 @@ function hexA(hex, a) {
 
             <div class="flex bg-stone-200/40 p-1.5 rounded-tile w-full">
                 ${[['expense', '支出', 'text-pastel-red'], ['income', '收入', 'text-pastel-green'], ['transfer', '轉帳', 'text-pastel-blue']]
-                .map(([m, l, c]) => `<button onclick="setAddMode('${m}')" class="flex-1 py-2 rounded-xl text-sm font-bold transition-all tactile ${addState.mode === m ? `bg-white ${c} shadow-sm` : 'text-pastel-muted'}">${l}</button>`).join('')}
+                .map(([m, l, c]) => `<button onclick="setAddMode('${m}')" class="flex-1 py-2 rounded-tile text-sm font-bold transition-all tactile ${addState.mode === m ? `bg-white ${c} shadow-sm` : 'text-pastel-muted'}">${l}</button>`).join('')}
             </div>
 
             <!-- 金額（點擊開鍵盤抽屜） -->
@@ -4529,7 +4577,7 @@ function hexA(hex, a) {
                     style="background:linear-gradient(135deg,${isTr ? '#3090F8,#2B7BD6' : isExp ? '#F8A048,#F0863A' : '#40B868,#35A25A'})">
                 <div class="flex justify-between items-center mb-1">
                     <span class="text-[11px] font-bold opacity-85">${isTr ? '轉帳金額' : isExp ? '支出金額' : '收入金額'}</span>
-                    <span class="text-[10px] font-bold bg-white/25 px-2 py-1 rounded-md">點擊輸入 <i class="fa-solid fa-calculator ml-1"></i></span></div>
+                    <span class="text-[10px] font-bold bg-white/25 px-2 py-1 rounded-lg">點擊輸入 <i class="fa-solid fa-calculator ml-1"></i></span></div>
                 <div class="text-5xl font-bold font-rounded tracking-tight leading-none">
                     <span class="num-sym text-2xl">$</span>${Number(amt).toLocaleString('en-US')}</div>
             </button>
@@ -4538,10 +4586,10 @@ function hexA(hex, a) {
                 ${isTr ? `
                 <div class="px-4 py-3.5 grid grid-cols-2 gap-3">
                     <div class="field"><label class="block text-[11px] font-bold text-stone-500 mb-1.5">從</label>
-                        <select id="trFrom" class="w-full p-2.5 rounded-xl bg-pastel-bg border border-pastel-border text-sm truncate">
+                        <select id="trFrom" class="w-full p-2.5 rounded-tile bg-pastel-bg border border-pastel-border text-sm truncate">
                             ${tagChoices(addState.from).map(t => `<option ${addState.from === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
                     <div class="field"><label class="block text-[11px] font-bold text-stone-500 mb-1.5">到</label>
-                        <select id="trTo" class="w-full p-2.5 rounded-xl bg-pastel-bg border border-pastel-border text-sm truncate">
+                        <select id="trTo" class="w-full p-2.5 rounded-tile bg-pastel-bg border border-pastel-border text-sm truncate">
                             ${tagChoices(addState.to).map(t => `<option ${addState.to === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
                 </div>`
                 : rowBtn('分類', addState.cat
@@ -4551,7 +4599,7 @@ function hexA(hex, a) {
                 <div class="px-4 py-3 flex items-center justify-between gap-3">
                     <span class="text-sm text-stone-600 flex-shrink-0">日期</span>
                     <input id="inpDate" type="date" value="${esc(addState.date)}" onchange="addState.date=this.value"
-                        class="field flex-1 max-w-[190px] py-2 px-3 rounded-xl bg-pastel-bg border border-pastel-border text-sm font-bold text-stone-800 font-sans"></div>
+                        class="field flex-1 max-w-[190px] py-2 px-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm font-bold text-stone-800 font-sans"></div>
 
                 <div class="px-4 py-3">
                     <div class="flex items-center gap-3">
@@ -4561,7 +4609,7 @@ function hexA(hex, a) {
                             oncompositionstart="_memoComposing=true"
                             oncompositionend="_memoComposing=false;onMemoInput(this.value)"
                             onblur="setTimeout(hideMemoBar,180)"
-                            class="field flex-1 py-2 px-3 rounded-xl bg-pastel-bg border border-pastel-border text-sm text-right text-stone-800"></div>
+                            class="field flex-1 py-2 px-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm text-right text-stone-800"></div>
                     <!-- 聯想晶片列：橫向捲動，不用下拉選單 —— 鍵盤彈起時下拉會被遮住 -->
                     <div id="memoBar" class="js-hide flex gap-2 mt-2 overflow-x-auto hide-scrollbar pb-0.5"></div></div>
 
@@ -4591,16 +4639,16 @@ function hexA(hex, a) {
                         <span class="relative flex items-center">
                             <input type="checkbox" id="isRecurring" onchange="toggleRecurringBox()" class="peer w-5 h-5 appearance-none border-2 border-pastel-border rounded checked:bg-pastel-accent checked:border-pastel-accent transition-all">
                             <i class="fa-solid fa-check absolute text-white text-xs left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 peer-checked:opacity-100 pointer-events-none"></i></span></label>
-                    <div id="recurringBox" class="hidden mt-3 p-4 bg-pastel-bg border border-pastel-border rounded-tile space-y-3">
+                    <div id="recurringBox" class="hidden mt-3 p-4 bg-pastel-bg rounded-tile space-y-3">
                         <div class="grid grid-cols-2 gap-3">
                             <div class="field"><label class="block text-[11px] font-bold text-stone-600 mb-1">週期</label>
-                                <select id="recFreq" class="w-full p-2.5 rounded-xl bg-white border border-pastel-border text-sm truncate">
+                                <select id="recFreq" class="w-full p-2.5 rounded-tile bg-white border border-pastel-border text-sm truncate">
                                     <option>每日</option><option>每週</option><option>每兩週</option><option selected>每月</option><option>每季</option><option>每半年</option><option>每年</option></select></div>
                             <div class="field"><label class="block text-[11px] font-bold text-stone-600 mb-1">處理方式</label>
-                                <select id="recMode" class="w-full p-2.5 rounded-xl bg-white border border-pastel-border text-sm truncate">
+                                <select id="recMode" class="w-full p-2.5 rounded-tile bg-white border border-pastel-border text-sm truncate">
                                     <option>自動記帳</option><option>僅提醒</option></select></div></div>
                         <div class="field"><label class="block text-[11px] font-bold text-stone-600 mb-1">結束日期（可留空）</label>
-                            <input id="recEnd" type="date" class="w-full py-2.5 px-3 rounded-xl bg-white border border-pastel-border text-sm"></div>
+                            <input id="recEnd" type="date" class="w-full py-2.5 px-3 rounded-tile bg-white border border-pastel-border text-sm"></div>
                         <p class="text-[11px] text-pastel-muted">歸屬：${currentMode === 'family' ? '家庭公帳（全家可見）' : '個人（只有你看得到）'}</p>
                     </div>
                 </div>`}
@@ -4656,7 +4704,7 @@ function hexA(hex, a) {
             <div class="rounded-card p-5 mb-4 text-white" style="background:linear-gradient(135deg,${isTr ? '#3090F8,#2B7BD6' : isExp ? '#F8A048,#F0863A' : '#40B868,#35A25A'})">
                 <div class="flex justify-between items-center mb-1">
                     <span class="text-[11px] font-bold opacity-85">${isTr ? '轉帳' : isExp ? '支出' : '收入'}${addState.cat ? ' · ' + esc(addState.cat) : ''}</span>
-                    ${addState.cat ? `<button onclick="closeSheet();setTimeout(openCatDrawer,320)" class="text-[10px] font-bold bg-white/25 px-2 py-1 rounded-md">換分類</button>` : ''}</div>
+                    ${addState.cat ? `<button onclick="closeSheet();setTimeout(openCatDrawer,320)" class="text-[10px] font-bold bg-white/25 px-2 py-1 rounded-lg">換分類</button>` : ''}</div>
                 <div id="kpAmt" class="text-5xl font-bold font-rounded tracking-tight leading-none break-all"></div>
                 <div id="kpHint" class="text-xs opacity-85 mt-1.5 h-4"></div>
             </div>
@@ -4954,7 +5002,8 @@ function hexA(hex, a) {
                     <div class="space-y-1.5">
                         <div class="flex justify-between text-xs"><span class="text-stone-700 truncate"><i class="fa-solid ${esc(catIcon(c[0]))} mr-1.5" style="color:${catColor(c[0])}"></i>${esc(c[0])}</span><span class="font-bold font-rounded flex-shrink-0 ml-2">${fmt(c[1])}</span></div>
                         <div class="w-full bg-pastel-bg rounded-full h-2 overflow-hidden"><div class="h-2 rounded-full transition-all duration-700" style="width:${(c[1] / maxC * 100).toFixed(0)}%;background:${catColor(c[0])}"></div></div>
-                    </div>`).join('') : `<div class="flex flex-col items-center py-4 gap-2"><img src="./av14.png" alt="" class="w-12 h-12 opacity-70"><span class="text-xs text-pastel-muted">本月尚無支出</span></div>`}</div>
+                    </div>`).join('') : `<div class="flex flex-col items-center py-4 gap-2"><img src="./av14.png" alt="" class="w-12 h-12 opacity-70"><span class="text-xs text-pastel-muted">本月還沒有支出</span>
+                        <button onclick="switchTab('add')" class="mt-1 px-4 py-2 rounded-full bg-pastel-accent text-white text-xs font-bold tactile">記第一筆</button></div>`}</div>
 
             <h2 class="text-sm font-bold text-stone-800 ml-1">白話財務三表</h2>
             <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-3">
@@ -4994,7 +5043,7 @@ function hexA(hex, a) {
             <div class="w-12 h-1.5 bg-stone-200 rounded-full mx-auto mb-5"></div>
             <div class="flex justify-between items-center mb-5">
                 <h2 class="text-lg font-bold text-stone-800">個人角色卡</h2>
-                <button onclick="closeProfileModal()" aria-label="關閉" class="w-8 h-8 bg-pastel-bg rounded-full flex items-center justify-center text-stone-500 shadow-sm"><i class="fa-solid fa-xmark"></i></button></div>
+                <button onclick="closeProfileModal()" aria-label="關閉" class="tap44 w-8 h-8 bg-pastel-bg rounded-full flex items-center justify-center text-stone-500 shadow-sm"><i class="fa-solid fa-xmark"></i></button></div>
 
             <div class="flex flex-col items-center text-center space-y-3 mb-6">
                 <button onclick="openAvatarPicker()" class="relative group">
@@ -5007,7 +5056,7 @@ function hexA(hex, a) {
                 <button onclick="openAvatarPicker()" class="text-xs text-pastel-accent font-bold underline">更換大頭貼</button>
             </div>
 
-            <div class="bg-pastel-bg rounded-tile p-4 border border-pastel-border mb-5">
+            <div class="bg-pastel-bg rounded-tile p-4 mb-5">
                 <div class="flex justify-between items-center mb-2">
                     <span class="text-sm font-bold text-stone-700"><i class="fa-solid fa-fire mr-1.5 text-pastel-accent"></i>連續記帳天數${bestStreak() > (Number(STATE.me?.streak_days) || 0) ? `<span class="ml-2 text-[10px] font-normal text-pastel-muted">歷史最高 ${bestStreak()} 天</span>` : ''}</span>
                     <span class="text-lg font-bold text-pastel-accent">${i.days} 天</span></div>
@@ -5080,7 +5129,7 @@ function hexA(hex, a) {
 
     function payeeCard() {
         const p = payeeOf(STATE.me);
-        return `<div class="bg-pastel-bg rounded-tile p-4 border border-pastel-border mb-5">
+        return `<div class="bg-pastel-bg rounded-tile p-4 mb-5">
             <div class="text-sm font-bold text-stone-700 mb-1"><i class="fa-solid fa-building-columns mr-1.5 text-pastel-blue"></i>我的收款資訊</div>
             <p class="text-[11px] text-pastel-muted mb-3 leading-relaxed">
                 填好之後，家人要還錢給你時可以直接複製，不必再私訊問。家人看得到，其他人看不到。</p>
@@ -5308,9 +5357,9 @@ function hexA(hex, a) {
                     <i class="fa-solid ${esc(normIcon(c.icon_emoji, c.item_group))} text-sm w-4 text-center" style="color:${catColor(c.item_name)}"></i>
                     <span class="font-bold text-stone-800 truncate">${esc(c.item_name)}</span>
                 </button>
-                <button class="text-stone-400 text-[10px] flex-shrink-0" data-n="${esc(c.item_name)}" data-g="${esc(group)}"
+                <button class="tap44 text-stone-400 text-[10px] flex-shrink-0" data-n="${esc(c.item_name)}" data-g="${esc(group)}"
                         onclick="archiveItem(this.dataset.n, this.dataset.g)"><i class="fa-solid fa-xmark"></i></button>
-            </div>`).join('') : `<div class="col-span-2 text-xs text-pastel-muted">尚無項目</div>`;
+            </div>`).join('') : `<div class="col-span-2 text-xs text-pastel-muted">還沒有項目。用右上角的「新增」建立第一個</div>`;
         const sortBtn = (group) => `<button onclick="toggleSortMode('${esc(group)}')"
             class="text-[11px] font-bold ${sortingGroup === group ? 'text-pastel-green' : 'text-pastel-muted'} tactile">
             <i class="fa-solid ${sortingGroup === group ? 'fa-check' : 'fa-arrow-up-arrow-down'} mr-1"></i>${sortingGroup === group ? '完成' : '調整順序'}</button>`;
@@ -5327,7 +5376,7 @@ function hexA(hex, a) {
                     <div id="settingsAvatarContainer" class="w-16 h-16 mx-auto rounded-full border-[4px] flex items-center justify-center text-2xl overflow-hidden mb-3"></div></button>
                 <h2 class="font-bold text-lg text-stone-800">${esc(STATE.me?.nickname)}</h2>
                 <p class="text-xs text-pastel-muted mt-1">目前為 <span id="settingsLevelName"></span></p>
-                <div class="mt-4 flex items-center justify-center gap-2 text-sm font-bold text-stone-700 bg-pastel-bg py-2 px-4 rounded-xl w-max mx-auto">
+                <div class="mt-4 flex items-center justify-center gap-2 text-sm font-bold text-stone-700 bg-pastel-bg py-2 px-4 rounded-tile w-max mx-auto">
                     <i class="fa-solid fa-fire mr-1.5 text-pastel-accent"></i>連續記帳 <span class="text-pastel-accent text-lg">${esc(STATE.me?.streak_days || 0)}</span> 天</div>
                 <button onclick="openProfileModal()" class="mt-3 text-xs font-bold text-pastel-accent">查看成就與更換大頭貼 →</button>
             </div>
@@ -5376,7 +5425,7 @@ function hexA(hex, a) {
                     <button class="text-xs text-pastel-accent font-bold" onclick="openRuleSheet()">新增</button></div>
                 <div class="space-y-3">
                 ${rules.length ? rules.map(r => `
-                    <div class="flex justify-between items-center bg-pastel-bg p-3 rounded-tile border border-pastel-border">
+                    <div class="flex justify-between items-center bg-pastel-bg p-3 rounded-tile">
                         <div class="flex items-center gap-3 min-w-0">
                             <div class="w-10 h-10 rounded-tile bg-white border border-pastel-border flex items-center justify-center flex-shrink-0" style="color:${catColor(r.category)}"><i class="fa-solid ${esc(r.category ? catIcon(r.category) : (r.entry_type === '收入' ? 'fa-sack-dollar' : 'fa-repeat'))}"></i></div>
                             <div class="min-w-0">
@@ -5685,7 +5734,7 @@ function hexA(hex, a) {
             </div>
             ${ed ? `<p class="text-[11px] text-pastel-muted leading-relaxed -mt-3 mb-4">改名後，已經記過的帳會一起換成新名稱，統計不會斷成兩截。</p>` : ''}
             ${g === 'PAYMENT_TAG' ? `
-            <div class="p-3 rounded-tile bg-pastel-bg border border-pastel-border mb-5 space-y-3">
+            <div class="p-3 rounded-tile bg-pastel-bg mb-5 space-y-3">
                 <label class="flex items-center justify-between gap-3">
                     <span class="text-xs font-bold text-stone-700">只有我看得到</span>
                     <input type="checkbox" ${_newItem.scope === 'personal' ? 'checked' : ''}
@@ -5734,7 +5783,7 @@ function hexA(hex, a) {
             <div class="text-xs font-bold text-stone-500 mb-2">顏色</div>
             <div class="flex gap-2 mb-5">
                 ${CAT_PALETTE.map(h => `<button onclick="pickNewColor('${h}')"
-                    class="flex-1 h-9 rounded-xl tactile transition-all ${_newItem.color === h ? 'ring-2 ring-offset-2 ring-stone-400' : ''}"
+                    class="flex-1 h-9 rounded-tile tactile transition-all ${_newItem.color === h ? 'ring-2 ring-offset-2 ring-stone-400' : ''}"
                     style="background:${h}"></button>`).join('')}
             </div>
             <div class="text-xs font-bold text-stone-500 mb-2">選一個圖示</div>
@@ -5744,7 +5793,7 @@ function hexA(hex, a) {
                         <div class="text-[11px] text-pastel-muted mb-1.5">${esc(label)}</div>
                         <div class="grid grid-cols-7 gap-2">
                             ${list.map(ic => `<button onclick="pickNewIcon('${ic}')"
-                                class="aspect-square rounded-xl flex items-center justify-center text-base border transition-all tactile ${_newItem.icon === ic ? 'bg-pastel-accent text-white border-pastel-accent shadow-sm' : 'bg-pastel-bg text-stone-600 border-pastel-border'}">
+                                class="aspect-square rounded-tile flex items-center justify-center text-base border transition-all tactile ${_newItem.icon === ic ? 'bg-pastel-accent text-white border-pastel-accent shadow-sm' : 'bg-pastel-bg text-stone-600 border-pastel-border'}">
                                 <i class="fa-solid ${ic}"></i></button>`).join('')}
                         </div></div>`).join('')}
             </div>
