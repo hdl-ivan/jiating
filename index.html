@@ -166,10 +166,13 @@
         /* 可點元件的觸控範圍一律 ≥44px（Apple 的最小建議值）。
            圖示小沒關係 —— 用 padding 撐開可按範圍，再用負 margin 把版面拉回原位，
            所以外觀不變、但按得到。「按了好幾次沒反應」已經出過兩次，都是這個原因。 */
-        .tap44 {
-            min-width:44px; min-height:44px;
-            display:inline-flex; align-items:center; justify-content:center;
-            padding:12px; margin:-12px;
+        /* 用虛擬元素把可按範圍撐到 44px，完全不佔版面。
+           先前用 padding + 負 margin，負 margin 會把相鄰元件互相拉近 ——
+           明細頁的搜尋與篩選鈕就是這樣疊在一起、還擠進了日期膠囊。 */
+        .tap44 { position:relative; }
+        .tap44::after {
+            content:''; position:absolute; top:50%; left:50%;
+            width:44px; height:44px; transform:translate(-50%,-50%);
         }
 
         /* ---------- 文字選取：全域鎖死、白名單開放 ----------
@@ -360,7 +363,10 @@
            左側偏移一層做出幣身厚度。滾花邊是沿著幣緣一圈的直紋，
            從側面看是「一條條橫線」，所以用 0deg 的重複漸層畫水平線，
            並且直接用深色描邊的顏色，不用色塊相間。 */
-        .coin3d { position:relative; flex-shrink:0; }
+        /* 籌碼是側斜視角：左邊那道弧是「幣身的厚度」。
+           厚度會超出元素本身的框，所以要留 margin-left，
+           否則排在第一個的那枚會被容器邊界切掉一角。 */
+        .coin3d { position:relative; flex-shrink:0; margin-left:3px; }
         .coin3d .edge {
             position:absolute; inset:0; border-radius:9999px;
             transform:translateX(-3px);
@@ -377,16 +383,20 @@
             background:var(--cFace); border:1.5px solid var(--cDark);
             display:flex; align-items:center; justify-content:center; overflow:hidden;
         }
-        /* 第二層圓框 */
+        /* 內圓框：用百分比而不是固定 px，籌碼放大縮小時比例才一致。
+           先前 inset 只有 2.5px，在 36px 的籌碼上幾乎貼著外緣，
+           看起來就不像「外圈 ＋ 內圓」，而像頭像直接印在整個正面上。 */
         .coin3d .face::before {
-            content:''; position:absolute; inset:2.5px; border-radius:9999px;
-            border:1.5px solid var(--cDark); opacity:.65;
+            content:''; position:absolute; inset:13%; border-radius:9999px;
+            border:1.5px solid var(--cDark); opacity:.55;
+            box-shadow:inset 0 1px 2px rgba(0,0,0,.12);
         }
-        /* 中央頭像：與第二層圓框同大小，把整個內圈填滿 */
+        /* 頭像放進內圓框裡面，不是蓋在整個正面上 */
         .coin3d .pic {
-            position:absolute; inset:4px; width:auto; height:auto;
+            position:absolute; inset:16%; width:auto; height:auto;
             border-radius:9999px; object-fit:cover; background:#fff;
             display:flex; align-items:center; justify-content:center;
+            box-shadow:0 0 0 1px rgba(255,255,255,.7);
         }
         .coin-gold   { --cFace:radial-gradient(circle at 34% 28%,#FFF0BC,#F8C850 58%,#E0A81E);
                        --cDark:#8A6410; --cMid:#E8B93A; }
@@ -616,7 +626,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.13.0',
+        VERSION: 'v6.14.0',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -1774,7 +1784,7 @@ function hexA(hex, a) {
                             <span class="font-bold text-sm truncate ${done ? 'text-pastel-blue' : 'text-stone-700'}">${esc(c.name)}${tier >= 0 && c.goals.length > 1 ? ` · ${c.goals[tier]}${esc(c.unit)}` : ''}</span>
                             <span class="text-[10px] font-bold flex-shrink-0 ${done ? 'text-pastel-blue' : 'text-pastel-muted'}">${next ? `${v}/${next}${esc(c.unit)}` : '已達成'}</span></div>
                         <div class="text-[10px] text-pastel-muted mt-0.5 truncate">${esc(c.desc)}</div>
-                        ${next ? `<div class="w-full bg-pastel-bg rounded-full h-1.5 mt-1.5 overflow-hidden"><div class="bg-pastel-blue h-1.5 rounded-full transition-all duration-700" style="width:${pct}%"></div></div>` : ''}
+                        ${next ? `<div class="w-full bg-pastel-bg rounded-full h-2.5 mt-1.5 overflow-hidden"><div class="bg-pastel-blue h-2.5 rounded-full transition-all duration-700" style="width:${pct}%"></div></div>` : ''}
                     </div></div>`;
         }).join('')}
         </div>`;
@@ -1931,11 +1941,14 @@ function hexA(hex, a) {
         // 否則新開的面板會在 300ms 後被那個舊計時器藏起來（看起來就是「閃一下就不見」）。
         clearTimeout(_sheetHideTimer); _sheetHideTimer = null;
         const m = document.getElementById('sheetModal'), c = document.getElementById('sheetContent');
-        c.innerHTML = `<div class="w-12 h-1.5 bg-stone-200 rounded-full mx-auto mb-5"></div>` + html;
+        c.innerHTML = `<div class="w-12 h-2.5 bg-stone-200 rounded-full mx-auto mb-5"></div>` + html;
         m.classList.remove('js-hide'); void m.offsetWidth;
         m.classList.remove('opacity-0'); c.classList.remove('translate-y-full');
     }
     function closeSheet() {
+        // 面板被滑掉或點外面關掉時，一定要把借用狀態歸還，
+        // 不然下一次記帳按的數字會被寫進上一個成員的分攤裡。
+        if (kpBorrow) { const d = kpBorrow.onDone; kpBorrow = null; if (d) setTimeout(d, 0); }
         const m = document.getElementById('sheetModal'), c = document.getElementById('sheetContent');
         m.classList.add('opacity-0'); c.classList.add('translate-y-full');
         clearTimeout(_sheetHideTimer);
@@ -2150,8 +2163,8 @@ function hexA(hex, a) {
                         <div class="flex justify-between text-xs">
                             <span class="text-stone-700 truncate"><i class="fa-solid ${esc(catIcon(b.category))} mr-1.5" style="color:${col}"></i>${esc(b.category)}</span>
                             <span class="font-bold font-rounded flex-shrink-0 ml-2 ${over2 ? 'text-pastel-red' : 'text-stone-700'}">${fmt(used)} / ${fmt(b.amount)}</span></div>
-                        <div class="w-full bg-pastel-bg rounded-full h-1.5 overflow-hidden">
-                            <div class="h-1.5 rounded-full transition-all duration-700" style="width:${pct2}%;background:${over2 ? '#F05838' : col}"></div></div>
+                        <div class="w-full bg-pastel-bg rounded-full h-2.5 overflow-hidden">
+                            <div class="h-2.5 rounded-full transition-all duration-700" style="width:${pct2}%;background:${over2 ? '#F05838' : col}"></div></div>
                     </div>`;
         }).join('')}
             </div>`
@@ -2324,8 +2337,8 @@ function hexA(hex, a) {
                         <div class="flex items-center gap-1.5 flex-shrink-0">
                             <span class="font-bold font-rounded text-pastel-green">${fmt(g.remaining)}</span>
                             <i class="fa-solid fa-chevron-right text-[10px] text-pastel-muted"></i></div></div>
-                    <div class="w-full bg-white rounded-full h-1.5 overflow-hidden border border-pastel-border">
-                        <div class="bg-pastel-green h-1.5 rounded-full transition-all duration-700" style="width:${pct.toFixed(0)}%"></div></div>
+                    <div class="w-full bg-white rounded-full h-2.5 overflow-hidden border border-pastel-border">
+                        <div class="bg-pastel-green h-2.5 rounded-full transition-all duration-700" style="width:${pct.toFixed(0)}%"></div></div>
                 </button>`;
             }).join('')}
         </div>`;
@@ -2687,7 +2700,7 @@ function hexA(hex, a) {
         const cls = c.kind === 'gold' ? 'coin-gold' : 'coin-silver';
         const inner = String(av).startsWith('av')
             ? `<img src="./${esc(av)}.png" alt="" class="pic">`
-            : `<span class="pic" style="font-size:${Math.round(px * .38)}px;color:var(--cDark)"><i class="fa-solid ${esc(isFA(av) ? av : 'fa-user')}"></i></span>`;
+            : `<span class="pic" style="font-size:${Math.round(px * .3)}px;color:var(--cDark)"><i class="fa-solid ${esc(isFA(av) ? av : 'fa-user')}"></i></span>`;
         return `<div class="coin3d ${cls}" style="width:${px}px;height:${px}px" title="${esc(c.date)} ${fmt(c.total)}${c.kind === 'gold' ? ' · 金幣' : ' · 銀幣'}">
             <span class="edge"></span>
             <span class="face">${inner}</span>
@@ -2783,7 +2796,7 @@ function hexA(hex, a) {
                 ${list.map(jarCard).join('')}
             </div>
             ${list.length > 1 ? `<div id="jarDots" class="flex justify-center gap-1.5">
-                ${list.map((_, i) => `<span class="w-1.5 h-1.5 rounded-full ${i === 0 ? 'bg-pastel-accent' : 'bg-pastel-border'}"></span>`).join('')}
+                ${list.map((_, i) => `<span class="w-1.5 h-2.5 rounded-full ${i === 0 ? 'bg-pastel-accent' : 'bg-pastel-border'}"></span>`).join('')}
             </div>` : ''}`;
     }
     function paintJarDots() {
@@ -2791,7 +2804,7 @@ function hexA(hex, a) {
         if (!rail || !dots) return;
         const i = Math.round(rail.scrollLeft / Math.max(rail.clientWidth, 1));
         [...dots.children].forEach((d, j) => {
-            d.className = `w-1.5 h-1.5 rounded-full ${j === i ? 'bg-pastel-accent' : 'bg-pastel-border'}`;
+            d.className = `w-1.5 h-2.5 rounded-full ${j === i ? 'bg-pastel-accent' : 'bg-pastel-border'}`;
         });
     }
 
@@ -2849,7 +2862,7 @@ function hexA(hex, a) {
 
             <div class="mb-5">
                 <div class="text-xs font-bold text-stone-600 mb-2">籌碼牆 ${coins.length} 枚</div>
-                ${coins.length ? `<div class="flex flex-wrap gap-2.5 p-3.5 rounded-tile bg-pastel-bg">${coins.map(c => coinSvg(c, 36)).join('')}</div>
+                ${coins.length ? `<div class="flex flex-wrap gap-2.5 py-3.5 pr-3.5 pl-3 rounded-tile bg-pastel-bg">${coins.map(c => coinSvg(c, 40)).join('')}</div>
                 <div class="flex flex-wrap gap-3 mt-2">${Object.entries(byMember).map(([mid, n]) =>
                     `<span class="text-[11px] text-pastel-muted">${esc(nameOf(mid))} ${n} 枚</span>`).join('')}</div>`
                 : '<div class="text-[11px] text-pastel-muted">還沒有籌碼</div>'}
@@ -3561,7 +3574,7 @@ function hexA(hex, a) {
                         <div class="font-bold text-stone-800 text-[13px] truncate">${esc(t.note || t.category || '（無備註）')}${t.recurring_rule_id ? ' <i class="fa-solid fa-rotate text-[10px] text-pastel-muted"></i>' : ''}</div>
                         <div class="text-[11px] text-pastel-muted flex items-center gap-1.5 truncate mt-0.5">
                             <span class="truncate">${repayLabel || esc(t.category || t.entry_type)}</span>
-                            ${t.tag && !isRepay ? `<span class="w-1 h-1 rounded-full bg-stone-300 flex-shrink-0"></span><span class="truncate">${esc(displayTag(t.tag))}</span>` : ''}
+                            ${t.tag && !isRepay ? `<span class="w-1 h-2 rounded-full bg-stone-300 flex-shrink-0"></span><span class="truncate">${esc(displayTag(t.tag))}</span>` : ''}
                         </div>
                         ${(() => {
             const st = settleSummary(t); if (!st) return '';
@@ -3723,16 +3736,25 @@ function hexA(hex, a) {
     function pickYear(y) { viewYM = `${y}-${viewYM.slice(5, 7)}`; openMonthPicker(); }
     function setYM(ym) { viewYM = ym; closeSheet(); renderTransactions(); renderStats(); }
 
-    function chip(label, on, onclick) {
-        return `<button onclick="${onclick}" class="px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${on ? 'bg-pastel-accentLight text-pastel-accent border-pastel-accent' : 'bg-pastel-bg text-stone-600 border-pastel-border'}">${esc(label)}</button>`;
+    /* 使用者輸入的名稱一律走 data 屬性，不要插進 onclick 的字串裡。
+       先前用 JSON.stringify 產生的是「雙引號」，插進 onclick="…" 會讓屬性
+       在第一個引號就結束 —— 那顆鈕整個失效，而且畫面上看起來完全正常。
+       用單引號包則會被含有單引號的名稱（「媽媽's 卡」）打斷。 */
+    /* 篩選面板的分區：統一的小標題 ＋ 已選數量。
+       先前五個維度各自用不同的排版（有的橫捲、有的換行），
+       分類多的時候整個面板會拉得很長，找不到要調的是哪一區。 */
+    function fSec(title, count, inner, scroll) {
+        return `<div>
+            <div class="flex items-baseline gap-2 mb-2">
+                <label class="text-xs font-bold text-stone-500">${esc(title)}</label>
+                ${count ? `<span class="text-[10px] font-bold text-pastel-accent">已選 ${count}</span>` : ''}
+            </div>
+            <div class="${scroll ? 'flex gap-2 overflow-x-auto hide-scrollbar pb-1 pt-1' : 'flex flex-wrap gap-2'}">${inner}</div>
+        </div>`;
     }
-    /* 使用者自訂的分類／標籤名稱可能含有單引號（例如「媽媽's 卡」），
-       直接插進 onclick="toggleFilter('tags','…')" 會提早結束字串，那顆鈕按下去就報錯。
-       改成傳陣列索引，handler 裡完全不出現使用者輸入。 */
-    function toggleFilterAt(key, idx) {
-        const src = key === 'cats' ? STATE.categories : STATE.tags;
-        const item = src[idx]; if (!item) return;
-        toggleFilter(key, item.item_name);
+    function chip(label, on, key) {
+        return `<button data-k="${esc(key)}" data-v="${esc(label)}" onclick="toggleFilter(this.dataset.k, this.dataset.v)"
+            class="px-3 py-1.5 rounded-full text-xs font-bold border transition-all tap-chip ${on ? 'bg-pastel-accentLight text-pastel-accent border-pastel-accent' : 'bg-pastel-bg text-stone-600 border-pastel-border'}">${esc(label)}</button>`;
     }
     /* 篩選用的成員清單。家庭公帳本身也是一個「付款人」——
        「這個月公帳直接付了哪些」跟「二哥代墊了哪些」是同一個問題的兩面，
@@ -3755,9 +3777,7 @@ function hexA(hex, a) {
                 <h3 class="text-lg font-bold text-stone-800">進階篩選</h3>
                 <button onclick="resetFilters()" class="text-xs font-bold text-pastel-accent">重設</button></div>
             <div class="space-y-4">
-                ${currentMode === 'family' ? `
-                <div><label class="block text-xs font-bold text-stone-500 mb-2">付款成員（可複選，不選＝全部）</label>
-                    <div class="flex gap-2 overflow-x-auto hide-scrollbar pb-1 pt-1">
+                ${currentMode === 'family' ? fSec('付款成員', filters.members.length, `
                         ${filterMembers().map(m => {
             const on = filters.members.includes(m.member_id);
             const a = getLevelInfo(m.streak_days);
@@ -3767,16 +3787,11 @@ function hexA(hex, a) {
                                 style="border-color:${on ? a.ring : '#E7E0D5'}">
                                 <span class="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center text-sm">${avatarInner(m.avatar_emoji)}</span>
                                 <span class="text-xs font-bold text-stone-700 whitespace-nowrap">${esc(m.nickname)}</span></button>`;
-        }).join('')}
-                    </div></div>` : ''}
-                <div><label class="block text-xs font-bold text-stone-500 mb-2">收支類型</label>
-                    <div class="flex gap-2">${['all', 'expense', 'income'].map((v, i) => `<button onclick="setFilterType('${v}')" class="flex-1 py-2 rounded-tile text-sm font-bold ${filters.type === v ? 'bg-stone-800 text-white' : 'bg-pastel-bg text-stone-600 border border-pastel-border'}">${['全部', '支出', '收入'][i]}</button>`).join('')}</div></div>
-                <div><label class="block text-xs font-bold text-stone-500 mb-2">費用歸屬（可複選）</label>
-                    <div class="flex flex-wrap gap-2">${natures.map(n => chip(n, filters.natures.includes(n), `toggleFilter('natures','${n}')`)).join('')}</div></div>
-                <div><label class="block text-xs font-bold text-stone-500 mb-2">分類（可複選）</label>
-                    <div class="flex flex-wrap gap-2">${STATE.categories.map((c, i) => chip(c.item_name, filters.cats.includes(c.item_name), `toggleFilterAt('cats',${i})`)).join('')}</div></div>
-                <div><label class="block text-xs font-bold text-stone-500 mb-2">帳戶 / 標籤（可複選）</label>
-                    <div class="flex flex-wrap gap-2">${filterTagNames().map(n => chip(n, filters.tags.includes(n), `toggleFilter('tags', ${JSON.stringify(n)})`)).join('')}</div></div>
+        }).join('')}`, true) : ''}
+                ${fSec('收支類型', 0, ['all', 'expense', 'income'].map((v, i) => `<button onclick="setFilterType('${v}')" class="flex-1 py-2 rounded-tile text-sm font-bold ${filters.type === v ? 'bg-stone-800 text-white' : 'bg-pastel-bg text-stone-600 border border-pastel-border'}">${['全部', '支出', '收入'][i]}</button>`).join(''))}
+                ${fSec('費用歸屬', filters.natures.length, natures.map(n => chip(n, filters.natures.includes(n), 'natures')).join(''))}
+                ${fSec('分類', filters.cats.length, STATE.categories.map(c => chip(c.item_name, filters.cats.includes(c.item_name), 'cats')).join(''), true)}
+                ${fSec('帳戶 / 標籤', filters.tags.length, filterTagNames().map(n => chip(n, filters.tags.includes(n), 'tags')).join(''), true)}
                 <div><label class="block text-xs font-bold text-stone-500 mb-2">金額區間</label>
                     <div class="flex items-center gap-2">
                         <input id="fMin" type="number" inputmode="numeric" value="${esc(filters.min)}" placeholder="最低" class="field flex-1 w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
@@ -4024,6 +4039,18 @@ function hexA(hex, a) {
 
     function kp(k) {
         buzz(6);
+        // 借用模式：只收數字與小數點，運算子在分攤這種情境沒有意義
+        if (kpBorrow) {
+            let b = kpBorrow.buf || '';
+            if (k === 'C') b = '';
+            else if (k === 'del') b = b.slice(0, -1);
+            else if (k === '.') { if (b.indexOf('.') < 0) b = (b || '0') + '.'; }
+            else if (/^[0-9]$/.test(k)) b = (b === '0' ? '' : b) + k;
+            kpBorrow.buf = b;
+            paintAmount();
+            kpBorrow.onInput(b);
+            return;
+        }
         let e = addState.expr;
         /* 複製上一筆之後，金額視為「已選取」：按下第一個數字就整個換掉，
            而不是接在後面變成 180500。按運算子或刪除則保留原值繼續編輯。 */
@@ -4057,6 +4084,11 @@ function hexA(hex, a) {
     function paintAmount() {
         const d = document.getElementById('kpAmt'), h = document.getElementById('kpHint');
         if (!d) return;
+        if (kpBorrow) {
+            d.innerHTML = `<span class="num-sym text-2xl">${esc(kpBorrow.unit)}</span>${esc(kpBorrow.buf || '0')}`;
+            if (h) h.innerText = '';
+            return;
+        }
         const v = evalExpr(addState.expr);
         d.innerHTML = hasOp(addState.expr)
             ? `<span class="text-2xl text-pastel-muted">${esc(addState.expr)}</span>`
@@ -4381,6 +4413,27 @@ function hexA(hex, a) {
             ids.forEach(i => addState.splits[i] = Math.round(total * (Number(addState.pcts[i]) || 0) / 100));
         }
     }
+    /* 分攤面板兩態：平常只佔一行摘要，要調整才展開。
+       80% 的情況（整筆代墊、固定均分）看一眼摘要就夠了，
+       把完整編輯器一直攤在表單上，等於為了 20% 的情境每次都付出版面。 */
+    function splitSummaryLine() {
+        const ids = Object.keys(addState.splits || {});
+        const others = ids.filter(i => i !== ME_ID());
+        const md = splitMode();
+        const modeName = md === 'even' ? '平均' : md === 'pct' ? '比例' : '手動';
+        if (!ids.length) return '尚未設定分攤';
+        const parts = ids.slice(0, 3).map(i => {
+            const m = (STATE.members || []).find(x => x.member_id === i);
+            const name = i === ME_ID() ? '我' : (m?.nickname || '');
+            return `${name} ${fmt(addState.splits[i] || 0)}`;
+        });
+        return `${modeName}・${parts.join('、')}${ids.length > 3 ? ` 等 ${ids.length} 人` : ''}`;
+    }
+    function toggleSplitOpen() {
+        buzz();
+        addState.splitOpen = !addState.splitOpen;
+        renderSplitBox(document.getElementById('inpNature')?.value);
+    }
     function toggleSplitConfig() {
         const v = document.getElementById('inpNature')?.value, b = document.getElementById('splitDetailBox');
         if (!b) return;
@@ -4420,11 +4473,32 @@ function hexA(hex, a) {
         addState.splits = addState.splits || {};
         addState.pcts = addState.pcts || {};
         const md = splitMode();
+
+        if (!addState.splitOpen) {
+            const total = splitTotal(), used = allocated();
+            const bad = used > total + 0.01 || (md === 'pct' && pctSum() > 100.01);
+            b.innerHTML = `
+                <button type="button" onclick="toggleSplitOpen()"
+                    class="w-full flex items-center gap-2 p-3 rounded-tile bg-white border ${bad ? 'border-pastel-red' : 'border-pastel-accent/25'} tactile text-left">
+                    <i class="fa-solid fa-users-between-lines ${bad ? 'text-pastel-red' : 'text-pastel-accent'} text-sm flex-shrink-0"></i>
+                    <span class="min-w-0 flex-1">
+                        <span class="block text-[11px] text-pastel-muted">${isPool ? '分攤給誰' : '與誰拆帳'}</span>
+                        <span class="block text-[13px] font-bold ${bad ? 'text-pastel-red' : 'text-stone-800'} truncate">${esc(splitSummaryLine())}</span>
+                    </span>
+                    <span class="text-[11px] font-bold text-pastel-accent flex-shrink-0">調整<i class="fa-solid fa-chevron-down ml-1 text-[9px]"></i></span>
+                </button>`;
+            lockSaveIfOver();
+            return;
+        }
         const MODES = [['even', '平均分攤', 'fa-users'], ['pct', '比例分攤', 'fa-percent'], ['amt', '手動輸入', 'fa-dollar-sign']];
 
         b.innerHTML = `
             <div class="p-3 bg-white rounded-tile border border-pastel-accent/25 space-y-3">
-                <div class="font-bold text-stone-700 text-xs">${isPool ? '分攤給誰？' : '與誰拆帳？'}</div>
+                <div class="flex justify-between items-center">
+                    <div class="font-bold text-stone-700 text-xs">${isPool ? '分攤給誰？' : '與誰拆帳？'}</div>
+                    <button type="button" onclick="toggleSplitOpen()" class="text-[11px] font-bold text-pastel-accent tactile">
+                        完成分攤<i class="fa-solid fa-chevron-up ml-1 text-[9px]"></i></button>
+                </div>
                 <div class="flex gap-3 overflow-x-auto hide-scrollbar pb-1 pt-1">
                     ${splitParticipants().map(m => {
             const on = addState.splits[m.member_id] !== undefined;
@@ -4437,10 +4511,9 @@ function hexA(hex, a) {
                             <span class="text-[10px] truncate w-full text-center ${on ? 'text-stone-700 font-bold' : 'text-pastel-muted'}">${esc(m.nickname)}</span>
                             ${!on ? `<span class="text-[10px] text-pastel-muted">—</span>`
                     : md === 'even' ? `<span class="text-[11px] font-bold text-stone-800 font-rounded">${fmt(addState.splits[m.member_id] || 0)}</span>`
-                        : `<input type="number" inputmode="decimal" value="${esc(val)}"
-                                    oninput="${md === 'pct' ? `setSplitPct('${esc(m.member_id)}', this.value)` : `setSplitAmount('${esc(m.member_id)}', this.value)`}"
-                                    class="w-full py-1 px-1 rounded-lg border border-pastel-border bg-pastel-bg text-[11px] text-center font-rounded text-stone-800"
-                                    placeholder="${md === 'pct' ? '%' : '$'}">`}
+                        : `<button type="button" data-m="${esc(m.member_id)}" onclick="openSplitKeypad(this.dataset.m)"
+                                    class="w-full py-1 px-1 rounded-lg border ${splitKpTarget === m.member_id ? 'border-pastel-accent bg-pastel-accentLight' : 'border-pastel-border bg-pastel-bg'} text-[11px] text-center font-rounded text-stone-800 tactile">
+                                    ${val === '' ? `<span class="text-pastel-muted">${md === 'pct' ? '%' : '$'}</span>` : esc(String(val)) + (md === 'pct' ? '%' : '')}</button>`}
                         </div>`;
         }).join('')}
                 </div>
@@ -4449,7 +4522,7 @@ function hexA(hex, a) {
                         class="flex-1 py-1.5 rounded-full text-[11px] font-bold transition-all ${md === k ? 'bg-white text-stone-800 shadow-sm' : 'text-pastel-muted'}">
                         <i class="fa-solid ${ic} mr-1 text-[9px]"></i>${label}</button>`).join('')}
                 </div>
-                <div id="splitRatioBar" class="flex h-2 rounded-full overflow-hidden bg-stone-100"></div>
+                <div id="splitRatioBar" class="flex h-3 rounded-full overflow-hidden bg-stone-100"></div>
                 <div id="splitSummary" class="text-[11px] pt-2 border-t border-pastel-border"></div>
             </div>`;
         paintSplitSummary();
@@ -4518,6 +4591,33 @@ function hexA(hex, a) {
         recalcSplits();
         renderSplitBox(document.getElementById('inpNature')?.value);
     }
+    /* 逐人金額／比例一律用自製鍵盤，不叫出 iOS 系統鍵盤。
+       系統鍵盤會把整個網頁往上推、導覽列跟著跳，而且跟記帳主流程的
+       輸入手感不一致 —— 同一個 App 裡不該有兩套打字方式。 */
+    let splitKpTarget = null;
+    function openSplitKeypad(memberId) {
+        buzz();
+        splitKpTarget = memberId;
+        const md = splitMode();
+        const m = (STATE.members || []).find(x => x.member_id === memberId);
+        const who = memberId === ME_ID() ? '我自己' : (m?.nickname || '');
+        renderSplitBox(document.getElementById('inpNature')?.value);
+        openKeypadDrawer({
+            title: `${who}的${md === 'pct' ? '比例' : '分攤金額'}`,
+            unit: md === 'pct' ? '%' : '$',
+            value: String((md === 'pct' ? (addState.pcts[memberId] ?? '') : (addState.splits[memberId] ?? '')) || ''),
+            onInput: v => {
+                const n = Number(v) || 0;
+                if (md === 'pct') { addState.pcts[memberId] = n; recalcSplits(); rememberRatio(); }
+                else addState.splits[memberId] = n;
+                paintSplitSummary();
+            },
+            onDone: () => {
+                splitKpTarget = null;
+                renderSplitBox(document.getElementById('inpNature')?.value);
+            }
+        });
+    }
     function setSplitAmount(id, v) { addState.splits[id] = Number(v) || 0; paintSplitSummary(); }
     function setSplitPct(id, v) {
         addState.pcts = addState.pcts || {};
@@ -4547,7 +4647,7 @@ function hexA(hex, a) {
                 nature: PREF.get('nature', '純個人'),
                 from: PREF.get('tag', '') || (STATE.tags[0]?.item_name || ''),
                 to: STATE.tags[1]?.item_name || '', splits: {}, pcts: {},
-                splitMode: PREF.get('splitMode', 'even')
+                splitMode: PREF.get('splitMode', 'even'), splitOpen: false
             };
             editingTxnId = null; pendingReceipt = null;
         }
@@ -4696,14 +4796,19 @@ function hexA(hex, a) {
     }
 
     /* 鍵盤抽屜：金額與分類同框顯示，輸入時永遠看得到自己打了多少 */
-    function openKeypadDrawer() {
+    /* 鍵盤可以被「借用」：傳入 opts 時它不寫 addState.expr，
+       而是把數字回拋給呼叫者。分攤的逐人金額就是靠這個共用同一組鍵盤，
+       不必再做第二套輸入介面，也不會叫出系統鍵盤。 */
+    let kpBorrow = null;
+    function openKeypadDrawer(opts) {
+        kpBorrow = (opts && typeof opts.onInput === 'function') ? { ...opts, buf: String(opts.value || '') } : null;
         const isTr = addState.mode === 'transfer', isExp = addState.mode === 'expense';
         const col = isTr ? '#3090F8' : isExp ? '#F05838' : '#40B868';
         const key = (k, label, cls) => `<button onclick="kp('${k}')" class="${cls || 'bg-white text-stone-800'} rounded-tile py-4 text-xl font-bold shadow-sm border border-pastel-border/70 tactile">${label}</button>`;
         openSheet(`
             <div class="rounded-card p-5 mb-4 text-white" style="background:linear-gradient(135deg,${isTr ? '#3090F8,#2B7BD6' : isExp ? '#F8A048,#F0863A' : '#40B868,#35A25A'})">
                 <div class="flex justify-between items-center mb-1">
-                    <span class="text-[11px] font-bold opacity-85">${isTr ? '轉帳' : isExp ? '支出' : '收入'}${addState.cat ? ' · ' + esc(addState.cat) : ''}</span>
+                    <span class="text-[11px] font-bold opacity-85">${kpBorrow ? esc(kpBorrow.title) : (isTr ? '轉帳' : isExp ? '支出' : '收入') + (addState.cat ? ' · ' + esc(addState.cat) : '')}</span>
                     ${addState.cat ? `<button onclick="closeSheet();setTimeout(openCatDrawer,320)" class="text-[10px] font-bold bg-white/25 px-2 py-1 rounded-lg">換分類</button>` : ''}</div>
                 <div id="kpAmt" class="text-5xl font-bold font-rounded tracking-tight leading-none break-all"></div>
                 <div id="kpHint" class="text-xs opacity-85 mt-1.5 h-4"></div>
@@ -4722,6 +4827,14 @@ function hexA(hex, a) {
     }
 
     function confirmAmount() {
+        // 借用模式：把值交回呼叫者就好，不要動記帳主金額
+        if (kpBorrow) {
+            const done = kpBorrow.onDone;
+            kpBorrow = null;
+            closeSheet(); buzz();
+            if (done) done();
+            return;
+        }
         if (evalExpr(addState.expr) <= 0) { buzz(30); return toast('請輸入金額', true); }
         addState.expr = String(evalExpr(addState.expr));
         closeSheet(); buzz();
@@ -5001,7 +5114,7 @@ function hexA(hex, a) {
                 ${top.length ? top.map((c, i) => `
                     <div class="space-y-1.5">
                         <div class="flex justify-between text-xs"><span class="text-stone-700 truncate"><i class="fa-solid ${esc(catIcon(c[0]))} mr-1.5" style="color:${catColor(c[0])}"></i>${esc(c[0])}</span><span class="font-bold font-rounded flex-shrink-0 ml-2">${fmt(c[1])}</span></div>
-                        <div class="w-full bg-pastel-bg rounded-full h-2 overflow-hidden"><div class="h-2 rounded-full transition-all duration-700" style="width:${(c[1] / maxC * 100).toFixed(0)}%;background:${catColor(c[0])}"></div></div>
+                        <div class="w-full bg-pastel-bg rounded-full h-2 overflow-hidden"><div class="h-3 rounded-full transition-all duration-700" style="width:${(c[1] / maxC * 100).toFixed(0)}%;background:${catColor(c[0])}"></div></div>
                     </div>`).join('') : `<div class="flex flex-col items-center py-4 gap-2"><img src="./av14.png" alt="" class="w-12 h-12 opacity-70"><span class="text-xs text-pastel-muted">本月還沒有支出</span>
                         <button onclick="switchTab('add')" class="mt-1 px-4 py-2 rounded-full bg-pastel-accent text-white text-xs font-bold tactile">記第一筆</button></div>`}</div>
 
@@ -5040,7 +5153,7 @@ function hexA(hex, a) {
         const list = achievementList(), got = list.filter(a => a.done), t = currentTitle(list);
         const m = document.getElementById('profileModal');
         document.getElementById('profileModalContent').innerHTML = `
-            <div class="w-12 h-1.5 bg-stone-200 rounded-full mx-auto mb-5"></div>
+            <div class="w-12 h-2.5 bg-stone-200 rounded-full mx-auto mb-5"></div>
             <div class="flex justify-between items-center mb-5">
                 <h2 class="text-lg font-bold text-stone-800">個人角色卡</h2>
                 <button onclick="closeProfileModal()" aria-label="關閉" class="tap44 w-8 h-8 bg-pastel-bg rounded-full flex items-center justify-center text-stone-500 shadow-sm"><i class="fa-solid fa-xmark"></i></button></div>
@@ -5061,7 +5174,7 @@ function hexA(hex, a) {
                     <span class="text-sm font-bold text-stone-700"><i class="fa-solid fa-fire mr-1.5 text-pastel-accent"></i>連續記帳天數${bestStreak() > (Number(STATE.me?.streak_days) || 0) ? `<span class="ml-2 text-[10px] font-normal text-pastel-muted">歷史最高 ${bestStreak()} 天</span>` : ''}</span>
                     <span class="text-lg font-bold text-pastel-accent">${i.days} 天</span></div>
                 <div class="w-full bg-white rounded-full h-2 mb-2 overflow-hidden border border-pastel-border">
-                    <div class="h-2 rounded-full transition-all duration-500" style="width:${i.progress}%;background:${i.ring}"></div></div>
+                    <div class="h-3 rounded-full transition-all duration-500" style="width:${i.progress}%;background:${i.ring}"></div></div>
                 <p class="text-[11px] text-pastel-muted text-center">${i.tier === 5 ? '您已達到最高殿堂光環！' : `距離解鎖下一階段光環還差 ${i.next - i.days} 天`}</p>
             </div>
 
@@ -5250,7 +5363,7 @@ function hexA(hex, a) {
                     <div class="text-[11px] text-pastel-muted truncate">${esc(g.word)}</div></div>
             </div>
             <div class="flex gap-1.5 mb-2">
-                ${GROWTH.map(x => `<div class="flex-1 h-1.5 rounded-full" style="background:${x.id <= g.id ? g.color : 'rgba(0,0,0,.08)'}"></div>`).join('')}
+                ${GROWTH.map(x => `<div class="flex-1 h-2.5 rounded-full" style="background:${x.id <= g.id ? g.color : 'rgba(0,0,0,.08)'}"></div>`).join('')}
             </div>
             <div class="flex justify-between text-[10px] text-pastel-muted">
                 <span>${GROWTH.map(x => x.id === g.id ? `<b style="color:${g.color}">${x.name}</b>` : '').join('')}</span>
