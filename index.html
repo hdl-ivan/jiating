@@ -626,7 +626,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.14.0',
+        VERSION: 'v6.15.1',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -690,7 +690,19 @@
         c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const fmt = n => '$' + Math.round(Number(n) || 0).toLocaleString('en-US');
     const pad2 = n => String(n).padStart(2, '0');
-    const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; };
+    /* 「今天」一律用台北時間，不用裝置時區。
+       後端的 today() 寫死 Asia/Taipei，前端若用裝置時區，
+       出國記帳時兩邊會差一天 —— 跨月的那幾天更會讓整筆掉到上個月的預算裡。 */
+    const APP_TZ = 'Asia/Taipei';
+    const todayISO = () => {
+        try {
+            return new Intl.DateTimeFormat('en-CA', {
+                timeZone: APP_TZ, year: 'numeric', month: '2-digit', day: '2-digit'
+            }).format(new Date());
+        } catch (e) {
+            const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+        }
+    };
     const currentYM = () => todayISO().slice(0, 7);
     const daysInYM = ym => new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0).getDate();
     const uid = () => 'tmp_' + Math.random().toString(36).slice(2, 10);
@@ -3419,6 +3431,7 @@ function hexA(hex, a) {
             ${toolbarRow()}
             ${summaryStrip()}
             <div id="txnList"></div>`;
+        resetTxnPaging();
         renderTxnList();
     }
 
@@ -3428,9 +3441,22 @@ function hexA(hex, a) {
        Tailwind 的 space-y 產生 `.space-y-0 > :not([hidden]) ~ :not([hidden])`，
        權重（0,2,0）高於 .mt-6（0,1,0），會把日期標題的上方留白全部歸零，
        只有第一個子元素倖存——這正是「只有第一組日期間距正常」的原因。 */
+    /* 一次只畫 150 筆，捲到底再接下一批。
+       單月檢視通常幾十筆不受影響；「全期間」在紀錄累積之後可能上千筆，
+       全部一次畫出來會連同每一列的滑動手勢一起綁上千組，捲動就開始掉幀。 */
+    const TXN_PAGE = 150;
+    let _txnShown = TXN_PAGE;
+    function resetTxnPaging() { _txnShown = TXN_PAGE; }
+    function showMoreTxns() {
+        _txnShown += TXN_PAGE;
+        renderTxnList();
+        buzz(6);
+    }
     function renderTxnList() {
         const box = document.getElementById('txnList'); if (!box) return;
-        const rows = filteredTxns();
+        const all = filteredTxns();
+        const rows = all.slice(0, _txnShown);
+        const more = all.length - rows.length;
         const grouped = rows.reduce((a, t) => { (a[t.date] ||= []).push(t); return a; }, {});
         // 同一天收進同一張大卡，列與列之間只用淡分隔線（iOS 群組清單的作法）
         let list = Object.keys(grouped).sort().reverse().map(date => `
@@ -3441,7 +3467,9 @@ function hexA(hex, a) {
         if (!rows.length) list = activeFilterCount() || filters.q
             ? emptyState('av37', '找不到符合的紀錄', '換個關鍵字或把篩選條件放寬一點', { label: '清除篩選', fn: 'clearAllFilters()' })
             : emptyState('av46', `${viewYM.slice(5, 7)} 月還是一片空白`, '記下第一筆，這個月的故事就開始了', { label: '記一筆', fn: "switchTab('add')" });
-        box.innerHTML = `${swipeHint()}${list}`;
+        box.innerHTML = `${swipeHint()}${list}` + (more > 0 ? `
+            <button onclick="showMoreTxns()" class="w-full mt-4 py-3 rounded-tile bg-white border border-pastel-border text-xs font-bold text-stone-600 tactile">
+                還有 ${more} 筆 ・ 載入更多</button>` : '');
         bindSwipe();
     }
 
@@ -4982,8 +5010,14 @@ function hexA(hex, a) {
     }
 
     async function saveTransaction() {
-        const amount = evalExpr(addState.expr);
-        if (!amount || amount <= 0) { buzz(30); openKeypadDrawer(); return toast('請先輸入金額', true); }
+        /* 金額一律取整再存。
+           顯示端的 fmt() 本來就會四捨五入，但存進去的若是 33.33333333333336，
+           明細加起來就會跟總額差幾分錢 —— 那種「幽靈帳目」最難查。
+           除法（100÷3）是唯一會產生小數的路徑，在這裡收斂掉。 */
+        const raw = evalExpr(addState.expr);
+        const amount = Math.round(Number(raw) || 0);
+        if (!Number.isFinite(amount) || amount <= 0) { buzz(30); openKeypadDrawer(); return toast('請先輸入金額', true); }
+        if (amount > 99999999) { buzz(30); return toast('金額超出可記錄範圍', true); }
         const isTr = addState.mode === 'transfer';
         if (!isTr && !addState.cat) { buzz(30); openCatDrawer(); return toast('請先選擇分類', true); }
         if (isTr) {
@@ -6107,9 +6141,18 @@ function hexA(hex, a) {
         const rows = filteredTxns();
         if (!rows.length) return toast('目前沒有可匯出的紀錄', true);
         const head = ['日期', '類型', '分類', '帳戶標籤', '金額', '備註', '費用歸屬', '記帳者'];
-        const cell = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+        /* CSV 公式注入：以 = + - @ 或 tab/換行開頭的字串，Excel 與 Google Sheets
+           會當成公式執行。備註是使用者自己打的，只要有人在家庭帳本裡輸入
+           `=cmd|'/C ...'`，任何開啟這份匯出檔的人都會中招。
+           前面加一個單引號就會被強制當成文字。 */
+        const cell = v => {
+            let x = String(v ?? '').replace(/"/g, '""');
+            if (/^[=+\-@\t\r]/.test(x)) x = "'" + x;
+            return `"${x}"`;
+        };
         const csv = '\uFEFF' + [head.map(cell).join(',')]     // BOM 讓 Excel 正確辨識中文
-            .concat(rows.map(t => [t.date, t.entry_type, t.category, t.tag, t.amount, t.note, t.nature, nameOf(t.member_id)].map(cell).join(',')))
+            // 帳戶欄要走遮罩：家庭模式匯出時不該把別人的卡片真名寫進檔案裡
+            .concat(rows.map(t => [t.date, t.entry_type, t.category, displayTag(t.tag), t.amount, t.note, t.nature, nameOf(t.member_id)].map(cell).join(',')))
             .join('\r\n');
         const name = `家庭記帳_${filters.allTime ? '全期間' : viewYM}_${currentMode === 'family' ? '家庭' : STATE.me?.nickname}.csv`;
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
