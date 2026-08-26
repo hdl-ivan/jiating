@@ -169,6 +169,8 @@
         /* 用虛擬元素把可按範圍撐到 44px，完全不佔版面。
            先前用 padding + 負 margin，負 margin 會把相鄰元件互相拉近 ——
            明細頁的搜尋與篩選鈕就是這樣疊在一起、還擠進了日期膠囊。 */
+        /* 沒存進去的那一列要看得出來，但不要蓋掉內容 —— 使用者需要看到自己打了什麼才決定重送還是改 */
+        .failed-row { background:rgba(240,88,56,.05); }
         .tap44 { position:relative; }
         .tap44::after {
             content:''; position:absolute; top:50%; left:50%;
@@ -626,7 +628,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.15.1',
+        VERSION: 'v6.16.0',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -776,7 +778,9 @@
     const api = {
         async call(action, payload = {}) {
             if (CONFIG.DEMO) return DEMO_API(action, payload);
-            const tries = TRIES[action] || (READ_ONLY.includes(action) ? 3 : 1);
+            // 鎖忙碌值得多試幾次；寫入類原本只試一次是為了避免重複寫，
+            // 現在有 client_id 冪等保護，重試不會製造重複帳。
+            const tries = TRIES[action] || (READ_ONLY.includes(action) ? 3 : 2);
             let lastErr;
             for (let n = 0; n < tries; n++) {
                 if (n) await new Promise(z => setTimeout(z, 250 * n));   // 250ms、500ms
@@ -790,14 +794,22 @@
                     });
                     if (!res.ok) throw new Error(`連線失敗 (HTTP ${res.status})`);
                     const j = await res.json();
-                    if (!j.ok) throw new Error(j.error || '後端錯誤');
+                    if (!j.ok) {
+                        // 把後端的錯誤碼掛在例外上，呼叫端才分得出「可重試」與「白試」
+                        const err = new Error(j.error || '後端錯誤');
+                        err.code = j.code || 'SERVER_ERROR';
+                        throw err;
+                    }
                     // 任何一次回應都可能帶版本號，順手記下來做握手
                     if (j.data && j.data.apiVersion) BACKEND_VERSION = j.data.apiVersion;
                     return j.data;
                 } catch (e) {
                     lastErr = e;
-                    // 後端明確回報的錯誤不需要重試，直接拋出
+                    /* 鎖忙碌代表「現在有人在寫，等一下就好」——這一種要自動重試。
+                       其餘後端明確回報的錯誤（代碼錯、金額錯）重試一百次也一樣，直接拋出。 */
+                    if (e.code === 'LOCK_TIMEOUT') { lastErr = e; continue; }
                     if (!/HTTP|Failed to fetch|NetworkError|Load failed/i.test(e.message)) throw e;
+                    e.code = e.code || 'OFFLINE';
                 }
             }
             throw lastErr;
@@ -3142,18 +3154,60 @@ function hexA(hex, a) {
     /* ==========================================================
        樂觀寫入
        ========================================================== */
+    /* ---------- 離線佇列 ----------
+       收訊不好時記帳不該直接失敗。整包 payload 存進本機，連線恢復時自動補送。
+       安全前提是每一筆都帶著 client_id：補送時後端認得出是同一筆，
+       不會因為「其實第一次就寫成功了」而多出一筆。 */
+    const QKEY = 'offline_queue';
+    const queueRead = () => { try { return JSON.parse(localStorage.getItem(QKEY) || '[]'); } catch (e) { return []; } };
+    const queueWrite = q => { try { localStorage.setItem(QKEY, JSON.stringify(q.slice(-50))); } catch (e) { } };
+    function queuePush(job) { const q = queueRead(); q.push(job); queueWrite(q); paintQueueBadge(); }
+    function paintQueueBadge() {
+        const n = queueRead().length;
+        const el = document.getElementById('queueBadge');
+        if (!el) return;
+        el.classList.toggle('js-hide', n === 0);
+        if (n) el.innerHTML = `<i class="fa-solid fa-cloud-arrow-up mr-1.5"></i>有 ${n} 筆待同步 ・ <b>點此重送</b>`;
+    }
+    let _syncing = false;
+    async function syncOfflineQueue(silent) {
+        if (_syncing) return;
+        const q = queueRead();
+        if (!q.length) return;
+        _syncing = true;
+        if (!silent) toast(`正在同步 ${q.length} 筆…`);
+        const left = [];
+        let ok = 0;
+        for (const job of q) {
+            try { await api.call('addTransaction', job.payload); ok++; }
+            catch (e) {
+                // 只有「連不上」才留在佇列裡；資料本身有問題的重送幾次都一樣
+                if (e.code === 'OFFLINE' || /Failed to fetch|NetworkError|Load failed|HTTP/i.test(e.message)) left.push(job);
+                else ok++;   // 後端明確拒絕：從佇列移除，避免永遠卡住後面的
+            }
+        }
+        queueWrite(left);
+        paintQueueBadge();
+        _syncing = false;
+        if (ok) { await refreshData(); toast(left.length ? `已同步 ${ok} 筆，還有 ${left.length} 筆待重送` : `已同步 ${ok} 筆離線紀錄`); }
+    }
+    /* ---------- 樂觀寫入 ----------
+       失敗時「不要把那一列刪掉」。表單早在送出前就清空了，
+       刪掉等於使用者剛剛打的東西整個消失 —— 那才是真正的丟單。
+       改成把那一列留在畫面上標記為未同步，點一下就重送。 */
     async function optimisticAdd(txn, receipt, okMsg) {
+        const payload = { txn: { ...txn, client_id: txn.client_id || ('c_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)) }, receipt };
         const local = {
             txn_id: uid(), created_at: localStamp(), is_rollup: false, _new: true,
             status: '有效', parent_txn_id: '', recurring_rule_id: '', receipt_file_id: '',
             member_id: STATE.me.member_id, payer_id: STATE.me.member_id, related_id: '',
-            _pending: true, ...txn
+            _pending: true, ...payload.txn
         };
         STATE.transactions.push(local);
         renderDataViews();
         toast(okMsg || '已記錄');
         try {
-            const r = await api.call('addTransaction', { txn, receipt });
+            const r = await api.call('addTransaction', payload);
             const i = STATE.transactions.findIndex(t => t.txn_id === local.txn_id);
             if (i >= 0) STATE.transactions[i] = { ...r.txn, _new: true };
             renderDataViews();
@@ -3163,10 +3217,48 @@ function hexA(hex, a) {
                 if (x) { delete x._new; renderTransactions(); }
             }, 3600);
         } catch (e) {
-            STATE.transactions = STATE.transactions.filter(t => t.txn_id !== local.txn_id);
-            renderDataViews(); toast('儲存失敗：' + e.message, true);
+            const i = STATE.transactions.findIndex(t => t.txn_id === local.txn_id);
+            const offline = e.code === 'OFFLINE' || /Failed to fetch|NetworkError|Load failed/i.test(e.message);
+            if (offline) {
+                // 連不上：進佇列，那一列留著標成待同步，連線恢復自動補送
+                queuePush({ payload, at: Date.now() });
+                if (i >= 0) { STATE.transactions[i]._queued = true; delete STATE.transactions[i]._pending; }
+                renderDataViews();
+                toast('目前連不上，已暫存在本機，連線後自動補送');
+            } else if (i >= 0) {
+                // 後端拒絕：留在畫面上並標成失敗，點一下可以重送或刪掉
+                STATE.transactions[i]._failed = e.message || '寫入失敗';
+                STATE.transactions[i]._payload = payload;
+                delete STATE.transactions[i]._pending;
+                renderDataViews();
+                toast('儲存失敗：' + e.message, true);
+            }
         }
     }
+    /** 重送一筆失敗的紀錄：帶著同一個 client_id，不會變成兩筆 */
+    async function retryTxn(localId) {
+        const i = STATE.transactions.findIndex(t => t.txn_id === localId);
+        if (i < 0) return;
+        const row = STATE.transactions[i];
+        const payload = row._payload || { txn: { ...row }, receipt: null };
+        buzz();
+        delete row._failed; row._pending = true;
+        renderDataViews();
+        try {
+            const r = await api.call('addTransaction', payload);
+            STATE.transactions[i] = { ...r.txn, _new: true };
+            renderDataViews(); toast('已重新送出');
+        } catch (e) {
+            row._failed = e.message; delete row._pending;
+            renderDataViews(); toast('還是失敗：' + e.message, true);
+        }
+    }
+    function discardTxn(localId) {
+        if (!confirm('要捨棄這筆沒有存成功的紀錄嗎？')) return;
+        STATE.transactions = STATE.transactions.filter(t => t.txn_id !== localId);
+        renderDataViews(); buzz();
+    }
+
 
     /* ==========================================================
        明細
@@ -3467,10 +3559,11 @@ function hexA(hex, a) {
         if (!rows.length) list = activeFilterCount() || filters.q
             ? emptyState('av37', '找不到符合的紀錄', '換個關鍵字或把篩選條件放寬一點', { label: '清除篩選', fn: 'clearAllFilters()' })
             : emptyState('av46', `${viewYM.slice(5, 7)} 月還是一片空白`, '記下第一筆，這個月的故事就開始了', { label: '記一筆', fn: "switchTab('add')" });
-        box.innerHTML = `${swipeHint()}${list}` + (more > 0 ? `
+        box.innerHTML = `<button id="queueBadge" onclick="syncOfflineQueue()" class="js-hide w-full mb-3 py-2.5 rounded-tile bg-pastel-accentLight text-pastel-accent text-[11px] font-bold tactile"></button>${swipeHint()}${list}` + (more > 0 ? `
             <button onclick="showMoreTxns()" class="w-full mt-4 py-3 rounded-tile bg-white border border-pastel-border text-xs font-bold text-stone-600 tactile">
                 還有 ${more} 筆 ・ 載入更多</button>` : '');
         bindSwipe();
+        paintQueueBadge();
     }
 
     /* ---------- 明細頁頂部工具列 + 摘要卡 ----------
@@ -3586,7 +3679,13 @@ function hexA(hex, a) {
         const repayLabel = isRepay
             ? `還款 ・ ${esc(nameOf(t.payer_id))} → ${esc(nameOf(t.related_id))}` : '';
         return `
-        <div class="swipe-wrap relative w-full ${isLast ? '' : 'border-b border-pastel-border/50'} ${t._pending ? 'pending' : ''} ${t._new ? 'is-new' : ''}" data-id="${esc(t.txn_id)}">
+        ${t._failed ? `<div class="px-4 pt-3 pb-2 bg-pastel-redLight">
+            <div class="text-[11px] font-bold text-pastel-red mb-2"><i class="fa-solid fa-triangle-exclamation mr-1"></i>沒有存進去：${esc(t._failed)}</div>
+            <div class="flex gap-2">
+                <button data-i="${esc(t.txn_id)}" onclick="retryTxn(this.dataset.i)" class="flex-1 py-2 rounded-lg bg-pastel-red text-white text-[11px] font-bold tactile">重新送出</button>
+                <button data-i="${esc(t.txn_id)}" onclick="discardTxn(this.dataset.i)" class="px-3 py-2 rounded-lg bg-white border border-pastel-red/30 text-pastel-red text-[11px] font-bold tactile">捨棄</button>
+            </div></div>` : ''}
+        <div class="swipe-wrap relative w-full ${isLast ? '' : 'border-b border-pastel-border/50'} ${t._pending ? 'pending' : ''} ${t._failed ? 'failed-row' : ''} ${t._new ? 'is-new' : ''}" data-id="${esc(t.txn_id)}">
             <div class="swipe-bg absolute inset-0 flex items-center justify-between pl-3 pr-6 text-white font-bold text-sm opacity-0 bg-pastel-blue">
                 <span class="flex items-center">
                     <span class="sw-edit flex flex-col items-center justify-center gap-0.5 w-[68px] py-1"><i class="fa-solid fa-pen"></i><span class="text-[10px]">編輯</span></span>
@@ -3602,6 +3701,7 @@ function hexA(hex, a) {
                         <div class="font-bold text-stone-800 text-[13px] truncate">${esc(t.note || t.category || '（無備註）')}${t.recurring_rule_id ? ' <i class="fa-solid fa-rotate text-[10px] text-pastel-muted"></i>' : ''}</div>
                         <div class="text-[11px] text-pastel-muted flex items-center gap-1.5 truncate mt-0.5">
                             <span class="truncate">${repayLabel || esc(t.category || t.entry_type)}</span>
+                            ${t._queued ? `<span class="w-1 h-2 rounded-full bg-stone-300 flex-shrink-0"></span><span class="text-pastel-accent font-bold flex-shrink-0"><i class="fa-solid fa-cloud-arrow-up mr-1"></i>待同步</span>` : ''}
                             ${t.tag && !isRepay ? `<span class="w-1 h-2 rounded-full bg-stone-300 flex-shrink-0"></span><span class="truncate">${esc(displayTag(t.tag))}</span>` : ''}
                         </div>
                         ${(() => {
@@ -6404,7 +6504,13 @@ ${L.standalone ? 'PWA' : 'WEB(Safari)'}  dpr=${window.devicePixelRatio}  statusB
             setTimeout(() => { if (!isField(document.activeElement)) nav?.classList.remove('kb-hide'); }, 120);
         });
     }
-    window.addEventListener('DOMContentLoaded', () => { bindLayout(); bindKeyboardNav(); bootstrap(); });
+    window.addEventListener('DOMContentLoaded', () => { bindLayout(); bindKeyboardNav(); bindOfflineSync(); bootstrap(); });
+    // 上次離線時暫存的紀錄，這次一開 App 就補送
+    /* 連線恢復就自動補送；開 App 時也補一次（上次離線暫存的） */
+    function bindOfflineSync() {
+        window.addEventListener('online', () => syncOfflineQueue(true));
+        setTimeout(() => syncOfflineQueue(true), 2500);
+    }
     </script>
 
 </body>
