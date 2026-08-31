@@ -632,7 +632,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.17.0',
+        VERSION: 'v6.18.0',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -3225,7 +3225,10 @@ function hexA(hex, a) {
        刪掉等於使用者剛剛打的東西整個消失 —— 那才是真正的丟單。
        改成把那一列留在畫面上標記為未同步，點一下就重送。 */
     async function optimisticAdd(txn, receipt, okMsg) {
-        const payload = { txn: { ...txn, client_id: txn.client_id || ('c_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)) }, receipt };
+        /* submitted_on：使用者「按下當下」的本機日期，不是之後補送成功的日期。
+           離線佇列補送可能延遲到隔天甚至更久，若沒有這個欄位，
+           後端只能用「收到請求那一刻」判斷連續天數，會把訊號差的人誤判成斷了連續紀錄。 */
+        const payload = { txn: { ...txn, client_id: txn.client_id || ('c_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8)) }, receipt, submitted_on: todayISO() };
         const local = {
             txn_id: uid(), created_at: localStamp(), is_rollup: false, _new: true,
             status: '有效', parent_txn_id: '', recurring_rule_id: '', receipt_file_id: '',
@@ -5362,17 +5365,30 @@ function hexA(hex, a) {
        在自己的角色卡先填好，別人要還款時就直接複製，不必開口問。 */
     /* 台灣常用金融機構代碼。使用者可以自己打，但下拉能省掉查代碼的麻煩，
        也避免把「中國信託」記成 812（實際是 822）這種錯。 */
-    const BANKS = [
-        ['004', '臺灣銀行'], ['005', '土地銀行'], ['006', '合作金庫'], ['007', '第一銀行'],
-        ['008', '華南銀行'], ['009', '彰化銀行'], ['011', '上海商銀'], ['012', '台北富邦'],
-        ['013', '國泰世華'], ['016', '高雄銀行'], ['017', '兆豐銀行'], ['021', '花旗銀行'],
-        ['048', '王道銀行'], ['050', '臺灣企銀'], ['052', '渣打銀行'], ['053', '台中銀行'],
-        ['054', '京城銀行'], ['081', '滙豐銀行'], ['101', '瑞興銀行'], ['102', '華泰銀行'],
-        ['103', '臺灣新光銀行'], ['108', '陽信銀行'], ['118', '板信銀行'], ['147', '三信商銀'],
-        ['700', '中華郵政'], ['803', '聯邦銀行'], ['805', '遠東商銀'], ['806', '元大銀行'],
-        ['807', '永豐銀行'], ['808', '玉山銀行'], ['809', '凱基銀行'], ['812', '台新銀行'],
-        ['816', '安泰銀行'], ['822', '中國信託'], ['823', '將來銀行'], ['824', 'LINE Bank'],
-        ['826', '樂天銀行']
+const BANKS = [
+        ['000', '中央銀行國庫局'], ['004', '臺灣銀行'], ['005', '臺灣土地銀行'], ['006', '合作金庫商業銀行'],
+        ['007', '第一商業銀行'], ['008', '華南商業銀行'], ['009', '彰化商業銀行'], ['011', '上海商業儲蓄銀行'],
+        ['012', '台北富邦商業銀行'], ['013', '國泰世華商業銀行'], ['016', '高雄銀行'], ['017', '兆豐國際商業銀行'],
+        ['018', '全國農業金庫'], ['020', '日商瑞穗銀行台北分行'], ['021', '花旗（台灣）商業銀行'], ['022', '美國銀行台北分行'],
+        ['023', '泰國盤谷銀行台北分行'], ['025', '菲律賓首都銀行台北分行'], ['029', '新加坡商大華銀行台北分行'], ['030', '美商道富銀行台北分行'],
+        ['037', '法商法國興業銀行台北分行'], ['039', '澳商澳盛銀行台北分行'], ['048', '王道商業銀行'], ['050', '臺灣中小企業銀行'],
+        ['052', '渣打國際商業銀行'], ['053', '台中商業銀行'], ['054', '京城商業銀行'], ['072', '德商德意志銀行台北分行'],
+        ['075', '香港商東亞銀行台北分行'], ['076', '美商摩根大通銀行台北分行'], ['081', '匯豐（台灣）商業銀行'], ['082', '法國巴黎銀行台北分行'],
+        ['085', '新加坡商新加坡華僑銀行台北分行'], ['086', '法商東方匯理銀行台北分行'], ['092', '瑞士商瑞士銀行台北分行'], ['093', '荷商安智銀行台北分行'],
+        ['098', '日商三菱日聯銀行台北分行'], ['101', '瑞興商業銀行'], ['102', '華泰商業銀行'], ['103', '臺灣新光商業銀行'],
+        ['104', '台北市第五信用合作社'], ['108', '陽信商業銀行'], ['114', '基隆第一信用合作社'], ['115', '基隆市第二信用合作社'],
+        ['118', '板信商業銀行'], ['119', '淡水第一信用合作社'], ['120', '新北市淡水信用合作社'], ['124', '宜蘭信用合作社'],
+        ['127', '桃園信用合作社'], ['130', '新竹第一信用合作社'], ['132', '新竹第三信用合作社'], ['146', '台中市第二信用合作社'],
+        ['147', '三信商業銀行'], ['158', '彰化第一信用合作社'], ['161', '彰化第五信用合作社'], ['162', '彰化第六信用合作社'],
+        ['163', '彰化第十信用合作社'], ['165', '彰化縣鹿港信用合作社'], ['178', '嘉義市第三信用合作社'], ['188', '台南第三信用合作社'],
+        ['204', '高雄市第三信用合作社'], ['215', '花蓮第一信用合作社'], ['216', '花蓮第二信用合作社'], ['222', '澎湖縣第一信用合作社'],
+        ['223', '澎湖第二信用合作社'], ['224', '金門縣信用合作社'], ['321', '日商三井住友銀行台北分行'], ['326', '西班牙商西班牙對外銀行臺北分行'],
+        ['329', '印尼商印尼人民銀行台北分行'], ['330', '韓商韓亞銀行台北分行'], ['372', '大慶票券金融股份有限公司'], ['380', '大陸商中國銀行臺北分行'],
+        ['381', '大陸商交通銀行臺北分行'], ['382', '大陸商中國建設銀行臺北分行'], ['600', '農金資訊股份有限公司'], ['700', '中華郵政股份有限公司'],
+        ['803', '聯邦商業銀行'], ['805', '遠東國際商業銀行'], ['806', '元大商業銀行'], ['807', '永豐商業銀行'],
+        ['808', '玉山商業銀行'], ['809', '凱基商業銀行'], ['810', '星展（台灣）商業銀行'], ['812', '台新國際商業銀行'],
+        ['816', '安泰商業銀行'], ['822', '中國信託商業銀行'], ['823', '將來商業銀行'], ['824', '連線商業銀行'],
+        ['826', '樂天國際商業銀行']
     ];
     /* 模糊比對：打數字比代碼、打字比名稱。每按一鍵就重算，不必按送出。 */
     function matchBanks(q) {
@@ -5452,17 +5468,37 @@ function hexA(hex, a) {
                 <div class="min-w-0 flex-1">
                     <div class="text-[10px] text-pastel-muted">銀行</div>
                     <div class="selectable text-sm font-bold text-stone-800 break-all">${esc(p.bank)}</div></div>
-                <button onclick="copyText('${esc(bankCodeOf(p.bank) || p.bank)}','已複製銀行代碼')"
-                    class="flex-shrink-0 px-2.5 py-1.5 rounded-lg bg-white border border-pastel-blue/30 text-pastel-blue text-[10px] font-bold tactile">
-                    <i class="fa-solid fa-copy mr-1"></i>代碼</button></div>` : ''}
+                <button onclick="copyIconBtn(this,'${esc(bankCodeOf(p.bank) || p.bank)}','已複製銀行代碼')"
+                    aria-label="複製銀行代碼"
+                    class="copy-icon-btn flex-shrink-0 w-9 h-9 rounded-full bg-white border border-pastel-blue/30 text-pastel-blue flex items-center justify-center tactile active:bg-pastel-blueLight">
+                    <i class="fa-solid fa-copy"></i></button></div>` : ''}
             <div class="flex items-center gap-2">
                 <div class="min-w-0 flex-1">
                     <div class="text-[10px] text-pastel-muted">帳號</div>
                     <div class="selectable text-sm font-bold text-stone-800 font-tabular break-all">${esc(p.account)}</div></div>
-                <button onclick="copyText('${esc(p.account)}','已複製帳號')"
-                    class="flex-shrink-0 px-3 py-2 rounded-lg bg-white border border-pastel-blue/30 text-pastel-blue text-[10px] font-bold tactile">
-                    <i class="fa-solid fa-copy mr-1"></i>帳號</button>
+                <button onclick="copyIconBtn(this,'${esc(p.account)}','已複製帳號')"
+                    aria-label="複製帳號"
+                    class="copy-icon-btn flex-shrink-0 w-9 h-9 rounded-full bg-white border border-pastel-blue/30 text-pastel-blue flex items-center justify-center tactile active:bg-pastel-blueLight">
+                    <i class="fa-solid fa-copy"></i></button>
             </div></div>`;
+    }
+    /* 圖示複製鈕：按下複製成功後，按鈕本體短暫變成實心填色＋反白勾勾，
+       視覺上直接回饋「複製到了」，不必只靠底部 toast。
+       兩顆按鈕（代碼／帳號）共用同一組 class（copy-icon-btn），
+       尺寸統一寫在 class 裡（w-9 h-9），不會再因為文字長短而大小不一。 */
+    function copyIconBtn(el, txt, msg) {
+        copyText(txt, msg);
+        if (!el) return;
+        const icon = el.querySelector('i');
+        clearTimeout(el._copyTimer);
+        el.classList.remove('bg-white', 'text-pastel-blue', 'border-pastel-blue/30');
+        el.classList.add('bg-pastel-blue', 'text-white', 'border-pastel-blue');
+        if (icon) { icon.className = 'fa-solid fa-check'; }
+        el._copyTimer = setTimeout(() => {
+            el.classList.remove('bg-pastel-blue', 'text-white', 'border-pastel-blue');
+            el.classList.add('bg-white', 'text-pastel-blue', 'border-pastel-blue/30');
+            if (icon) { icon.className = 'fa-solid fa-copy'; }
+        }, 900);
     }
     /* 點成員頭像 → 看他的基本資料與收款資訊。
        這樣要還錢的人自己去拿就好，不必開口問。 */
