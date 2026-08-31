@@ -33,7 +33,7 @@
             document.head.appendChild(s);
         }
     </script>
-    <link href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@500;700&family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script>
         tailwind.config = {
             theme: {
@@ -55,7 +55,10 @@
                     borderRadius: { 'card': '24px', 'sheet': '32px', 'tile': '16px' },
                     fontFamily: {
                         sans: ['Inter', 'Noto Sans TC', 'sans-serif'],
-                        rounded: ['Comfortaa', 'Noto Sans TC', 'sans-serif']
+                        /* v6.17.0：全站字體統一為 Inter，不再有第二種字體。
+                           這個 key 只保留給「等寬金額數字」語意用（class 名稱同步改為 font-tabular），
+                           Inter 對 tabular-nums 支援完整，這也同時修好了金額欄位對不齊的問題。 */
+                        tabular: ['Inter', 'Noto Sans TC', 'sans-serif']
                     },
                     boxShadow: {
                         'soft': '0 10px 30px rgba(248, 160, 72, 0.22)',
@@ -423,9 +426,9 @@
         .pop { animation:popIn .35s cubic-bezier(.34,1.56,.64,1) both; }
 
         /* 等寬數字：金額直排時不會左右跳動，是財務介面精緻感的關鍵 */
-        /* 金額一律等寬。先前只掛在 .font-rounded 上，沒帶到那個 class 的金額
+        /* 金額一律等寬。先前只掛在 .font-tabular 上，沒帶到那個 class 的金額
            在明細列裡會左右參差 —— 帳本最需要的就是數字切得齊。 */
-        .num, .font-rounded, .money, input[type="number"], input[inputmode="decimal"], input[inputmode="numeric"] {
+        .num, .font-tabular, .money, input[type="number"], input[inputmode="decimal"], input[inputmode="numeric"] {
             font-variant-numeric: tabular-nums; font-feature-settings:"tnum" 1;
         }
         .num-sym { opacity:.45; font-weight:600; }   /* $ 與千分位降一階，凸顯數字本體 */
@@ -475,8 +478,9 @@
 
     <div id="splash" class="absolute inset-0 bg-pastel-bg z-[80] flex flex-col items-center justify-center gap-4">
         <img src="./av5.png" alt="" class="w-24 h-24 float">
-        <div class="w-8 h-8 border-4 border-pastel-accentLight border-t-pastel-accent rounded-full spinner"></div>
-        <div class="text-xs text-pastel-muted">連線中…</div>
+        <div id="splashSpinner" class="w-8 h-8 border-4 border-pastel-accentLight border-t-pastel-accent rounded-full spinner"></div>
+        <div id="splashMsg" class="text-xs text-pastel-muted">連線中…</div>
+        <button id="splashRetryBtn" onclick="bootstrap()" class="hidden px-5 py-2 rounded-full bg-pastel-accent text-white text-xs font-bold tactile">重新連線</button>
     </div>
 
     <div id="gateScreen" class="absolute inset-0 bg-pastel-bg z-[70] flex flex-col justify-center px-6 py-8 overflow-y-auto hide-scrollbar js-hide">
@@ -494,14 +498,14 @@
         <div id="gateStep0" class="hidden bg-white p-6 rounded-sheet shadow-card border border-pastel-border space-y-4">
             <div>
                 <label class="block text-sm font-bold text-stone-700 mb-1">安裝碼</label>
-                <p class="text-[11px] text-pastel-muted leading-relaxed mb-2.5">
+                <p class="text-[10px] text-pastel-muted leading-relaxed mb-2.5">
                     在你的 Google 試算表上方選單「🏠 家庭記帳 → ② 顯示安裝碼」可以拿到。
                     也可以直接貼完整的後端網址。</p>
                 <textarea id="gateBackend" rows="3" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false"
                           placeholder="AKfycb… 或 https://script.google.com/macros/s/…/exec"
-                          class="w-full p-3 rounded-tile border-2 border-pastel-border bg-pastel-bg text-[11px] font-mono outline-none focus:border-pastel-accent break-all"></textarea>
+                          class="w-full p-3 rounded-tile border-2 border-pastel-border bg-pastel-bg text-[10px] font-mono outline-none focus:border-pastel-accent break-all"></textarea>
                 <div class="flex items-center justify-center gap-3 mt-2">
-                    <button type="button" onclick="pasteBackend()" class="px-3 py-1.5 rounded-full bg-pastel-bg border border-pastel-border text-[11px] font-bold text-stone-600 tactile"><i class="fa-solid fa-paste mr-1"></i>貼上</button>
+                    <button type="button" onclick="pasteBackend()" class="px-3 py-1.5 rounded-full bg-pastel-bg border border-pastel-border text-[10px] font-bold text-stone-600 tactile"><i class="fa-solid fa-paste mr-1"></i>貼上</button>
                 </div>
             </div>
             <button id="gateBackendBtn" onclick="gateSubmitBackend()" class="w-full py-3.5 bg-pastel-accent text-white font-bold rounded-tile shadow-md">連線</button>
@@ -524,12 +528,12 @@
                     <div id="otpBoxes" class="flex gap-1.5 justify-center"></div>
                 </div>
                 <div class="flex items-center justify-center gap-3 mt-3">
-                    <button type="button" onclick="pasteCode()" class="px-3 py-1.5 rounded-full bg-pastel-bg border border-pastel-border text-[11px] font-bold text-stone-600 tactile"><i class="fa-solid fa-paste mr-1"></i>貼上</button>
-                    <button type="button" onclick="clearCode()" class="px-3 py-1.5 rounded-full bg-pastel-bg border border-pastel-border text-[11px] font-bold text-stone-600 tactile"><i class="fa-solid fa-eraser mr-1"></i>清除</button>
+                    <button type="button" onclick="pasteCode()" class="px-3 py-1.5 rounded-full bg-pastel-bg border border-pastel-border text-[10px] font-bold text-stone-600 tactile"><i class="fa-solid fa-paste mr-1"></i>貼上</button>
+                    <button type="button" onclick="clearCode()" class="px-3 py-1.5 rounded-full bg-pastel-bg border border-pastel-border text-[10px] font-bold text-stone-600 tactile"><i class="fa-solid fa-eraser mr-1"></i>清除</button>
                 </div>
             </div>
             <button id="gateCodeBtn" onclick="gateSubmitCode()" class="w-full py-3.5 bg-pastel-accent text-white font-bold rounded-tile shadow-md">下一步</button>
-            <button type="button" onclick="gateBackToBackend()" class="w-full text-[11px] font-bold text-pastel-muted pt-1">連到別的帳本 / 重新輸入安裝碼</button>
+            <button type="button" onclick="gateBackToBackend()" class="w-full text-[10px] font-bold text-pastel-muted pt-1">連到別的帳本 / 重新輸入安裝碼</button>
         </div>
         <div id="gateStep2" class="hidden bg-white p-6 rounded-sheet shadow-card border border-pastel-border space-y-4">
             <label class="block text-sm font-bold text-stone-700">你是誰？</label>
@@ -541,7 +545,7 @@
     <header id="appHeader" class="px-5 py-3 bg-pastel-bg z-20 flex justify-between items-center border-b border-pastel-border/70 js-hide shrink-0">
         <div class="flex items-center gap-3 min-w-0">
             <div class="relative cursor-pointer flex-shrink-0" onclick="openProfileModal()">
-                <div id="userAvatar" class="w-12 h-12 rounded-full border-[3px] flex items-center justify-center text-[22px] overflow-hidden shadow-sm transition-all duration-500"></div>
+                <div id="userAvatar" class="w-12 h-12 rounded-full border-[3px] flex items-center justify-center text-xl overflow-hidden shadow-sm transition-all duration-500"></div>
                 <div id="levelBadge" class="absolute -bottom-1 -right-1 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full border-2 border-white shadow-sm"></div>
             </div>
             <div class="min-w-0">
@@ -549,8 +553,8 @@
                     Hi, <span id="displayUserName" class="font-bold text-pastel-text text-sm">使用者</span>! <i class="fa-solid fa-hand-sparkles text-pastel-accent text-xs"></i>
                 </div>
                 <div class="flex items-center gap-1 bg-stone-200/40 p-1 rounded-full mt-1 w-max">
-                    <button id="modePersonalBtn" onclick="switchViewMode('personal')" class="px-3 py-1 rounded-full font-bold text-[11px] transition-all bg-white text-pastel-text shadow-sm"><i class="fa-solid fa-user text-[10px] mr-1.5 text-pastel-accent"></i>個人</button>
-                    <button id="modeFamilyBtn" onclick="switchViewMode('family')" class="px-3 py-1 rounded-full font-bold text-[11px] text-pastel-muted transition-all"><i class="fa-solid fa-house text-[10px] mr-1.5"></i>家庭</button>
+                    <button id="modePersonalBtn" onclick="switchViewMode('personal')" class="px-3 py-1 rounded-full font-bold text-[10px] transition-all bg-white text-pastel-text shadow-sm"><i class="fa-solid fa-user text-[10px] mr-1.5 text-pastel-accent"></i>個人</button>
+                    <button id="modeFamilyBtn" onclick="switchViewMode('family')" class="px-3 py-1 rounded-full font-bold text-[10px] text-pastel-muted transition-all"><i class="fa-solid fa-house text-[10px] mr-1.5"></i>家庭</button>
                 </div>
             </div>
         </div>
@@ -574,7 +578,7 @@
     <!-- 單據全螢幕檢視 -->
     <div id="lightbox" onclick="closeLightbox()" class="js-hide opacity-0 absolute inset-0 z-[120] bg-black/85 flex items-center justify-center p-4 transition-opacity duration-200">
         <img id="lightboxImg" alt="單據" class="max-w-full max-h-full object-contain rounded-tile">
-        <div id="lightboxHint" class="js-hide absolute bottom-8 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-full bg-black/60 text-white text-[11px] font-bold">
+        <div id="lightboxHint" class="js-hide absolute bottom-8 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-full bg-black/60 text-white text-[10px] font-bold">
             <i class="fa-solid fa-circle-notch fa-spin mr-1.5"></i>載入原圖中…</div>
         <button onclick="event.stopPropagation();closeLightbox()" aria-label="關閉"
                 class="tap44 absolute top-4 right-4 w-10 h-10 rounded-full bg-white/90 text-stone-700 flex items-center justify-center shadow-lg">
@@ -628,7 +632,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.16.0',
+        VERSION: 'v6.17.0',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -1037,9 +1041,9 @@ function hexA(hex, a) {
                         <div class="w-11 h-11 rounded-full flex items-center justify-center text-lg"
                              style="background:${bs.tier >= 0 ? TIERS[bs.tier].bg : '#F5EFE6'};color:${col}">
                             <i class="fa-solid ${bs.icon}"></i></div></div>
-                    ${bs.tier >= 0 ? `<span class="absolute -bottom-0.5 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded-full text-[9px] font-bold text-white shadow-sm" style="background:${col}">${TIERS[bs.tier].name}</span>` : ''}
+                    ${bs.tier >= 0 ? `<span class="absolute -bottom-0.5 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded-full text-[10px] font-bold text-white shadow-sm" style="background:${col}">${TIERS[bs.tier].name}</span>` : ''}
                 </div>
-                <div class="text-[11px] font-bold text-stone-700 leading-tight text-center">${esc(bs.name)}</div>
+                <div class="text-[10px] font-bold text-stone-700 leading-tight text-center">${esc(bs.name)}</div>
                 <div class="text-[10px] text-pastel-muted">${bs.max ? '已滿階' : `${bs.value} / ${bs.nextGoal}`}</div>
             </button>`;
         }).join('')}
@@ -1060,9 +1064,9 @@ function hexA(hex, a) {
                 <div class="min-w-0">
                     <div class="text-lg font-bold text-stone-800">${esc(bs.name)}</div>
                     <div class="text-xs text-pastel-muted">${esc(bs.desc)}</div>
-                    <div class="text-2xl font-bold font-rounded text-stone-800 mt-1">${bs.value}<span class="text-sm text-pastel-muted ml-1">${esc(bs.unit)}</span></div>
+                    <div class="text-2xl font-bold font-tabular text-stone-800 mt-1">${bs.value}<span class="text-sm text-pastel-muted ml-1">${esc(bs.unit)}</span></div>
                 </div></div>
-            <p class="text-[11px] text-pastel-muted bg-pastel-bg rounded-tile p-3 mb-4">${esc(bs.hint)}</p>
+            <p class="text-[10px] text-pastel-muted bg-pastel-bg rounded-tile p-3 mb-4">${esc(bs.hint)}</p>
             <div class="space-y-2 mb-5">
                 ${bs.goals.map((g, i) => {
             const got = bs.value >= g, cur = i === bs.tier + 1;
@@ -1080,7 +1084,7 @@ function hexA(hex, a) {
             </div>
             ${mine.length ? `<div>
                 <div class="text-xs font-bold text-stone-600 mb-2">解鎖時間軸</div>
-                <div class="space-y-1.5">${mine.map(a => `<div class="flex justify-between text-[11px] text-pastel-muted">
+                <div class="space-y-1.5">${mine.map(a => `<div class="flex justify-between text-[10px] text-pastel-muted">
                     <span>${esc(a.ach_name || a.ach_id)}</span><span>${esc(String(a.unlocked_at).slice(0, 10))}</span></div>`).join('')}</div></div>` : ''}`);
     }
 
@@ -1119,7 +1123,7 @@ function hexA(hex, a) {
         if (!el || !STATE.me) return;
         const i = getLevelInfo(STATE.me.streak_days);
         el.className = (isModal
-            ? 'w-24 h-24 rounded-full border-[4px] flex items-center justify-center text-5xl overflow-hidden shadow-md transition-all duration-500'
+            ? 'w-24 h-24 rounded-full border-[4px] flex items-center justify-center text-[32px] overflow-hidden shadow-md transition-all duration-500'
             : 'w-12 h-12 rounded-full border-[3px] flex items-center justify-center text-xl overflow-hidden shadow-sm transition-all duration-500') + ` ${i.border} ${i.bg}`;
         el.innerHTML = avatarInner(STATE.me.avatar_emoji);
         /* LV 已移除：每十天升一級，跟連續天數是同一件事的兩種說法，
@@ -1380,10 +1384,35 @@ function hexA(hex, a) {
         return applied;
     }
 
+    /** 開機失敗時，只有「代碼真的錯」或「這個成員已不存在」才算身分驗證失敗，
+        才清空登入資訊逼使用者重新輸入代碼。
+        其餘情況（GAS 冷啟動慢、網路不穩、鎖忙碌逾時、後端未預期錯誤）
+        都只是「這一次連線不順」，代碼本身沒有問題，
+        絕不能因此把家人已經登入好的資訊洗掉，否則會變成每次打開都要重輸代碼。 */
+    function isAuthFailure(e) {
+        return e && (e.code === 'BAD_CODE' || /找不到此成員/.test(e.message || ''));
+    }
+    function showSplashRetry(show, msg) {
+        const spin = document.getElementById('splashSpinner'), btn = document.getElementById('splashRetryBtn'), m = document.getElementById('splashMsg');
+        if (spin) spin.classList.toggle('hidden', !!show);
+        if (btn) btn.classList.toggle('hidden', !show);
+        if (m) m.innerText = show ? (msg || '暫時連不上，請稍後重試') : '連線中…';
+    }
     async function bootstrap() {
         document.getElementById('appVersion').innerText = CONFIG.VERSION;
+        showSplashRetry(false);
         const fromLink = applyInstallLink();
-        if (AUTH.familyCode && AUTH.memberId) { try { await loadAll(); return enterApp(); } catch (e) { AUTH.clear(); } }
+        if (AUTH.familyCode && AUTH.memberId) {
+            try { await loadAll(); return enterApp(); }
+            catch (e) {
+                if (isAuthFailure(e)) { AUTH.clear(); }
+                else {
+                    // 代碼保留，停在 splash 畫面讓使用者原地重試，不進輸入代碼畫面
+                    showSplashRetry(true, e.code === 'OFFLINE' ? '連線不穩，請確認網路後重試' : '暫時連不上，請稍後重試');
+                    return;
+                }
+            }
+        }
         if (!CONFIG.API_URL && !CONFIG.DEMO) return showGate(0);
         // 連結帶了代碼、還沒選成員：填好代碼，讓 paintOtp 自動送出（不要再手動呼叫一次）
         if (fromLink && AUTH.familyCode) document.getElementById('gateCode').value = AUTH.familyCode;
@@ -1397,7 +1426,7 @@ function hexA(hex, a) {
         document.getElementById('otpBoxes').innerHTML = Array.from({ length: 8 }, (_, i) => {
             const ch = v[i] || '';
             const active = focused && i === Math.min(v.length, 7) && v.length < 8;
-            return `<div class="flex-1 aspect-[3/4] max-w-[38px] rounded-tile border-2 flex items-center justify-center font-bold text-lg font-rounded transition-all
+            return `<div class="flex-1 aspect-[3/4] max-w-[38px] rounded-tile border-2 flex items-center justify-center font-bold text-lg font-tabular transition-all
                 ${ch ? 'bg-pastel-accentLight border-pastel-accent text-pastel-accent'
                      : active ? 'bg-white border-pastel-accent' : 'bg-pastel-bg border-pastel-border'}">${esc(ch)}</div>`;
         }).join('');
@@ -1739,7 +1768,7 @@ function hexA(hex, a) {
                         <div class="min-w-0">
                             <div class="font-bold text-sm text-stone-800 truncate">${esc(r.name)}</div>
                             <div class="text-[10px] text-pastel-muted">應於 ${esc(r.next_run)} ・ ${esc(r.freq)}</div></div>
-                        <div class="font-bold font-rounded ${r.entry_type === '收入' ? 'text-pastel-green' : 'text-stone-800'} flex-shrink-0">${fmt(r.amount)}</div></div>
+                        <div class="font-bold font-tabular ${r.entry_type === '收入' ? 'text-pastel-green' : 'text-stone-800'} flex-shrink-0">${fmt(r.amount)}</div></div>
                     <div class="grid grid-cols-2 gap-2">
                         <button onclick="confirmReminder('${esc(r.rule_id)}')" class="py-2 bg-pastel-accent text-white rounded-lg text-xs font-bold tactile">記這一筆</button>
                         <button onclick="skipReminder('${esc(r.rule_id)}')" class="py-2 bg-white border border-pastel-border text-stone-600 rounded-lg text-xs font-bold tactile">這期略過</button>
@@ -1899,8 +1928,8 @@ function hexA(hex, a) {
             <div class="confetti absolute inset-0 overflow-hidden">${bits}</div>
             <div class="pop bg-white rounded-sheet px-8 py-7 shadow-2xl text-center max-w-[280px] border-4 border-pastel-yellow">
                 <img src="./av5.png" alt="" class="w-20 h-20 mx-auto mb-3 float">
-                <div class="text-[11px] font-bold text-pastel-accent mb-1">成就解鎖！</div>
-                <div class="text-3xl mb-2 ${HUE[a.hue][1]}"><i class="fa-solid ${a.icon} fa-bounce"></i></div>
+                <div class="text-[10px] font-bold text-pastel-accent mb-1">成就解鎖！</div>
+                <div class="text-[32px] mb-2 ${HUE[a.hue][1]}"><i class="fa-solid ${a.icon} fa-bounce"></i></div>
                 <div class="text-lg font-bold text-stone-800">${esc(a.name)}</div>
                 <div class="text-xs text-pastel-muted mt-1 leading-relaxed">${esc(a.desc)}</div>
             </div>`;
@@ -1999,8 +2028,8 @@ function hexA(hex, a) {
     function switchViewMode(mode) {
         currentMode = mode;
         document.getElementById('appFrame')?.classList.toggle('mode-family', mode === 'family');
-        const on = 'px-3 py-1 rounded-full font-bold text-[11px] transition-all bg-white text-pastel-text shadow-sm';
-        const off = 'px-3 py-1 rounded-full font-bold text-[11px] text-pastel-muted transition-all';
+        const on = 'px-3 py-1 rounded-full font-bold text-[10px] transition-all bg-white text-pastel-text shadow-sm';
+        const off = 'px-3 py-1 rounded-full font-bold text-[10px] text-pastel-muted transition-all';
         document.getElementById('modePersonalBtn').className = mode === 'personal' ? on : off;
         document.getElementById('modeFamilyBtn').className = mode === 'family' ? on : off;
         renderDataViews(); renderAddFormLogic();
@@ -2032,13 +2061,13 @@ function hexA(hex, a) {
                 </svg>
                 <div class="absolute text-center">
                     <div class="text-[10px] text-pastel-muted leading-tight">總計</div>
-                    <div class="text-sm font-bold text-stone-800 font-rounded leading-tight">${fmt(total)}</div>
+                    <div class="text-sm font-bold text-stone-800 font-tabular leading-tight">${fmt(total)}</div>
                 </div>
             </div>
             <div class="flex-1 space-y-2.5 text-xs min-w-0">${items.map((it, i) => `
                 <div class="flex justify-between items-center gap-2">
                     <span class="flex items-center gap-2 text-stone-700 truncate"><span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${it[0] === '其他' ? '#9A918A' : catColor(it[0])}"></span>${esc(it[0])} ${Math.round(it[1] / total * 100)}%</span>
-                    <span class="font-bold text-stone-800 font-rounded flex-shrink-0">${fmt(it[1])}</span>
+                    <span class="font-bold text-stone-800 font-tabular flex-shrink-0">${fmt(it[1])}</span>
                 </div>`).join('')}</div>
         </div>`;
     }
@@ -2064,26 +2093,26 @@ function hexA(hex, a) {
                         <span class="font-bold text-stone-600"><i class="fa-solid fa-wallet text-pastel-accent mr-1"></i> 現金與公帳代墊</span></div>
                     <div class="grid grid-cols-2 gap-3 text-center">
                         <div class="bg-pastel-bg p-3 rounded-tile min-w-0"><div class="text-xs text-pastel-muted mb-1">${s.reserved > 0 ? '可支配現金' : '口袋現金'}</div>
-                            <div class="font-bold text-stone-800 text-lg font-rounded truncate">${fmt(s.reserved > 0 ? s.available : s.cashBalance)}</div>
+                            <div class="font-bold text-stone-800 text-lg font-tabular truncate">${fmt(s.reserved > 0 ? s.available : s.cashBalance)}</div>
                             ${s.reserved > 0 ? `<div class="text-[10px] text-pastel-muted mt-0.5 truncate">現金 ${fmt(s.cashBalance)}・保留 ${fmt(s.reserved)}</div>` : ''}</div>
                         <div class="bg-pastel-greenLight border border-pastel-green/20 p-3 rounded-tile min-w-0"><div class="text-xs text-pastel-green mb-1">公帳欠我</div>
-                            <div class="font-bold text-pastel-green text-lg font-rounded truncate">+${fmt(s.poolOwesMe)}</div></div>
+                            <div class="font-bold text-pastel-green text-lg font-tabular truncate">+${fmt(s.poolOwesMe)}</div></div>
                     </div>
                     ${s.cardDebt > 0.01 ? `
                     <div class="flex justify-between items-center mt-3 pt-3 border-t border-dashed border-pastel-border">
                         <span class="text-sm text-stone-600"><i class="fa-solid fa-credit-card text-pastel-red mr-1.5"></i>信用卡待繳</span>
-                        <span class="text-sm font-bold font-rounded text-pastel-red">-${fmt(s.cardDebt)}</span>
+                        <span class="text-sm font-bold font-tabular text-pastel-red">-${fmt(s.cardDebt)}</span>
                     </div>` : ''}
                     <div class="flex justify-between items-center mt-3 pt-3 border-t border-dashed border-pastel-border">
                         <span class="text-sm font-bold text-stone-700">淨資產</span>
-                        <span class="text-lg font-bold font-rounded text-stone-800">${fmt(net)}</span></div>
+                        <span class="text-lg font-bold font-tabular text-stone-800">${fmt(net)}</span></div>
                 </div>
                 <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-sm">
                     <div class="flex justify-between items-center text-xs mb-3 pb-2 border-b border-pastel-border">
                         <span class="font-bold text-stone-600"><i class="fa-solid fa-user-group text-pastel-blue mr-1"></i> 私人親友債務</span></div>
                     <div class="flex justify-between items-center px-2">
                         <div class="text-sm font-bold text-stone-800">我需償還他人</div>
-                        <span class="font-bold text-pastel-red font-rounded text-base">-${fmt(s.iOweOthers)}</span></div>
+                        <span class="font-bold text-pastel-red font-tabular text-sm">-${fmt(s.iOweOthers)}</span></div>
                 </div>
 
                 ${jarSection()}`;
@@ -2102,7 +2131,7 @@ function hexA(hex, a) {
                         <span class="font-bold truncate"><i class="fa-solid fa-users mr-2 text-pastel-accent"></i>${esc(STATE.familyName || '家庭公帳')}</span>
                         <span class="bg-pastel-yellow/20 text-pastel-yellow px-2.5 py-1 rounded-lg text-[10px] font-bold flex-shrink-0">${currentYM().replace('-', '/')}</span></div>
                     <div><div class="text-xs text-stone-400 mb-1">公帳資金餘額</div>
-                        <div class="text-3xl font-bold text-white font-rounded tracking-wide">${fmt(s.poolBalance)}</div></div>
+                        <div class="text-[32px] font-bold text-white font-tabular tracking-wide">${fmt(s.poolBalance)}</div></div>
                 </div>
                 ${jarSection()}
                 ${intentCard()}
@@ -2186,7 +2215,7 @@ function hexA(hex, a) {
             return `<div class="space-y-1.5">
                         <div class="flex justify-between text-xs">
                             <span class="text-stone-700 truncate"><i class="fa-solid ${esc(catIcon(b.category))} mr-1.5" style="color:${col}"></i>${esc(b.category)}</span>
-                            <span class="font-bold font-rounded flex-shrink-0 ml-2 ${over2 ? 'text-pastel-red' : 'text-stone-700'}">${fmt(used)} / ${fmt(b.amount)}</span></div>
+                            <span class="font-bold font-tabular flex-shrink-0 ml-2 ${over2 ? 'text-pastel-red' : 'text-stone-700'}">${fmt(used)} / ${fmt(b.amount)}</span></div>
                         <div class="w-full bg-pastel-bg rounded-full h-2.5 overflow-hidden">
                             <div class="h-2.5 rounded-full transition-all duration-700" style="width:${pct2}%;background:${over2 ? '#F05838' : col}"></div></div>
                     </div>`;
@@ -2219,13 +2248,13 @@ function hexA(hex, a) {
                     ${mascotBadge(mood)}
                 </div>
                 <div class="relative">
-                    <div class="text-[11px] font-bold opacity-80 mb-1">${isFam ? '公帳本月可用' : '本月還能花'}</div>
-                    <div class="text-4xl font-bold font-rounded tracking-tight mb-1">
+                    <div class="text-[10px] font-bold opacity-80 mb-1">${isFam ? '公帳本月可用' : '本月還能花'}</div>
+                    <div class="text-[32px] font-bold font-tabular tracking-tight mb-1">
                         <span class="num-sym text-2xl">$</span><span data-count="${Math.abs(left)}" data-pre="${over ? '-' : ''}">0</span></div>
                     <div class="w-full bg-white/25 rounded-full h-2.5 overflow-hidden mb-1.5 max-w-[62%]">
                         <div class="bg-white h-2.5 rounded-full transition-all duration-700" style="width:${pct}%"></div></div>
-                    <div class="text-[11px] opacity-90 mb-2">每日可用 ${fmt(daily)} ・ 已花 ${fmt(used)} / ${fmt(total)}</div>
-                    <div class="text-[11px] opacity-85 font-bold">${esc(mood.word)}</div>
+                    <div class="text-[10px] opacity-90 mb-2">每日可用 ${fmt(daily)} ・ 已花 ${fmt(used)} / ${fmt(total)}</div>
+                    <div class="text-[10px] opacity-85 font-bold">${esc(mood.word)}</div>
                 </div>
             </div>
             ${lower}</div>`;
@@ -2240,14 +2269,14 @@ function hexA(hex, a) {
             <div class="space-y-4">
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">每月總預算</label>
                     <input id="bTotal" type="number" inputmode="numeric" value="${budgetFor(scope, '') || ''}" placeholder="例如 30000"
-                        class="w-full p-3.5 rounded-tile bg-pastel-accentLight border-2 border-pastel-accent/40 text-stone-800 font-bold text-lg font-rounded"></div>
+                        class="w-full p-3.5 rounded-tile bg-pastel-accentLight border-2 border-pastel-accent/40 text-stone-800 font-bold text-lg font-tabular"></div>
                 <div class="text-xs font-bold text-stone-600 pt-1">分類預算（選填）</div>
                 ${cats.map(c => `
                     <div class="flex items-center gap-3">
                         <div class="w-9 h-9 rounded-tile flex items-center justify-center flex-shrink-0" style="background:${hexA(catColor(c.item_name), .16)};color:${catColor(c.item_name)}"><i class="fa-solid ${esc(normIcon(c.icon_emoji, c.item_group))}"></i></div>
                         <span class="text-sm text-stone-700 flex-1 truncate">${esc(c.item_name)}</span>
                         <input type="number" inputmode="numeric" data-cat="${esc(c.item_name)}" value="${budgetFor(scope, c.item_name) || ''}" placeholder="—"
-                            class="bud-inp w-24 p-2.5 rounded-tile bg-pastel-bg border border-pastel-border text-sm text-right font-rounded">
+                            class="bud-inp w-24 p-2.5 rounded-tile bg-pastel-bg border border-pastel-border text-sm text-right font-tabular">
                     </div>`).join('')}
                 <button onclick="saveBudgets('${scope}')" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm mt-2">儲存預算</button>
             </div>`);
@@ -2283,7 +2312,7 @@ function hexA(hex, a) {
             const items = list.filter(x => x.itemType === type);
             if (!items.length) return '';
             return `<div class="space-y-2">
-                <div class="text-[11px] font-bold text-pastel-muted"><i class="fa-solid ${icon} mr-1.5"></i>${label}</div>
+                <div class="text-[10px] font-bold text-pastel-muted"><i class="fa-solid ${icon} mr-1.5"></i>${label}</div>
                 ${items.map(x => `
                     <div class="bg-pastel-bg rounded-tile p-3">
                         <div class="flex justify-between items-start gap-2 mb-2">
@@ -2291,7 +2320,7 @@ function hexA(hex, a) {
                                 <div class="font-bold text-sm text-stone-800 truncate">${esc(x.payerName)}代墊：${esc(x.note || x.category || '—')}</div>
                                 <div class="text-[10px] text-pastel-muted">${esc(x.date)} ・ 你的分攤 ${fmt(x.expected)}${x.marked ? ' ・ <span class="text-pastel-blue font-bold">已選公帳月結</span>' : ''}</div>
                             </div>
-                            <div class="font-bold font-rounded text-pastel-red flex-shrink-0">${fmt(x.remaining)}</div>
+                            <div class="font-bold font-tabular text-pastel-red flex-shrink-0">${fmt(x.remaining)}</div>
                         </div>
                         <div class="grid ${type === 'pool' ? 'grid-cols-2' : 'grid-cols-1'} gap-2">
                             <button onclick="openRepay('${esc(x.srcId)}')" class="py-2 bg-pastel-accent text-white rounded-lg text-xs font-bold tactile"><i class="fa-solid fa-hand-holding-dollar mr-1"></i>直接還款</button>
@@ -2314,15 +2343,15 @@ function hexA(hex, a) {
         return `<div class="space-y-3">
             <div class="flex justify-between items-center">
                 <span class="text-xs font-bold text-stone-600"><i class="fa-solid fa-file-invoice-dollar text-pastel-red mr-1.5"></i>我要還給別人</span>
-                <span class="text-[11px] text-pastel-muted">${list.length} 筆 ・ <b class="text-pastel-red font-rounded">${fmt(total)}</b></span></div>
+                <span class="text-[10px] text-pastel-muted">${list.length} 筆 ・ <b class="text-pastel-red font-tabular">${fmt(total)}</b></span></div>
             <div class="space-y-1.5">
                 ${payers.map(p => `
                     <button onclick="openPayeeTotal('${esc(p.id)}')"
                         class="w-full flex items-center gap-2 p-2.5 rounded-tile bg-pastel-redLight border border-pastel-red/20 tactile active:bg-white">
                         <span class="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center text-sm flex-shrink-0">${avatarInner(memberOf(p.id)?.avatar_emoji)}</span>
-                        <span class="text-[13px] font-bold text-stone-800 truncate">給 ${esc(p.name)}</span>
+                        <span class="text-sm font-bold text-stone-800 truncate">給 ${esc(p.name)}</span>
                         <span class="text-[10px] text-pastel-muted flex-shrink-0">${p.n} 筆</span>
-                        <span class="ml-auto font-bold font-rounded text-pastel-red">${fmt(p.sum)}</span>
+                        <span class="ml-auto font-bold font-tabular text-pastel-red">${fmt(p.sum)}</span>
                         <i class="fa-solid fa-chevron-right text-[10px] text-pastel-muted"></i>
                     </button>`).join('')}
             </div>
@@ -2347,7 +2376,7 @@ function hexA(hex, a) {
         return `<div class="space-y-2.5">
             <div class="flex justify-between items-center">
                 <span class="text-xs font-bold text-stone-600"><i class="fa-solid fa-hand-holding-dollar text-pastel-green mr-1.5"></i>別人要還我</span>
-                <span class="text-[11px] text-pastel-muted">${list.length} 筆 ・ <b class="text-pastel-green font-rounded">${fmt(total)}</b></span></div>
+                <span class="text-[10px] text-pastel-muted">${list.length} 筆 ・ <b class="text-pastel-green font-tabular">${fmt(total)}</b></span></div>
             ${Object.entries(byMember).map(([id, g]) => {
                 const paid = g.expected - g.remaining, pct = g.expected ? paid / g.expected * 100 : 0;
                 const m = STATE.members.find(x => x.member_id === id);
@@ -2359,7 +2388,7 @@ function hexA(hex, a) {
                             <div class="font-bold text-sm text-stone-800 truncate">${esc(g.name)}</div>
                             <div class="text-[10px] text-pastel-muted">${g.items.length} 筆 ・ 已還 ${fmt(paid)} / ${fmt(g.expected)}</div></div>
                         <div class="flex items-center gap-1.5 flex-shrink-0">
-                            <span class="font-bold font-rounded text-pastel-green">${fmt(g.remaining)}</span>
+                            <span class="font-bold font-tabular text-pastel-green">${fmt(g.remaining)}</span>
                             <i class="fa-solid fa-chevron-right text-[10px] text-pastel-muted"></i></div></div>
                     <div class="w-full bg-white rounded-full h-2.5 overflow-hidden border border-pastel-border">
                         <div class="bg-pastel-green h-2.5 rounded-full transition-all duration-700" style="width:${pct.toFixed(0)}%"></div></div>
@@ -2384,9 +2413,9 @@ function hexA(hex, a) {
                 <div class="w-12 h-12 rounded-full border-[3px] ${lv.border} ${lv.bg} overflow-hidden flex items-center justify-center text-lg flex-shrink-0">${avatarInner(m?.avatar_emoji)}</div>
                 <div class="min-w-0">
                     <h3 class="text-lg font-bold text-stone-800 truncate">${esc(nameOf(memberId))} 要還我</h3>
-                    <div class="text-[11px] text-pastel-muted">${all.length} 筆 ・ 已還 ${fmt(paid)} / ${fmt(expected)}</div></div>
+                    <div class="text-[10px] text-pastel-muted">${all.length} 筆 ・ 已還 ${fmt(paid)} / ${fmt(expected)}</div></div>
                 <div class="ml-auto text-right flex-shrink-0">
-                    <div class="text-2xl font-bold font-rounded text-pastel-green">${fmt(remaining)}</div>
+                    <div class="text-2xl font-bold font-tabular text-pastel-green">${fmt(remaining)}</div>
                     <div class="text-[10px] text-pastel-muted">尚未歸還</div></div>
             </div>
             <div class="space-y-2 max-h-[52vh] overflow-y-auto hide-scrollbar">
@@ -2398,16 +2427,16 @@ function hexA(hex, a) {
                                  style="background:${hexA(catColor(x.category), .16)};color:${catColor(x.category)}">
                                 <i class="fa-solid ${esc(catIcon(x.category))}"></i></div>
                             <div class="flex-1 min-w-0">
-                                <div class="text-[13px] font-bold text-stone-800 truncate">${esc(x.note || x.category || '（無備註）')}</div>
+                                <div class="text-sm font-bold text-stone-800 truncate">${esc(x.note || x.category || '（無備註）')}</div>
                                 <div class="text-[10px] text-pastel-muted">${esc(x.date)} ・ ${esc(x.category || '未分類')}
                                     ・ <span class="${x.itemType === 'pool' ? 'text-pastel-accent' : 'text-pastel-blue'}">${x.itemType === 'pool' ? '公帳代墊' : '私人拆帳'}</span></div>
                                 ${done > 0.01 ? `<div class="text-[10px] text-pastel-green mt-0.5">已還 ${fmt(done)} / ${fmt(x.expected)}</div>` : ''}
                             </div>
                             <div class="text-right flex-shrink-0">
-                                <div class="font-bold font-rounded text-pastel-green text-sm">${fmt(x.remaining)}</div></div>
+                                <div class="font-bold font-tabular text-pastel-green text-sm">${fmt(x.remaining)}</div></div>
                         </div>
                         <button onclick="closeSheet();openTxnSheet('${esc(x.srcId)}')"
-                            class="w-full mt-2 py-1.5 rounded-lg bg-white border border-pastel-border text-[11px] font-bold text-stone-600 tactile">看這筆原始紀錄</button>
+                            class="w-full mt-2 py-1.5 rounded-lg bg-white border border-pastel-border text-[10px] font-bold text-stone-600 tactile">看這筆原始紀錄</button>
                     </div>`;
         }).join('')}
             </div>
@@ -2461,8 +2490,8 @@ function hexA(hex, a) {
                            ${d.overdue ? 'bg-pastel-redLight border-pastel-red/30' : 'bg-pastel-bg border-pastel-border'}">
                     <div class="flex items-center gap-2">
                         <i class="fa-solid fa-credit-card ${d.overdue ? 'text-pastel-red' : 'text-pastel-blue'}"></i>
-                        <span class="text-[13px] font-bold text-stone-800 truncate">${esc(d.name)}</span>
-                        <span class="ml-auto font-bold font-rounded ${d.overdue ? 'text-pastel-red' : 'text-stone-800'}">${fmt(d.due)}</span>
+                        <span class="text-sm font-bold text-stone-800 truncate">${esc(d.name)}</span>
+                        <span class="ml-auto font-bold font-tabular ${d.overdue ? 'text-pastel-red' : 'text-stone-800'}">${fmt(d.due)}</span>
                         <i class="fa-solid fa-chevron-right text-[10px] text-pastel-muted"></i></div>
                     <div class="text-[10px] text-pastel-muted mt-1">
                         ${d.overdue ? '已逾期 ・ ' : ''}${esc(d.dueDate)} 到期${d.payFrom ? ` ・ 由 ${esc(d.payFrom)} 扣繳` : ''}
@@ -2480,12 +2509,12 @@ function hexA(hex, a) {
         buzz();
         openSheet(`
             <h3 class="text-lg font-bold text-stone-800 mb-1">繳 ${esc(name)}</h3>
-            <p class="text-[11px] text-pastel-muted mb-4">${esc(d.dueDate)} 到期
+            <p class="text-[10px] text-pastel-muted mb-4">${esc(d.dueDate)} 到期
                 ${d.carry > 0 ? ` ・ 含上期未繳 ${fmt(d.carry)}` : ''}</p>
             <div class="space-y-3">
                 <div><div class="text-xs font-bold text-stone-500 mb-1">繳款金額</div>
                     <input id="cpAmt" type="number" inputmode="decimal" value="${d.due}"
-                        class="field w-full py-3 px-3 rounded-tile bg-pastel-bg border border-pastel-border text-lg font-bold font-rounded text-right">
+                        class="field w-full py-3 px-3 rounded-tile bg-pastel-bg border border-pastel-border text-lg font-bold font-tabular text-right">
                     <div class="text-[10px] text-pastel-muted mt-1">應繳 ${fmt(d.due)}。少繳的部分會留到下一期，不會消失。</div></div>
                 <div><div class="text-xs font-bold text-stone-500 mb-1">從哪個帳戶扣</div>
                     <select id="cpFrom" class="field w-full py-2.5 px-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
@@ -2554,7 +2583,7 @@ function hexA(hex, a) {
             ${x.itemType === 'pool' ? '' : payeeBlock((STATE.members || []).find(m => m.member_id === x.payerId))}
             <div class="space-y-4 mt-4">
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">歸還金額（可部分歸還）</label>
-                    <input id="rpAmt" type="number" inputmode="decimal" value="${x.remaining}" class="w-full p-3.5 rounded-tile bg-pastel-accentLight border-2 border-pastel-accent/40 text-stone-800 font-bold text-xl font-rounded"></div>
+                    <input id="rpAmt" type="number" inputmode="decimal" value="${x.remaining}" class="w-full p-3.5 rounded-tile bg-pastel-accentLight border-2 border-pastel-accent/40 text-stone-800 font-bold text-xl font-tabular"></div>
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">日期</label>
                     <input id="rpDate" type="date" value="${todayISO()}" class="w-full py-3 px-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm"></div>
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">備註</label>
@@ -2604,9 +2633,9 @@ function hexA(hex, a) {
                 <div class="w-12 h-12 rounded-full overflow-hidden flex items-center justify-center text-xl flex-shrink-0 bg-pastel-bg">${avatarInner(m?.avatar_emoji)}</div>
                 <div class="min-w-0">
                     <h3 class="text-lg font-bold text-stone-800 truncate">要還給 ${esc(nameOf(payerId))}</h3>
-                    <div class="text-[11px] text-pastel-muted">${list.length} 筆代墊</div></div>
+                    <div class="text-[10px] text-pastel-muted">${list.length} 筆代墊</div></div>
                 <div class="ml-auto text-right flex-shrink-0">
-                    <div class="text-2xl font-bold font-rounded text-pastel-red">${fmt(sum)}</div>
+                    <div class="text-2xl font-bold font-tabular text-pastel-red">${fmt(sum)}</div>
                     <div class="text-[10px] text-pastel-muted">合計要轉</div></div>
             </div>
             ${payeeBlock(m)}
@@ -2615,14 +2644,14 @@ function hexA(hex, a) {
                     <div class="p-3 rounded-tile bg-pastel-bg">
                         <div class="flex items-start gap-2">
                             <div class="min-w-0 flex-1">
-                                <div class="text-[13px] font-bold text-stone-800 truncate">${esc(x.note || x.category || '（無備註）')}</div>
+                                <div class="text-sm font-bold text-stone-800 truncate">${esc(x.note || x.category || '（無備註）')}</div>
                                 <div class="text-[10px] text-pastel-muted">${esc(x.date)} ・ ${esc(x.category || '未分類')}
                                     ・ ${x.itemType === 'pool' ? '公帳代墊' : '私人拆帳'} ・ 你的分攤 ${fmt(x.expected)}</div>
                             </div>
-                            <div class="font-bold font-rounded text-pastel-red flex-shrink-0">${fmt(x.remaining)}</div>
+                            <div class="font-bold font-tabular text-pastel-red flex-shrink-0">${fmt(x.remaining)}</div>
                         </div>
                         <button onclick="closeSheet();openTxnSheet('${esc(x.srcId)}')"
-                            class="w-full mt-2 py-1.5 rounded-lg bg-white border border-pastel-border text-[11px] font-bold text-stone-600 tactile">看這筆原始代墊</button>
+                            class="w-full mt-2 py-1.5 rounded-lg bg-white border border-pastel-border text-[10px] font-bold text-stone-600 tactile">看這筆原始代墊</button>
                     </div>`).join('')}
             </div>
             <button onclick="closeSheet();repayAllTo('${esc(payerId)}')"
@@ -2686,7 +2715,7 @@ function hexA(hex, a) {
         if (!(STATE.intents || []).length) return '';
         return `<div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-3">
             <div class="text-sm font-bold text-stone-800"><i class="fa-solid fa-building-columns text-pastel-blue mr-1.5"></i>待公帳撥款沖銷</div>
-            <p class="text-[11px] text-pastel-muted">成員已標記「由公帳月結」的分攤，確認撥款後才會寫入實際交易。</p>
+            <p class="text-[10px] text-pastel-muted">成員已標記「由公帳月結」的分攤，確認撥款後才會寫入實際交易。</p>
             ${(STATE.intents || []).map(i => {
                 const src = STATE.transactions.find(t => t.txn_id === i.parent_txn_id);
                 return `<div class="bg-pastel-bg rounded-tile p-3 flex justify-between items-center gap-2">
@@ -2694,7 +2723,7 @@ function hexA(hex, a) {
                         <div class="font-bold text-sm text-stone-800 truncate">${esc(nameOf(i.member_id))} → ${esc(nameOf(i.payer_id))}</div>
                         <div class="text-[10px] text-pastel-muted truncate">${esc(src ? (src.note || src.category) : '—')}</div></div>
                     <div class="text-right flex-shrink-0">
-                        <div class="font-bold font-rounded text-sm mb-1">${fmt(i.amount)}</div>
+                        <div class="font-bold font-tabular text-sm mb-1">${fmt(i.amount)}</div>
                         <button onclick="settleIntent('${esc(i.intent_id)}')" class="px-3 py-1.5 bg-pastel-accent text-white rounded-lg text-[10px] font-bold tactile">確認撥款</button></div>
                 </div>`;
             }).join('')}
@@ -2769,30 +2798,30 @@ function hexA(hex, a) {
                         ${jarSvg(g, saved)}
                         ${done ? '<i class="fa-solid fa-crown fa-beat absolute top-0 right-0 text-pastel-yellow"></i>' : ''}
                         <div class="absolute inset-0 flex items-center justify-center pt-3 pointer-events-none">
-                            <span class="text-3xl font-bold font-rounded tracking-tight" style="color:${pct > 45 ? '#FFFFFF' : '#8A5A22'};text-shadow:${pct > 45 ? '0 1px 3px rgba(0,0,0,.18)' : 'none'}">${pct.toFixed(0)}<span class="text-lg">%</span></span>
+                            <span class="text-[32px] font-bold font-tabular tracking-tight" style="color:${pct > 45 ? '#FFFFFF' : '#8A5A22'};text-shadow:${pct > 45 ? '0 1px 3px rgba(0,0,0,.18)' : 'none'}">${pct.toFixed(0)}<span class="text-lg">%</span></span>
                         </div>
                     </button>
                     <div class="min-w-0 flex-1">
                         <div class="flex items-start justify-between gap-2">
                             <div class="min-w-0">
-                                <div class="font-bold text-stone-800 text-base truncate"><i class="fa-solid ${esc(g.icon || 'fa-piggy-bank')} mr-1.5 text-pastel-accent"></i>${esc(g.name)}</div>
-                                <div class="text-[11px] text-pastel-muted truncate">${esc(g.scope === 'family' ? '家庭共同' : '個人')} ・ ${esc(nameOf(g.owner_id))}</div>
+                                <div class="font-bold text-stone-800 text-sm truncate"><i class="fa-solid ${esc(g.icon || 'fa-piggy-bank')} mr-1.5 text-pastel-accent"></i>${esc(g.name)}</div>
+                                <div class="text-[10px] text-pastel-muted truncate">${esc(g.scope === 'family' ? '家庭共同' : '個人')} ・ ${esc(nameOf(g.owner_id))}</div>
                             </div>
                             <button onclick="openGoalMenu('${esc(g.goal_id)}')" aria-label="更多" class="tap44 w-8 h-8 -mt-1 -mr-1 rounded-full flex items-center justify-center text-stone-400 flex-shrink-0 tactile"><i class="fa-solid fa-ellipsis"></i></button>
                         </div>
-                        <div class="mt-2 text-2xl font-bold font-rounded text-stone-800 tracking-tight truncate">
-                            <span class="num-sym text-base">$</span>${Number(saved).toLocaleString('en-US')}</div>
-                        <div class="text-[11px] text-pastel-muted truncate">目標 ${fmt(g.target_amount)}${spent > 0 ? ` ・ 已花 ${fmt(spent)}` : ''}</div>
-                        ${g.note ? `<div class="text-[11px] text-stone-500 mt-1 truncate">${esc(g.note)}</div>` : ''}
+                        <div class="mt-2 text-2xl font-bold font-tabular text-stone-800 tracking-tight truncate">
+                            <span class="num-sym text-sm">$</span>${Number(saved).toLocaleString('en-US')}</div>
+                        <div class="text-[10px] text-pastel-muted truncate">目標 ${fmt(g.target_amount)}${spent > 0 ? ` ・ 已花 ${fmt(spent)}` : ''}</div>
+                        ${g.note ? `<div class="text-[10px] text-stone-500 mt-1 truncate">${esc(g.note)}</div>` : ''}
                     </div>
                 </div>
 
                 <div class="flex items-center gap-2">
                     <div class="flex gap-1.5 overflow-x-auto hide-scrollbar flex-1 min-w-0">
                         ${coins.length ? coins.slice(-10).map(c => coinSvg(c, 28)).join('')
-                : '<span class="text-[11px] text-pastel-muted self-center">還沒有籌碼。存進第一筆就會拿到一枚</span>'}
+                : '<span class="text-[10px] text-pastel-muted self-center">還沒有籌碼。存進第一筆就會拿到一枚</span>'}
                     </div>
-                    ${coins.length ? `<span class="text-[11px] text-pastel-muted flex-shrink-0">${coins.length} 枚${gold ? `・金 ${gold}` : ''}</span>` : ''}
+                    ${coins.length ? `<span class="text-[10px] text-pastel-muted flex-shrink-0">${coins.length} 枚${gold ? `・金 ${gold}` : ''}</span>` : ''}
                 </div>
 
                 <div class="grid grid-cols-2 gap-2">
@@ -2865,13 +2894,13 @@ function hexA(hex, a) {
                 <div class="flex items-center gap-4">
                     <div class="relative w-[108px] flex-shrink-0" style="height:8.5rem">${jarSvg(g, saved, true)}
                         <div class="absolute inset-0 flex items-center justify-center pt-3 pointer-events-none">
-                            <span class="text-3xl font-bold font-rounded" style="color:${(g.target_amount ? Math.min(saved / g.target_amount * 100, 100) : 0) > 45 ? '#FFFFFF' : '#8A5A22'};text-shadow:${(g.target_amount ? Math.min(saved / g.target_amount * 100, 100) : 0) > 45 ? '0 1px 3px rgba(0,0,0,.18)' : 'none'}">${(g.target_amount ? Math.min(saved / g.target_amount * 100, 100) : 0).toFixed(0)}<span class="text-lg">%</span></span></div>
+                            <span class="text-[32px] font-bold font-tabular" style="color:${(g.target_amount ? Math.min(saved / g.target_amount * 100, 100) : 0) > 45 ? '#FFFFFF' : '#8A5A22'};text-shadow:${(g.target_amount ? Math.min(saved / g.target_amount * 100, 100) : 0) > 45 ? '0 1px 3px rgba(0,0,0,.18)' : 'none'}">${(g.target_amount ? Math.min(saved / g.target_amount * 100, 100) : 0).toFixed(0)}<span class="text-lg">%</span></span></div>
                     </div>
                     <div class="min-w-0 flex-1">
                         <div class="font-bold text-stone-800 text-lg truncate"><i class="fa-solid ${esc(g.icon || 'fa-piggy-bank')} mr-1.5 text-pastel-accent"></i>${esc(g.name)}</div>
-                        <div class="text-[11px] text-pastel-muted mb-2">${esc(g.scope === 'family' ? '家庭共同目標' : '個人目標')} ・ 建立者 ${esc(nameOf(g.owner_id))}</div>
-                        <div class="text-2xl font-bold font-rounded text-stone-800"><span class="num-sym text-base">$</span>${Number(saved).toLocaleString('en-US')}</div>
-                        <div class="text-[11px] text-pastel-muted">目標 ${fmt(g.target_amount)}</div>
+                        <div class="text-[10px] text-pastel-muted mb-2">${esc(g.scope === 'family' ? '家庭共同目標' : '個人目標')} ・ 建立者 ${esc(nameOf(g.owner_id))}</div>
+                        <div class="text-2xl font-bold font-tabular text-stone-800"><span class="num-sym text-sm">$</span>${Number(saved).toLocaleString('en-US')}</div>
+                        <div class="text-[10px] text-pastel-muted">目標 ${fmt(g.target_amount)}</div>
                     </div>
                 </div>
                 ${g.note ? `<p class="text-xs text-stone-600 leading-relaxed mt-3 bg-white/70 rounded-tile p-3 border border-pastel-border">${esc(g.note)}</p>` : ''}
@@ -2881,15 +2910,15 @@ function hexA(hex, a) {
                 ${[['累計劃撥', fmt(saved), 'text-stone-800'], ['已貼標花用', fmt(spent), 'text-pastel-red'], ['目前保留額', fmt(reserved), 'text-pastel-green']]
                 .map(([l, v, c]) => `<div class="bg-pastel-bg rounded-tile p-3 min-w-0">
                     <div class="text-[10px] text-pastel-muted mb-0.5">${l}</div>
-                    <div class="text-sm font-bold font-rounded truncate ${c}">${v}</div></div>`).join('')}
+                    <div class="text-sm font-bold font-tabular truncate ${c}">${v}</div></div>`).join('')}
             </div>
 
             <div class="mb-5">
                 <div class="text-xs font-bold text-stone-600 mb-2">籌碼牆 ${coins.length} 枚</div>
                 ${coins.length ? `<div class="flex flex-wrap gap-2.5 py-3.5 pr-3.5 pl-3 rounded-tile bg-pastel-bg">${coins.map(c => coinSvg(c, 40)).join('')}</div>
                 <div class="flex flex-wrap gap-3 mt-2">${Object.entries(byMember).map(([mid, n]) =>
-                    `<span class="text-[11px] text-pastel-muted">${esc(nameOf(mid))} ${n} 枚</span>`).join('')}</div>`
-                : '<div class="text-[11px] text-pastel-muted">還沒有籌碼</div>'}
+                    `<span class="text-[10px] text-pastel-muted">${esc(nameOf(mid))} ${n} 枚</span>`).join('')}</div>`
+                : '<div class="text-[10px] text-pastel-muted">還沒有籌碼</div>'}
             </div>
 
             <div class="mb-5">
@@ -2899,8 +2928,8 @@ function hexA(hex, a) {
                     <div class="flex justify-between items-center bg-pastel-bg rounded-tile px-3 py-3">
                         <div class="min-w-0"><div class="text-sm font-bold text-stone-800 truncate">${esc(nameOf(t.payer_id))}${t.settle_member_id === 'RELEASE' ? (String(t.note).indexOf('結案') === 0 ? '（結案釋出）' : '（提取）') : ''}</div>
                         <div class="text-[10px] text-pastel-muted">${esc(t.date)} ・ ${esc(displayTag(t.tag) || '—')}</div></div>
-                        <div class="font-bold font-rounded flex-shrink-0 ml-2 ${t.settle_member_id === 'RELEASE' ? 'text-pastel-muted' : 'text-pastel-green'}">${t.settle_member_id === 'RELEASE' ? '-' : '+'}${fmt(t.amount)}</div>
-                    </div>`).join('') : '<div class="text-[11px] text-pastel-muted">還沒有存過。用上方的「存一筆」開始</div>'}
+                        <div class="font-bold font-tabular flex-shrink-0 ml-2 ${t.settle_member_id === 'RELEASE' ? 'text-pastel-muted' : 'text-pastel-green'}">${t.settle_member_id === 'RELEASE' ? '-' : '+'}${fmt(t.amount)}</div>
+                    </div>`).join('') : '<div class="text-[10px] text-pastel-muted">還沒有存過。用上方的「存一筆」開始</div>'}
                 </div>
             </div>
 
@@ -2910,7 +2939,7 @@ function hexA(hex, a) {
                     <div class="flex justify-between items-center bg-pastel-bg rounded-tile px-3 py-3">
                         <div class="min-w-0"><div class="text-sm font-bold text-stone-800 truncate">${esc(t.note || t.category || '—')}</div>
                         <div class="text-[10px] text-pastel-muted">${esc(t.date)} ・ ${esc(nameOf(t.payer_id))}</div></div>
-                        <div class="font-bold font-rounded text-pastel-red flex-shrink-0 ml-2">-${fmt(t.amount)}</div>
+                        <div class="font-bold font-tabular text-pastel-red flex-shrink-0 ml-2">-${fmt(t.amount)}</div>
                     </div>`).join('')}</div></div>` : ''}
 
             <div class="grid grid-cols-2 gap-2">
@@ -2961,7 +2990,7 @@ function hexA(hex, a) {
                 </div>
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">目標金額</label>
                     <input id="glAmt" type="number" inputmode="numeric" ${mine ? '' : 'disabled'} value="${esc(d.target_amount)}"
-                        class="w-full p-3.5 rounded-tile bg-pastel-accentLight border-2 border-pastel-accent/40 text-stone-800 font-bold text-lg font-rounded"></div>
+                        class="w-full p-3.5 rounded-tile bg-pastel-accentLight border-2 border-pastel-accent/40 text-stone-800 font-bold text-lg font-tabular"></div>
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">說明（選填）</label>
                     <textarea id="glNote" rows="3" ${mine ? '' : 'disabled'} placeholder="為什麼想存這筆？想達成什麼？"
                         class="w-full p-3.5 rounded-tile bg-pastel-bg border border-pastel-border text-stone-800 text-sm leading-relaxed resize-none">${esc(d.note || '')}</textarea></div>
@@ -2969,7 +2998,7 @@ function hexA(hex, a) {
                     <select id="glScope" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
                         <option value="personal" ${d.scope === 'personal' ? 'selected' : ''}>只有我</option>
                         <option value="family" ${d.scope === 'family' ? 'selected' : ''}>全家共同目標</option></select></div>`}
-                ${g ? `<div class="text-[11px] text-pastel-muted bg-pastel-bg rounded-tile p-3">
+                ${g ? `<div class="text-[10px] text-pastel-muted bg-pastel-bg rounded-tile p-3">
                     記帳時選擇標籤「${esc(g.project_tag)}」的支出，會自動從這個罐子的保留額扣抵。</div>` : ''}
                 ${mine ? `<button onclick="saveGoal()" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile">${isEdit ? '儲存變更' : '建立目標'}</button>` : ''}
             </div>`);
@@ -3013,7 +3042,7 @@ function hexA(hex, a) {
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">劃撥金額</label>
                     <input id="dpAmt" type="number" inputmode="decimal" value="" placeholder="0"
                         oninput="paintCoinPreview('${esc(id)}')"
-                        class="w-full p-3.5 rounded-tile bg-pastel-accentLight border-2 border-pastel-accent/40 text-stone-800 font-bold text-2xl font-rounded"></div>
+                        class="w-full p-3.5 rounded-tile bg-pastel-accentLight border-2 border-pastel-accent/40 text-stone-800 font-bold text-2xl font-tabular"></div>
                 <div class="flex gap-2">
                     ${[500, 1000, gold, left].filter((v, i, a) => v > 0 && a.indexOf(v) === i).slice(0, 4)
                 .map(v => `<button onclick="document.getElementById('dpAmt').value=${v};paintCoinPreview('${esc(id)}')" class="flex-1 py-2 rounded-tile bg-pastel-bg border border-pastel-border text-xs font-bold text-stone-600 tactile">${fmt(v)}</button>`).join('')}
@@ -3022,7 +3051,7 @@ function hexA(hex, a) {
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">從哪個帳戶劃撥</label>
                     <select id="dpTag" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
                         ${tagChoices(PREF.get('tag', '')).map(t => `<option ${PREF.get('tag', '') === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
-                <p class="text-[11px] text-pastel-muted leading-relaxed">劃撥不是支出，錢沒有離開你的口袋，只是被標記為「保留」，不會計入收支統計。</p>
+                <p class="text-[10px] text-pastel-muted leading-relaxed">劃撥不是支出，錢沒有離開你的口袋，只是被標記為「保留」，不會計入收支統計。</p>
                 <button onclick="doDeposit('${esc(id)}')" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile"><i class="fa-solid fa-coins mr-1.5"></i>投入籌碼</button>
             </div>`);
         paintCoinPreview(id);
@@ -3033,10 +3062,10 @@ function hexA(hex, a) {
         const gold = g.target_amount * 0.1;
         const today = todayISO();
         const already = goalCoins(id).some(c => c.date === today && c.member_id === STATE.me?.member_id);
-        if (!amt) { el.innerHTML = `<span class="text-[11px] text-pastel-muted">輸入金額後會顯示你將獲得的籌碼</span>`; return; }
+        if (!amt) { el.innerHTML = `<span class="text-[10px] text-pastel-muted">輸入金額後會顯示你將獲得的籌碼</span>`; return; }
         const kind = amt >= gold ? 'gold' : 'silver';
         el.innerHTML = `${coinSvg({ kind, member_id: STATE.me?.member_id, date: today, total: amt }, 40)}
-            <div class="text-[11px] leading-relaxed">
+            <div class="text-[10px] leading-relaxed">
                 <div class="font-bold ${kind === 'gold' ? 'text-[#D9A216]' : 'text-stone-600'}">${kind === 'gold' ? '金幣' : '銀幣'}（單次 ${amt >= gold ? '≥' : '<'} 目標的 10%）</div>
                 <div class="text-pastel-muted">${already ? '今天已投過，金額會累加但不再多一枚' : '將投入 1 枚'}</div></div>`;
     }
@@ -3067,14 +3096,14 @@ function hexA(hex, a) {
             <div class="space-y-4">
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">提取金額</label>
                     <input id="wdAmt" type="number" inputmode="decimal" value="" placeholder="0"
-                        class="w-full p-3.5 rounded-tile bg-pastel-accentLight border-2 border-pastel-accent/40 text-stone-800 font-bold text-2xl font-rounded"></div>
+                        class="w-full p-3.5 rounded-tile bg-pastel-accentLight border-2 border-pastel-accent/40 text-stone-800 font-bold text-2xl font-tabular"></div>
                 <div class="flex gap-2">
                     ${[Math.round(reserved / 2), reserved].filter((v, i, a) => v > 0 && a.indexOf(v) === i)
                 .map(v => `<button onclick="document.getElementById('wdAmt').value=${v}" class="flex-1 py-2 rounded-tile bg-pastel-bg border border-pastel-border text-xs font-bold text-stone-600 tactile">${fmt(v)}</button>`).join('')}
                 </div>
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">原因（選填）</label>
                     <input id="wdNote" placeholder="例如：臨時需要用錢" class="w-full p-3.5 rounded-tile bg-pastel-bg border border-pastel-border text-sm"></div>
-                <p class="text-[11px] text-pastel-muted leading-relaxed">提取不會被算成支出，只是把這筆錢從「保留」變回「可支配」。籌碼與紀錄都會保留。</p>
+                <p class="text-[10px] text-pastel-muted leading-relaxed">提取不會被算成支出，只是把這筆錢從「保留」變回「可支配」。籌碼與紀錄都會保留。</p>
                 <button onclick="doWithdraw('${esc(id)}', ${reserved})" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile"><i class="fa-solid fa-arrow-up-from-bracket mr-1.5"></i>確認提取</button>
             </div>`);
     }
@@ -3103,9 +3132,9 @@ function hexA(hex, a) {
             <h3 class="text-lg font-bold text-stone-800 mb-1">結案「${esc(g.name)}」</h3>
             <p class="text-xs text-pastel-muted mb-5">結案後這個罐子的保留額會釋放，紀錄仍然保留</p>
             <div class="space-y-2 mb-5 text-sm">
-                <div class="flex justify-between"><span class="text-pastel-muted">累計劃撥</span><span class="font-bold font-rounded">${fmt(saved)}</span></div>
-                <div class="flex justify-between"><span class="text-pastel-muted">已貼標花用</span><span class="font-bold font-rounded text-pastel-red">-${fmt(spent)}</span></div>
-                <div class="flex justify-between pt-2 border-t border-dashed border-pastel-border"><span class="font-bold">剩餘保留額</span><span class="font-bold font-rounded text-pastel-green">${fmt(remain)}</span></div>
+                <div class="flex justify-between"><span class="text-pastel-muted">累計劃撥</span><span class="font-bold font-tabular">${fmt(saved)}</span></div>
+                <div class="flex justify-between"><span class="text-pastel-muted">已貼標花用</span><span class="font-bold font-tabular text-pastel-red">-${fmt(spent)}</span></div>
+                <div class="flex justify-between pt-2 border-t border-dashed border-pastel-border"><span class="font-bold">剩餘保留額</span><span class="font-bold font-tabular text-pastel-green">${fmt(remain)}</span></div>
             </div>
             ${!mine ? `<div class="p-3 rounded-tile bg-pastel-redLight text-pastel-red text-xs font-bold mb-4">只有建立者 ${esc(nameOf(g.owner_id))} 可以結案</div>` : `
             ${remain > 0.01 ? `<div class="field mb-4"><label class="block text-xs font-bold text-stone-600 mb-1.5">剩餘的 ${fmt(remain)} 要怎麼處理</label>
@@ -3134,7 +3163,7 @@ function hexA(hex, a) {
         return `<div class="bg-pastel-bg p-4 rounded-tile flex justify-between items-center">
             <div class="font-bold text-stone-800 text-sm truncate">${esc(r.member)}</div>
             <div class="text-right flex-shrink-0 ml-2">
-                <div class="font-bold ${isPay ? 'text-pastel-red' : 'text-pastel-green'} font-rounded text-base mb-1">${isPay ? '-' : '+'}${fmt(r.amount)}</div>
+                <div class="font-bold ${isPay ? 'text-pastel-red' : 'text-pastel-green'} font-tabular text-sm mb-1">${isPay ? '-' : '+'}${fmt(r.amount)}</div>
                 <button onclick="settleUp('${esc(r.member)}',${r.amount},'${dir}')" class="px-3 py-1.5 ${isPay ? 'bg-pastel-accent text-white' : 'bg-white border border-pastel-border text-stone-600'} rounded-lg text-[10px] font-bold shadow-sm">${isPay ? '撥款還款' : '標記已繳回'}</button>
             </div></div>`;
     }
@@ -3290,9 +3319,9 @@ function hexA(hex, a) {
             .reduce((a, b) => a + Number(b.amount), 0);
         return `<div class="flex items-baseline justify-between px-1.5 mt-6 mb-2.5">
             <div class="flex items-baseline gap-2 min-w-0">
-                <span class="text-[15px] font-bold text-stone-800">${main}</span>
-                <span class="text-[11px] text-pastel-muted">${d.getMonth() + 1} 月 ${d.getDate()} 日</span></div>
-            ${sum ? `<span class="text-[11px] text-pastel-muted flex-shrink-0">支出 ${fmt(sum)}</span>` : ''}
+                <span class="text-sm font-bold text-stone-800">${main}</span>
+                <span class="text-[10px] text-pastel-muted">${d.getMonth() + 1} 月 ${d.getDate()} 日</span></div>
+            ${sum ? `<span class="text-[10px] text-pastel-muted flex-shrink-0">支出 ${fmt(sum)}</span>` : ''}
         </div>`;
     }
     /** 這筆交易是否屬於「我的帳」。
@@ -3485,17 +3514,17 @@ function hexA(hex, a) {
         <div class="flex justify-between text-[10px] text-pastel-muted px-1 mt-1">
             <span>${tick(0)}${B.labels ? '' : '日'}</span><span>${tick(Math.ceil(n / 2) - 1)}${B.labels ? '' : '日'}</span>
             <span>${endLabel}${last < n ? `（目前第 ${last} ${B.unit}）` : ''}</span></div>
-        <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 mt-3 pt-3 border-t border-pastel-border text-[11px]">
-            <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 rounded bg-pastel-green"></span>收入累計 <b class="font-rounded">${fmt(totalI)}</b></span>
-            <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 rounded bg-pastel-red"></span>支出累計 <b class="font-rounded">${fmt(totalE)}</b></span>
+        <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 mt-3 pt-3 border-t border-pastel-border text-[10px]">
+            <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 rounded bg-pastel-green"></span>收入累計 <b class="font-tabular">${fmt(totalI)}</b></span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 rounded bg-pastel-red"></span>支出累計 <b class="font-tabular">${fmt(totalE)}</b></span>
             <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-lg bg-pastel-accent opacity-60"></span>每${B.unit}支出</span>
-            ${budget ? `<span class="flex items-center gap-1.5"><span class="w-3 h-0.5 rounded" style="background:repeating-linear-gradient(90deg,#3090F8 0 4px,transparent 4px 7px)"></span>剩餘預算 <b class="font-rounded">${fmt(budget - totalE)}</b></span>` : '<span></span>'}
+            ${budget ? `<span class="flex items-center gap-1.5"><span class="w-3 h-0.5 rounded" style="background:repeating-linear-gradient(90deg,#3090F8 0 4px,transparent 4px 7px)"></span>剩餘預算 <b class="font-tabular">${fmt(budget - totalE)}</b></span>` : '<span></span>'}
         </div>
-        ${budget ? `<div class="mt-2.5 px-3 py-2 rounded-tile text-[11px] font-bold leading-relaxed ${crossAt || over ? 'bg-pastel-redLight text-pastel-red' : 'bg-pastel-greenLight text-pastel-green'}">
+        ${budget ? `<div class="mt-2.5 px-3 py-2 rounded-tile text-[10px] font-bold leading-relaxed ${crossAt || over ? 'bg-pastel-redLight text-pastel-red' : 'bg-pastel-greenLight text-pastel-green'}">
             <i class="fa-solid ${crossAt || over ? 'fa-triangle-exclamation' : 'fa-circle-check'} mr-1.5"></i>
             ${crossAt ? `第 ${crossAt} ${B.unit}起剩餘預算已低於支出累計，安全邊際正在被吃掉` : '剩餘預算線始終在支出累計線上方，節奏安全'}
             <br>依目前速度推估${B.title}結束約 ${fmt(pace)}${over ? `，將超出 ${fmt(pace - budget)}` : `，還有 ${fmt(budget - pace)} 空間`}
-        </div>` : `<button onclick="openBudgetSheet()" class="w-full mt-2.5 py-2 rounded-tile bg-pastel-accentLight text-pastel-accent text-[11px] font-bold tactile">設定預算後，這裡會多一條倒扣線可對照</button>`}`;
+        </div>` : `<button onclick="openBudgetSheet()" class="w-full mt-2.5 py-2 rounded-tile bg-pastel-accentLight text-pastel-accent text-[10px] font-bold tactile">設定預算後，這裡會多一條倒扣線可對照</button>`}`;
     }
 
     /* 區間切換：週 / 月 / 年 */
@@ -3559,7 +3588,7 @@ function hexA(hex, a) {
         if (!rows.length) list = activeFilterCount() || filters.q
             ? emptyState('av37', '找不到符合的紀錄', '換個關鍵字或把篩選條件放寬一點', { label: '清除篩選', fn: 'clearAllFilters()' })
             : emptyState('av46', `${viewYM.slice(5, 7)} 月還是一片空白`, '記下第一筆，這個月的故事就開始了', { label: '記一筆', fn: "switchTab('add')" });
-        box.innerHTML = `<button id="queueBadge" onclick="syncOfflineQueue()" class="js-hide w-full mb-3 py-2.5 rounded-tile bg-pastel-accentLight text-pastel-accent text-[11px] font-bold tactile"></button>${swipeHint()}${list}` + (more > 0 ? `
+        box.innerHTML = `<button id="queueBadge" onclick="syncOfflineQueue()" class="js-hide w-full mb-3 py-2.5 rounded-tile bg-pastel-accentLight text-pastel-accent text-[10px] font-bold tactile"></button>${swipeHint()}${list}` + (more > 0 ? `
             <button onclick="showMoreTxns()" class="w-full mt-4 py-3 rounded-tile bg-white border border-pastel-border text-xs font-bold text-stone-600 tactile">
                 還有 ${more} 筆 ・ 載入更多</button>` : '');
         bindSwipe();
@@ -3579,7 +3608,7 @@ function hexA(hex, a) {
     function toolbarRow() {
         const fc = activeFilterCount();
         const btn = (icon, on, fn, badge) => `<button onclick="${fn}" class="tap44 relative w-9 h-9 rounded-full flex items-center justify-center border tactile ${on ? 'bg-pastel-accent text-white border-pastel-accent' : 'bg-white text-stone-500 border-pastel-border'}">
-            <i class="fa-solid ${icon} text-sm"></i>${badge ? `<span class="absolute -top-1 -right-1 w-4 h-4 bg-pastel-accent text-white text-[9px] font-bold rounded-full flex items-center justify-center border border-white">${badge}</span>` : ''}</button>`;
+            <i class="fa-solid ${icon} text-sm"></i>${badge ? `<span class="absolute -top-1 -right-1 w-4 h-4 bg-pastel-accent text-white text-[10px] font-bold rounded-full flex items-center justify-center border border-white">${badge}</span>` : ''}</button>`;
         return `<div class="flex items-center gap-2">
             <div class="flex-1 flex items-center justify-between bg-white rounded-tile border border-pastel-border shadow-sm px-1 h-11 min-w-0">
                 ${filters.allTime
@@ -3598,7 +3627,7 @@ function hexA(hex, a) {
                 class="w-full bg-white border border-pastel-border rounded-full pl-10 pr-24 py-2.5 text-sm focus:outline-none focus:border-pastel-accent shadow-sm">
             <button onclick="toggleAllTime()" class="absolute right-1.5 top-1/2 -translate-y-1/2 px-2.5 py-1.5 rounded-full text-[10px] font-bold ${filters.allTime ? 'bg-pastel-accent text-white' : 'bg-pastel-bg text-pastel-muted border border-pastel-border'}">全期間</button>
         </div>` : ''}
-        ${fc ? `<div class="flex items-center justify-between bg-pastel-accentLight border border-pastel-accent/30 rounded-tile px-3 py-2 text-[11px] font-bold text-pastel-accent">
+        ${fc ? `<div class="flex items-center justify-between bg-pastel-accentLight border border-pastel-accent/30 rounded-tile px-3 py-2 text-[10px] font-bold text-pastel-accent">
             <span>已套用 ${fc} 個篩選條件</span>
             <button onclick="clearAllFilters()" class="underline">清除</button></div>` : ''}`;
     }
@@ -3617,13 +3646,13 @@ function hexA(hex, a) {
                 .reduce((a, b) => a + Number(b.amount), 0);
             if (prev > 0) {
                 const d = (exp - prev) / prev * 100;
-                cmp = `<div class="text-right text-[11px] font-bold mt-2 ${d <= 0 ? 'text-[#7BE0A5]' : 'text-[#FF9B85]'}">
+                cmp = `<div class="text-right text-[10px] font-bold mt-2 ${d <= 0 ? 'text-[#7BE0A5]' : 'text-[#FF9B85]'}">
                     <i class="fa-solid fa-arrow-${d <= 0 ? 'down' : 'up'} mr-1"></i>比上月${d <= 0 ? '少' : '多'}花 ${Math.abs(d).toFixed(0)}%</div>`;
             }
         }
         const cell = (label, val, cls, sign) => `<div class="flex-1 text-center min-w-0">
             <div class="text-[10px] text-white/55 mb-1">${label}</div>
-            <div class="text-base font-bold font-rounded truncate ${cls}">${sign}${fmt(Math.abs(val))}</div></div>`;
+            <div class="text-sm font-bold font-tabular truncate ${cls}">${sign}${fmt(Math.abs(val))}</div></div>`;
         return `<div class="rounded-card px-3 py-3.5 shadow-md" style="background:#3A3430">
             <div class="flex items-center divide-x divide-white/10">
                 ${cell('收入', inc, 'text-[#7BE0A5]', '+')}
@@ -3680,10 +3709,10 @@ function hexA(hex, a) {
             ? `還款 ・ ${esc(nameOf(t.payer_id))} → ${esc(nameOf(t.related_id))}` : '';
         return `
         ${t._failed ? `<div class="px-4 pt-3 pb-2 bg-pastel-redLight">
-            <div class="text-[11px] font-bold text-pastel-red mb-2"><i class="fa-solid fa-triangle-exclamation mr-1"></i>沒有存進去：${esc(t._failed)}</div>
+            <div class="text-[10px] font-bold text-pastel-red mb-2"><i class="fa-solid fa-triangle-exclamation mr-1"></i>沒有存進去：${esc(t._failed)}</div>
             <div class="flex gap-2">
-                <button data-i="${esc(t.txn_id)}" onclick="retryTxn(this.dataset.i)" class="flex-1 py-2 rounded-lg bg-pastel-red text-white text-[11px] font-bold tactile">重新送出</button>
-                <button data-i="${esc(t.txn_id)}" onclick="discardTxn(this.dataset.i)" class="px-3 py-2 rounded-lg bg-white border border-pastel-red/30 text-pastel-red text-[11px] font-bold tactile">捨棄</button>
+                <button data-i="${esc(t.txn_id)}" onclick="retryTxn(this.dataset.i)" class="flex-1 py-2 rounded-lg bg-pastel-red text-white text-[10px] font-bold tactile">重新送出</button>
+                <button data-i="${esc(t.txn_id)}" onclick="discardTxn(this.dataset.i)" class="px-3 py-2 rounded-lg bg-white border border-pastel-red/30 text-pastel-red text-[10px] font-bold tactile">捨棄</button>
             </div></div>` : ''}
         <div class="swipe-wrap relative w-full ${isLast ? '' : 'border-b border-pastel-border/50'} ${t._pending ? 'pending' : ''} ${t._failed ? 'failed-row' : ''} ${t._new ? 'is-new' : ''}" data-id="${esc(t.txn_id)}">
             <div class="swipe-bg absolute inset-0 flex items-center justify-between pl-3 pr-6 text-white font-bold text-sm opacity-0 bg-pastel-blue">
@@ -3695,11 +3724,11 @@ function hexA(hex, a) {
             </div>
             <div class="swipe-inner bg-white px-4 py-3.5 flex justify-between items-center relative w-full">
                 <div class="flex items-center gap-3.5 min-w-0">
-                    <div class="w-10 h-10 rounded-full flex items-center justify-center text-base flex-shrink-0"
+                    <div class="w-10 h-10 rounded-full flex items-center justify-center text-sm flex-shrink-0"
                          style="background:${hexA(col, .12)};color:${col}"><i class="fa-solid ${esc(icon)}"></i></div>
                     <div class="min-w-0">
-                        <div class="font-bold text-stone-800 text-[13px] truncate">${esc(t.note || t.category || '（無備註）')}${t.recurring_rule_id ? ' <i class="fa-solid fa-rotate text-[10px] text-pastel-muted"></i>' : ''}</div>
-                        <div class="text-[11px] text-pastel-muted flex items-center gap-1.5 truncate mt-0.5">
+                        <div class="font-bold text-stone-800 text-sm truncate">${esc(t.note || t.category || '（無備註）')}${t.recurring_rule_id ? ' <i class="fa-solid fa-rotate text-[10px] text-pastel-muted"></i>' : ''}</div>
+                        <div class="text-[10px] text-pastel-muted flex items-center gap-1.5 truncate mt-0.5">
                             <span class="truncate">${repayLabel || esc(t.category || t.entry_type)}</span>
                             ${t._queued ? `<span class="w-1 h-2 rounded-full bg-stone-300 flex-shrink-0"></span><span class="text-pastel-accent font-bold flex-shrink-0"><i class="fa-solid fa-cloud-arrow-up mr-1"></i>待同步</span>` : ''}
                             ${t.tag && !isRepay ? `<span class="w-1 h-2 rounded-full bg-stone-300 flex-shrink-0"></span><span class="truncate">${esc(displayTag(t.tag))}</span>` : ''}
@@ -3713,9 +3742,9 @@ function hexA(hex, a) {
                     </div>
                 </div>
                 <div class="text-right flex-shrink-0 ml-2">
-                    <div class="font-bold font-rounded text-[15px] ${amtCls}">${sign}${fmt(t.amount)}</div>
+                    <div class="font-bold font-tabular text-sm ${amtCls}">${sign}${fmt(t.amount)}</div>
                     ${t.nature && t.nature !== '純個人' && t.nature !== '家庭公帳'
-            ? `<div class="text-[9px] text-stone-500 bg-stone-100 px-1.5 py-0.5 rounded inline-block mt-1">${esc(t.nature)}</div>` : ''}
+            ? `<div class="text-[10px] text-stone-500 bg-stone-100 px-1.5 py-0.5 rounded inline-block mt-1">${esc(t.nature)}</div>` : ''}
                 </div>
             </div>
         </div>`;
@@ -3937,19 +3966,19 @@ function hexA(hex, a) {
         if (t.entry_type !== '還款' || !t.parent_txn_id) return '';
         const src = (STATE.transactions || []).find(x => x.txn_id === t.parent_txn_id);
         if (!src) {
-            return `<div class="mt-4 p-3 rounded-tile bg-pastel-bg border border-dashed border-pastel-border text-[11px] text-pastel-muted">
+            return `<div class="mt-4 p-3 rounded-tile bg-pastel-bg border border-dashed border-pastel-border text-[10px] text-pastel-muted">
                 找不到對應的原始代墊（可能已被作廢）。</div>`;
         }
         const mineShare = parseSplit(src).find(x => x.member_id === t.payer_id);
         return `<div class="mt-4">
             <div class="text-xs font-bold text-stone-600 mb-2"><i class="fa-solid fa-link mr-1.5 text-pastel-blue"></i>這筆還的是</div>
             <div class="p-3 rounded-tile bg-pastel-blueLight border border-pastel-blue/25">
-                <div class="selectable text-[13px] font-bold text-stone-800">${esc(src.note || src.category || '（無備註）')}</div>
+                <div class="selectable text-sm font-bold text-stone-800">${esc(src.note || src.category || '（無備註）')}</div>
                 <div class="text-[10px] text-pastel-muted mt-0.5">
                     ${esc(src.date)} ・ ${esc(src.category || '未分類')} ・ ${esc(nameOf(src.payer_id))}代墊 ${fmt(src.amount)}
                     ${mineShare ? ` ・ 分攤給你 ${fmt(mineShare.amount)}` : ''}</div>
                 <button onclick="closeSheet();openTxnSheet('${esc(src.txn_id)}')"
-                    class="w-full mt-2 py-1.5 rounded-lg bg-white border border-pastel-blue/30 text-[11px] font-bold text-pastel-blue tactile">看原始代墊的完整內容</button>
+                    class="w-full mt-2 py-1.5 rounded-lg bg-white border border-pastel-blue/30 text-[10px] font-bold text-pastel-blue tactile">看原始代墊的完整內容</button>
             </div></div>`;
     }
 
@@ -3959,7 +3988,7 @@ function hexA(hex, a) {
         const row = (k, v) => `<div class="flex justify-between py-3 text-sm"><span class="text-pastel-muted">${esc(k)}</span><span class="font-bold text-stone-800 text-right ml-3 truncate">${esc(v)}</span></div>`;
         openSheet(`
             <h3 class="selectable text-lg font-bold text-stone-800 mb-4">${esc(t.note || t.category || '交易明細')}</h3>
-            <div class="text-3xl font-bold font-rounded mb-4 ${t.entry_type === '支出' ? 'text-pastel-red' : 'text-pastel-green'}">${t.entry_type === '支出' ? '-' : '+'}${fmt(t.amount)}</div>
+            <div class="text-[32px] font-bold font-tabular mb-4 ${t.entry_type === '支出' ? 'text-pastel-red' : 'text-pastel-green'}">${t.entry_type === '支出' ? '-' : '+'}${fmt(t.amount)}</div>
             ${row('日期', t.date)}${row('類型', t.entry_type)}${row('分類', t.category || '—')}${row('帳戶', displayTag(t.tag) || '—')}
             ${row('費用歸屬', t.nature || '—')}${row('記帳者', nameOf(t.member_id))}${t.recurring_rule_id ? row('來源', '重複性收支自動產生') : ''}
             ${sourceAdvanceBlock(t)}
@@ -4012,11 +4041,11 @@ function hexA(hex, a) {
                             <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-pastel-muted">$</span>
                             <input type="number" inputmode="decimal" ${on ? '' : 'disabled'} value="${on ? esc(_editSplit.map[m.member_id]) : ''}"
                                 oninput="setEditSplit('${esc(m.member_id)}', this.value)"
-                                class="w-full py-2 pl-6 pr-2 rounded-lg border text-sm text-right font-rounded ${on ? 'bg-pastel-bg border-pastel-border text-stone-800' : 'bg-stone-100/60 border-transparent text-stone-300'}">
+                                class="w-full py-2 pl-6 pr-2 rounded-lg border text-sm text-right font-tabular ${on ? 'bg-pastel-bg border-pastel-border text-stone-800' : 'bg-stone-100/60 border-transparent text-stone-300'}">
                         </div></div>`;
                 }).join('')}
             </div>
-            <div class="text-[11px] pt-2 border-t border-pastel-border flex justify-between mb-4 ${over ? 'text-pastel-red font-bold' : 'text-pastel-muted'}">
+            <div class="text-[10px] pt-2 border-t border-pastel-border flex justify-between mb-4 ${over ? 'text-pastel-red font-bold' : 'text-pastel-muted'}">
                 <span>已分攤 ${fmt(sum)} / 總額 ${fmt(total)}</span>
                 <span>${over ? '超過總額！' : rest > 0.01 ? `你自己吸收 ${fmt(rest)}` : '無人吸收剩餘'}</span></div>
             <button onclick="saveEditSplit()" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile">儲存分攤設定</button>`);
@@ -4440,7 +4469,7 @@ function hexA(hex, a) {
                     <option value="純個人">個人收入（不進公帳）</option>
                     <option value="家庭公帳">直接入家庭公帳（錢沒經過我）</option>
                     <option value="公帳注資">我出錢注入公帳（從我的現金）</option></select>
-                <p id="natureHint" class="text-[11px] text-stone-600 leading-relaxed"></p></div>`;
+                <p id="natureHint" class="text-[10px] text-stone-600 leading-relaxed"></p></div>`;
         } else if (currentMode === 'personal') {
             c.innerHTML = `<div class="p-4 bg-pastel-accentLight border border-pastel-accent/25 rounded-tile space-y-3">
                 <div class="font-bold text-pastel-accent text-xs">費用歸屬與代墊</div>
@@ -4453,7 +4482,7 @@ function hexA(hex, a) {
         } else {
             c.innerHTML = `<div class="p-4 bg-pastel-greenLight border border-pastel-green/20 rounded-tile">
                 <div class="font-bold text-pastel-green text-xs mb-1">家庭公帳直接支出</div>
-                <p class="text-[11px] text-stone-600">動用公帳資金，不產生個人代墊債務。</p>
+                <p class="text-[10px] text-stone-600">動用公帳資金，不產生個人代墊債務。</p>
                 <input type="hidden" id="inpNature" value="家庭公帳"></div>`;
         }
         const el = document.getElementById('inpNature');
@@ -4610,10 +4639,10 @@ function hexA(hex, a) {
                     class="w-full flex items-center gap-2 p-3 rounded-tile bg-white border ${bad ? 'border-pastel-red' : 'border-pastel-accent/25'} tactile text-left">
                     <i class="fa-solid fa-users-between-lines ${bad ? 'text-pastel-red' : 'text-pastel-accent'} text-sm flex-shrink-0"></i>
                     <span class="min-w-0 flex-1">
-                        <span class="block text-[11px] text-pastel-muted">${isPool ? '分攤給誰' : '與誰拆帳'}</span>
-                        <span class="block text-[13px] font-bold ${bad ? 'text-pastel-red' : 'text-stone-800'} truncate">${esc(splitSummaryLine())}</span>
+                        <span class="block text-[10px] text-pastel-muted">${isPool ? '分攤給誰' : '與誰拆帳'}</span>
+                        <span class="block text-sm font-bold ${bad ? 'text-pastel-red' : 'text-stone-800'} truncate">${esc(splitSummaryLine())}</span>
                     </span>
-                    <span class="text-[11px] font-bold text-pastel-accent flex-shrink-0">調整<i class="fa-solid fa-chevron-down ml-1 text-[9px]"></i></span>
+                    <span class="text-[10px] font-bold text-pastel-accent flex-shrink-0">調整<i class="fa-solid fa-chevron-down ml-1 text-[10px]"></i></span>
                 </button>`;
             lockSaveIfOver();
             return;
@@ -4624,8 +4653,8 @@ function hexA(hex, a) {
             <div class="p-3 bg-white rounded-tile border border-pastel-accent/25 space-y-3">
                 <div class="flex justify-between items-center">
                     <div class="font-bold text-stone-700 text-xs">${isPool ? '分攤給誰？' : '與誰拆帳？'}</div>
-                    <button type="button" onclick="toggleSplitOpen()" class="text-[11px] font-bold text-pastel-accent tactile">
-                        完成分攤<i class="fa-solid fa-chevron-up ml-1 text-[9px]"></i></button>
+                    <button type="button" onclick="toggleSplitOpen()" class="text-[10px] font-bold text-pastel-accent tactile">
+                        完成分攤<i class="fa-solid fa-chevron-up ml-1 text-[10px]"></i></button>
                 </div>
                 <div class="flex gap-3 overflow-x-auto hide-scrollbar pb-1 pt-1">
                     ${splitParticipants().map(m => {
@@ -4638,20 +4667,20 @@ function hexA(hex, a) {
                                 style="border-color:${on ? a.ring : '#E7E0D5'}">${avatarInner(m.avatar_emoji)}</button>
                             <span class="text-[10px] truncate w-full text-center ${on ? 'text-stone-700 font-bold' : 'text-pastel-muted'}">${esc(m.nickname)}</span>
                             ${!on ? `<span class="text-[10px] text-pastel-muted">—</span>`
-                    : md === 'even' ? `<span class="text-[11px] font-bold text-stone-800 font-rounded">${fmt(addState.splits[m.member_id] || 0)}</span>`
+                    : md === 'even' ? `<span class="text-[10px] font-bold text-stone-800 font-tabular">${fmt(addState.splits[m.member_id] || 0)}</span>`
                         : `<button type="button" data-m="${esc(m.member_id)}" onclick="openSplitKeypad(this.dataset.m)"
-                                    class="w-full py-1 px-1 rounded-lg border ${splitKpTarget === m.member_id ? 'border-pastel-accent bg-pastel-accentLight' : 'border-pastel-border bg-pastel-bg'} text-[11px] text-center font-rounded text-stone-800 tactile">
+                                    class="w-full py-1 px-1 rounded-lg border ${splitKpTarget === m.member_id ? 'border-pastel-accent bg-pastel-accentLight' : 'border-pastel-border bg-pastel-bg'} text-[10px] text-center font-tabular text-stone-800 tactile">
                                     ${val === '' ? `<span class="text-pastel-muted">${md === 'pct' ? '%' : '$'}</span>` : esc(String(val)) + (md === 'pct' ? '%' : '')}</button>`}
                         </div>`;
         }).join('')}
                 </div>
                 <div class="flex bg-pastel-bg rounded-full p-0.5">
                     ${MODES.map(([k, label, ic]) => `<button type="button" onclick="setSplitMode('${k}')"
-                        class="flex-1 py-1.5 rounded-full text-[11px] font-bold transition-all ${md === k ? 'bg-white text-stone-800 shadow-sm' : 'text-pastel-muted'}">
-                        <i class="fa-solid ${ic} mr-1 text-[9px]"></i>${label}</button>`).join('')}
+                        class="flex-1 py-1.5 rounded-full text-[10px] font-bold transition-all ${md === k ? 'bg-white text-stone-800 shadow-sm' : 'text-pastel-muted'}">
+                        <i class="fa-solid ${ic} mr-1 text-[10px]"></i>${label}</button>`).join('')}
                 </div>
                 <div id="splitRatioBar" class="flex h-3 rounded-full overflow-hidden bg-stone-100"></div>
-                <div id="splitSummary" class="text-[11px] pt-2 border-t border-pastel-border"></div>
+                <div id="splitSummary" class="text-[10px] pt-2 border-t border-pastel-border"></div>
             </div>`;
         paintSplitSummary();
     }
@@ -4804,19 +4833,19 @@ function hexA(hex, a) {
             <button id="kpCard" onclick="openKeypadDrawer()" class="w-full rounded-card p-5 shadow-md text-white text-left tactile"
                     style="background:linear-gradient(135deg,${isTr ? '#3090F8,#2B7BD6' : isExp ? '#F8A048,#F0863A' : '#40B868,#35A25A'})">
                 <div class="flex justify-between items-center mb-1">
-                    <span class="text-[11px] font-bold opacity-85">${isTr ? '轉帳金額' : isExp ? '支出金額' : '收入金額'}</span>
+                    <span class="text-[10px] font-bold opacity-85">${isTr ? '轉帳金額' : isExp ? '支出金額' : '收入金額'}</span>
                     <span class="text-[10px] font-bold bg-white/25 px-2 py-1 rounded-lg">點擊輸入 <i class="fa-solid fa-calculator ml-1"></i></span></div>
-                <div class="text-5xl font-bold font-rounded tracking-tight leading-none">
+                <div class="text-[32px] font-bold font-tabular tracking-tight leading-none">
                     <span class="num-sym text-2xl">$</span>${Number(amt).toLocaleString('en-US')}</div>
             </button>
 
             <div class="bg-white border border-pastel-border/60 rounded-card shadow-card divide-y divide-pastel-border/70 overflow-hidden">
                 ${isTr ? `
                 <div class="px-4 py-3.5 grid grid-cols-2 gap-3">
-                    <div class="field"><label class="block text-[11px] font-bold text-stone-500 mb-1.5">從</label>
+                    <div class="field"><label class="block text-[10px] font-bold text-stone-500 mb-1.5">從</label>
                         <select id="trFrom" class="w-full p-2.5 rounded-tile bg-pastel-bg border border-pastel-border text-sm truncate">
                             ${tagChoices(addState.from).map(t => `<option ${addState.from === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
-                    <div class="field"><label class="block text-[11px] font-bold text-stone-500 mb-1.5">到</label>
+                    <div class="field"><label class="block text-[10px] font-bold text-stone-500 mb-1.5">到</label>
                         <select id="trTo" class="w-full p-2.5 rounded-tile bg-pastel-bg border border-pastel-border text-sm truncate">
                             ${tagChoices(addState.to).map(t => `<option ${addState.to === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
                 </div>`
@@ -4869,21 +4898,21 @@ function hexA(hex, a) {
                             <i class="fa-solid fa-check absolute text-white text-xs left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 peer-checked:opacity-100 pointer-events-none"></i></span></label>
                     <div id="recurringBox" class="hidden mt-3 p-4 bg-pastel-bg rounded-tile space-y-3">
                         <div class="grid grid-cols-2 gap-3">
-                            <div class="field"><label class="block text-[11px] font-bold text-stone-600 mb-1">週期</label>
+                            <div class="field"><label class="block text-[10px] font-bold text-stone-600 mb-1">週期</label>
                                 <select id="recFreq" class="w-full p-2.5 rounded-tile bg-white border border-pastel-border text-sm truncate">
                                     <option>每日</option><option>每週</option><option>每兩週</option><option selected>每月</option><option>每季</option><option>每半年</option><option>每年</option></select></div>
-                            <div class="field"><label class="block text-[11px] font-bold text-stone-600 mb-1">處理方式</label>
+                            <div class="field"><label class="block text-[10px] font-bold text-stone-600 mb-1">處理方式</label>
                                 <select id="recMode" class="w-full p-2.5 rounded-tile bg-white border border-pastel-border text-sm truncate">
                                     <option>自動記帳</option><option>僅提醒</option></select></div></div>
-                        <div class="field"><label class="block text-[11px] font-bold text-stone-600 mb-1">結束日期（可留空）</label>
+                        <div class="field"><label class="block text-[10px] font-bold text-stone-600 mb-1">結束日期（可留空）</label>
                             <input id="recEnd" type="date" class="w-full py-2.5 px-3 rounded-tile bg-white border border-pastel-border text-sm"></div>
-                        <p class="text-[11px] text-pastel-muted">歸屬：${currentMode === 'family' ? '家庭公帳（全家可見）' : '個人（只有你看得到）'}</p>
+                        <p class="text-[10px] text-pastel-muted">歸屬：${currentMode === 'family' ? '家庭公帳（全家可見）' : '個人（只有你看得到）'}</p>
                     </div>
                 </div>`}
             </div>
 
             <div id="advancedLogicContainer"></div>
-            <button id="saveBtn" onclick="saveTransaction()" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-soft text-base tactile">${editingTxnId ? '更新紀錄' : '儲存紀錄'}</button>`;
+            <button id="saveBtn" onclick="saveTransaction()" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-soft text-sm tactile">${editingTxnId ? '更新紀錄' : '儲存紀錄'}</button>`;
 
         if (!isTr) { paintTagRow(); paintGoalRow(); }
         renderAddFormLogic();
@@ -4936,20 +4965,20 @@ function hexA(hex, a) {
         openSheet(`
             <div class="rounded-card p-5 mb-4 text-white" style="background:linear-gradient(135deg,${isTr ? '#3090F8,#2B7BD6' : isExp ? '#F8A048,#F0863A' : '#40B868,#35A25A'})">
                 <div class="flex justify-between items-center mb-1">
-                    <span class="text-[11px] font-bold opacity-85">${kpBorrow ? esc(kpBorrow.title) : (isTr ? '轉帳' : isExp ? '支出' : '收入') + (addState.cat ? ' · ' + esc(addState.cat) : '')}</span>
+                    <span class="text-[10px] font-bold opacity-85">${kpBorrow ? esc(kpBorrow.title) : (isTr ? '轉帳' : isExp ? '支出' : '收入') + (addState.cat ? ' · ' + esc(addState.cat) : '')}</span>
                     ${addState.cat ? `<button onclick="closeSheet();setTimeout(openCatDrawer,320)" class="text-[10px] font-bold bg-white/25 px-2 py-1 rounded-lg">換分類</button>` : ''}</div>
-                <div id="kpAmt" class="text-5xl font-bold font-rounded tracking-tight leading-none break-all"></div>
+                <div id="kpAmt" class="text-[32px] font-bold font-tabular tracking-tight leading-none break-all"></div>
                 <div id="kpHint" class="text-xs opacity-85 mt-1.5 h-4"></div>
             </div>
             <div class="kp grid grid-cols-4 gap-2.5 mb-3">
                 ${key('7', '7')}${key('8', '8')}${key('9', '9')}${key('÷', '÷', 'bg-pastel-bg text-pastel-accent')}
                 ${key('4', '4')}${key('5', '5')}${key('6', '6')}${key('×', '×', 'bg-pastel-bg text-pastel-accent')}
                 ${key('1', '1')}${key('2', '2')}${key('3', '3')}${key('-', '−', 'bg-pastel-bg text-pastel-accent')}
-                ${key('.', '.')}${key('0', '0')}${key('del', '<i class="fa-solid fa-delete-left text-base"></i>', 'bg-pastel-bg text-stone-600')}${key('+', '+', 'bg-pastel-bg text-pastel-accent')}
+                ${key('.', '.')}${key('0', '0')}${key('del', '<i class="fa-solid fa-delete-left text-sm"></i>', 'bg-pastel-bg text-stone-600')}${key('+', '+', 'bg-pastel-bg text-pastel-accent')}
             </div>
             <div class="flex gap-2.5">
                 <button onclick="kp('C')" class="w-20 py-4 bg-white border border-pastel-border text-stone-500 font-bold rounded-tile text-sm shadow-sm tactile">清除</button>
-                <button onclick="confirmAmount()" class="flex-1 py-4 text-white font-bold rounded-tile shadow-md text-base tactile" style="background:${col}">完成</button>
+                <button onclick="confirmAmount()" class="flex-1 py-4 text-white font-bold rounded-tile shadow-md text-sm tactile" style="background:${col}">完成</button>
             </div>`);
         paintAmount();
     }
@@ -5050,7 +5079,7 @@ function hexA(hex, a) {
         const hits = memoIndex.filter(m => m.note.toLowerCase().includes(q) && m.note.toLowerCase() !== q).slice(0, 6);
         if (!hits.length) return hideMemoBar();
         b.innerHTML = hits.map(m => `<button type="button" onclick="applyMemo('${esc(m.txn_id)}')"
-            class="flex-shrink-0 px-3 py-1.5 bg-pastel-bg border border-pastel-border rounded-full text-[11px] text-stone-700 tactile">
+            class="flex-shrink-0 px-3 py-1.5 bg-pastel-bg border border-pastel-border rounded-full text-[10px] text-stone-700 tactile">
             <span class="font-bold">${esc(m.note)}</span>
             <span class="text-pastel-muted ml-1">${fmt(m.amount)}</span></button>`).join('');
         b.classList.remove('js-hide');
@@ -5232,7 +5261,7 @@ function hexA(hex, a) {
                 <div class="flex justify-between items-center">
                     <h3 class="font-bold text-stone-800 text-sm">收支節奏分析</h3>
                     <span class="text-[10px] text-pastel-muted">${esc(B.title)}</span></div>
-                <p class="text-[11px] text-pastel-muted -mt-1">三條線共用同一基準線：收入累計、支出累計、預算倒扣</p>
+                <p class="text-[10px] text-pastel-muted -mt-1">三條線共用同一基準線：收入累計、支出累計、預算倒扣</p>
                 ${comboChartHtml(viewYM)}
             </div>
 
@@ -5247,7 +5276,7 @@ function hexA(hex, a) {
                 <h3 class="font-bold text-stone-800 text-sm">分類排行</h3>
                 ${top.length ? top.map((c, i) => `
                     <div class="space-y-1.5">
-                        <div class="flex justify-between text-xs"><span class="text-stone-700 truncate"><i class="fa-solid ${esc(catIcon(c[0]))} mr-1.5" style="color:${catColor(c[0])}"></i>${esc(c[0])}</span><span class="font-bold font-rounded flex-shrink-0 ml-2">${fmt(c[1])}</span></div>
+                        <div class="flex justify-between text-xs"><span class="text-stone-700 truncate"><i class="fa-solid ${esc(catIcon(c[0]))} mr-1.5" style="color:${catColor(c[0])}"></i>${esc(c[0])}</span><span class="font-bold font-tabular flex-shrink-0 ml-2">${fmt(c[1])}</span></div>
                         <div class="w-full bg-pastel-bg rounded-full h-2 overflow-hidden"><div class="h-3 rounded-full transition-all duration-700" style="width:${(c[1] / maxC * 100).toFixed(0)}%;background:${catColor(c[0])}"></div></div>
                     </div>`).join('') : `<div class="flex flex-col items-center py-4 gap-2"><img src="./av14.png" alt="" class="w-12 h-12 opacity-70"><span class="text-xs text-pastel-muted">本月還沒有支出</span>
                         <button onclick="switchTab('add')" class="mt-1 px-4 py-2 rounded-full bg-pastel-accent text-white text-xs font-bold tactile">記第一筆</button></div>`}</div>
@@ -5256,27 +5285,27 @@ function hexA(hex, a) {
             <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-3">
                 <div class="font-bold text-sm text-stone-800 border-b border-pastel-border pb-3">1. 收支表（${esc(B.title)}賺多還花多？）</div>
                 <div class="space-y-2.5 text-sm">
-                    <div class="flex justify-between text-stone-600"><span>總收入</span><span class="font-bold text-pastel-green font-rounded">+${fmt(s.monthlyIncome)}</span></div>
-                    <div class="flex justify-between text-stone-600"><span>總支出</span><span class="font-bold text-pastel-red font-rounded">-${fmt(s.monthlyExpense)}</span></div>
-                    <div class="pt-2 border-t border-dashed border-pastel-border flex justify-between font-bold text-stone-800"><span>區間淨結餘</span><span class="${net >= 0 ? 'text-pastel-green' : 'text-pastel-red'} font-rounded">${net >= 0 ? '+' : ''}${fmt(net)}</span></div></div></div>
+                    <div class="flex justify-between text-stone-600"><span>總收入</span><span class="font-bold text-pastel-green font-tabular">+${fmt(s.monthlyIncome)}</span></div>
+                    <div class="flex justify-between text-stone-600"><span>總支出</span><span class="font-bold text-pastel-red font-tabular">-${fmt(s.monthlyExpense)}</span></div>
+                    <div class="pt-2 border-t border-dashed border-pastel-border flex justify-between font-bold text-stone-800"><span>區間淨結餘</span><span class="${net >= 0 ? 'text-pastel-green' : 'text-pastel-red'} font-tabular">${net >= 0 ? '+' : ''}${fmt(net)}</span></div></div></div>
 
             <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-3">
                 <div class="font-bold text-sm text-stone-800 border-b border-pastel-border pb-3">2. 資產負債表（現在身家多少？）</div>
                 <div class="space-y-2.5 text-sm">${currentMode === 'personal' ? `
-                    <div class="flex justify-between text-stone-600"><span>口袋現金</span><span class="font-bold font-rounded">${fmt(s.cashBalance)}</span></div>
-                    <div class="flex justify-between text-stone-600"><span>應收（公帳欠我）</span><span class="selectable font-bold text-pastel-green font-rounded">+${fmt(s.poolOwesMe)}</span></div>
-                    <div class="flex justify-between text-stone-600"><span>應付（我欠他人）</span><span class="selectable font-bold text-pastel-red font-rounded">-${fmt(s.iOweOthers)}</span></div>
-                    <div class="pt-2 border-t border-dashed border-pastel-border flex justify-between font-bold text-stone-800"><span>淨資產</span><span class="font-rounded">${fmt(s.cashBalance + s.poolOwesMe - s.iOweOthers)}</span></div>`
-                : `<div class="flex justify-between text-stone-600"><span>公帳資金餘額</span><span class="font-bold font-rounded">${fmt(s.poolBalance)}</span></div>
-                    <div class="flex justify-between text-stone-600"><span>應付成員代墊</span><span class="font-bold text-pastel-red font-rounded">-${fmt(s.poolOwesMembers.reduce((a, b) => a + b.amount, 0))}</span></div>
-                    <div class="flex justify-between text-stone-600"><span>應收成員預支</span><span class="font-bold text-pastel-green font-rounded">+${fmt(s.membersOwePool.reduce((a, b) => a + b.amount, 0))}</span></div>`}</div></div>
+                    <div class="flex justify-between text-stone-600"><span>口袋現金</span><span class="font-bold font-tabular">${fmt(s.cashBalance)}</span></div>
+                    <div class="flex justify-between text-stone-600"><span>應收（公帳欠我）</span><span class="selectable font-bold text-pastel-green font-tabular">+${fmt(s.poolOwesMe)}</span></div>
+                    <div class="flex justify-between text-stone-600"><span>應付（我欠他人）</span><span class="selectable font-bold text-pastel-red font-tabular">-${fmt(s.iOweOthers)}</span></div>
+                    <div class="pt-2 border-t border-dashed border-pastel-border flex justify-between font-bold text-stone-800"><span>淨資產</span><span class="font-tabular">${fmt(s.cashBalance + s.poolOwesMe - s.iOweOthers)}</span></div>`
+                : `<div class="flex justify-between text-stone-600"><span>公帳資金餘額</span><span class="font-bold font-tabular">${fmt(s.poolBalance)}</span></div>
+                    <div class="flex justify-between text-stone-600"><span>應付成員代墊</span><span class="font-bold text-pastel-red font-tabular">-${fmt(s.poolOwesMembers.reduce((a, b) => a + b.amount, 0))}</span></div>
+                    <div class="flex justify-between text-stone-600"><span>應收成員預支</span><span class="font-bold text-pastel-green font-tabular">+${fmt(s.membersOwePool.reduce((a, b) => a + b.amount, 0))}</span></div>`}</div></div>
 
             <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-3">
                 <div class="font-bold text-sm text-stone-800 border-b border-pastel-border pb-3">3. 現金流量表（錢實際進出多少？）</div>
                 <div class="space-y-2.5 text-sm">
-                    <div class="flex justify-between text-stone-600"><span>區間現金流入</span><span class="font-bold text-pastel-green font-rounded">+${fmt(s.monthlyIncome)}</span></div>
-                    <div class="flex justify-between text-stone-600"><span>區間現金流出</span><span class="font-bold text-pastel-red font-rounded">-${fmt(s.monthlyExpense)}</span></div>
-                    <div class="pt-2 border-t border-dashed border-pastel-border flex justify-between font-bold text-stone-800"><span>淨現金流</span><span class="${net >= 0 ? 'text-pastel-green' : 'text-pastel-red'} font-rounded">${net >= 0 ? '+' : ''}${fmt(net)}</span></div></div></div>`;
+                    <div class="flex justify-between text-stone-600"><span>區間現金流入</span><span class="font-bold text-pastel-green font-tabular">+${fmt(s.monthlyIncome)}</span></div>
+                    <div class="flex justify-between text-stone-600"><span>區間現金流出</span><span class="font-bold text-pastel-red font-tabular">-${fmt(s.monthlyExpense)}</span></div>
+                    <div class="pt-2 border-t border-dashed border-pastel-border flex justify-between font-bold text-stone-800"><span>淨現金流</span><span class="${net >= 0 ? 'text-pastel-green' : 'text-pastel-red'} font-tabular">${net >= 0 ? '+' : ''}${fmt(net)}</span></div></div></div>`;
     }
 
     /* ==========================================================
@@ -5294,7 +5323,7 @@ function hexA(hex, a) {
 
             <div class="flex flex-col items-center text-center space-y-3 mb-6">
                 <button onclick="openAvatarPicker()" class="relative group">
-                    <div id="modalUserAvatar" class="w-24 h-24 rounded-full border-[4px] flex items-center justify-center text-5xl overflow-hidden shadow-md ${i.border} ${i.bg}">${avatarInner(STATE.me?.avatar_emoji)}</div>
+                    <div id="modalUserAvatar" class="w-24 h-24 rounded-full border-[4px] flex items-center justify-center text-[32px] overflow-hidden shadow-md ${i.border} ${i.bg}">${avatarInner(STATE.me?.avatar_emoji)}</div>
                     <div class="absolute -top-1 -left-1 w-8 h-8 rounded-full bg-white border border-pastel-border shadow-sm flex items-center justify-center text-pastel-accent text-xs"><i class="fa-solid fa-camera"></i></div>
                 </button>
                 <div><h3 class="text-xl font-bold text-stone-800">${esc(STATE.me?.nickname)}</h3>
@@ -5309,7 +5338,7 @@ function hexA(hex, a) {
                     <span class="text-lg font-bold text-pastel-accent">${i.days} 天</span></div>
                 <div class="w-full bg-white rounded-full h-2 mb-2 overflow-hidden border border-pastel-border">
                     <div class="h-3 rounded-full transition-all duration-500" style="width:${i.progress}%;background:${i.ring}"></div></div>
-                <p class="text-[11px] text-pastel-muted text-center">${i.tier === 5 ? '您已達到最高殿堂光環！' : `距離解鎖下一階段光環還差 ${i.next - i.days} 天`}</p>
+                <p class="text-[10px] text-pastel-muted text-center">${i.tier === 5 ? '您已達到最高殿堂光環！' : `距離解鎖下一階段光環還差 ${i.next - i.days} 天`}</p>
             </div>
 
             ${payeeCard()}
@@ -5356,8 +5385,8 @@ function hexA(hex, a) {
         const hits = matchBanks(q);
         if (!hits.length) { box.classList.add('js-hide'); box.innerHTML = ''; return; }
         box.innerHTML = hits.map(b => `<button type="button" onclick="pickBank('${b[0]}','${esc(b[1])}')"
-            class="flex-shrink-0 px-3 py-1.5 rounded-full bg-pastel-bg border border-pastel-border text-[11px] text-stone-700 tactile">
-            <span class="font-rounded font-bold">${b[0]}</span> ${esc(b[1])}</button>`).join('');
+            class="flex-shrink-0 px-3 py-1.5 rounded-full bg-pastel-bg border border-pastel-border text-[10px] text-stone-700 tactile">
+            <span class="font-tabular font-bold">${b[0]}</span> ${esc(b[1])}</button>`).join('');
         box.classList.remove('js-hide');
     }
     function pickBank(code, name) {
@@ -5378,7 +5407,7 @@ function hexA(hex, a) {
         const p = payeeOf(STATE.me);
         return `<div class="bg-pastel-bg rounded-tile p-4 mb-5">
             <div class="text-sm font-bold text-stone-700 mb-1"><i class="fa-solid fa-building-columns mr-1.5 text-pastel-blue"></i>我的收款資訊</div>
-            <p class="text-[11px] text-pastel-muted mb-3 leading-relaxed">
+            <p class="text-[10px] text-pastel-muted mb-3 leading-relaxed">
                 填好之後，家人要還錢給你時可以直接複製，不必再私訊問。家人看得到，其他人看不到。</p>
             <div class="space-y-2">
                 <input id="payeeBank" type="text" value="${esc(p.bank)}" placeholder="銀行代碼或名稱，例：012 或 富邦"
@@ -5388,7 +5417,7 @@ function hexA(hex, a) {
                 <div id="bankList" class="js-hide flex gap-2 overflow-x-auto hide-scrollbar pb-0.5"></div>
                 <input id="payeeAccount" type="text" value="${esc(p.account)}" placeholder="帳號（開頭的 0 不會被吃掉）"
                     inputmode="numeric" autocomplete="off"
-                    class="field w-full py-2.5 px-3 rounded-lg bg-white border border-pastel-border text-sm font-rounded">
+                    class="field w-full py-2.5 px-3 rounded-lg bg-white border border-pastel-border text-sm font-tabular">
             </div>
             <button id="btnPayee" onclick="savePayee()" class="w-full mt-3 py-2.5 bg-white border border-pastel-border text-stone-700 font-bold rounded-lg text-xs tactile">儲存收款資訊</button>
         </div>`;
@@ -5410,7 +5439,7 @@ function hexA(hex, a) {
     /** 收款資訊小卡＋一鍵複製，還款流程與成員頁共用 */
     function payeeBlock(m) {
         if (!hasPayee(m)) {
-            return `<div class="p-3 rounded-tile bg-pastel-bg border border-dashed border-pastel-border text-[11px] text-pastel-muted leading-relaxed">
+            return `<div class="p-3 rounded-tile bg-pastel-bg border border-dashed border-pastel-border text-[10px] text-pastel-muted leading-relaxed">
                 ${esc(m?.nickname || '對方')}還沒填收款資訊。可以請他到「設定 → 點自己的頭像 → 我的收款資訊」填一次，之後大家都不用再問。</div>`;
         }
         const p = payeeOf(m);
@@ -5421,17 +5450,17 @@ function hexA(hex, a) {
             <div class="text-[10px] text-pastel-blue font-bold">收款資訊</div>
             ${p.bank ? `<div class="flex items-center gap-2">
                 <div class="min-w-0 flex-1">
-                    <div class="text-[9px] text-pastel-muted">銀行</div>
-                    <div class="selectable text-[13px] font-bold text-stone-800 break-all">${esc(p.bank)}</div></div>
+                    <div class="text-[10px] text-pastel-muted">銀行</div>
+                    <div class="selectable text-sm font-bold text-stone-800 break-all">${esc(p.bank)}</div></div>
                 <button onclick="copyText('${esc(bankCodeOf(p.bank) || p.bank)}','已複製銀行代碼')"
                     class="flex-shrink-0 px-2.5 py-1.5 rounded-lg bg-white border border-pastel-blue/30 text-pastel-blue text-[10px] font-bold tactile">
                     <i class="fa-solid fa-copy mr-1"></i>代碼</button></div>` : ''}
             <div class="flex items-center gap-2">
                 <div class="min-w-0 flex-1">
-                    <div class="text-[9px] text-pastel-muted">帳號</div>
-                    <div class="selectable text-[13px] font-bold text-stone-800 font-rounded break-all">${esc(p.account)}</div></div>
+                    <div class="text-[10px] text-pastel-muted">帳號</div>
+                    <div class="selectable text-sm font-bold text-stone-800 font-tabular break-all">${esc(p.account)}</div></div>
                 <button onclick="copyText('${esc(p.account)}','已複製帳號')"
-                    class="flex-shrink-0 px-3 py-2 rounded-lg bg-white border border-pastel-blue/30 text-pastel-blue text-[11px] font-bold tactile">
+                    class="flex-shrink-0 px-3 py-2 rounded-lg bg-white border border-pastel-blue/30 text-pastel-blue text-[10px] font-bold tactile">
                     <i class="fa-solid fa-copy mr-1"></i>帳號</button>
             </div></div>`;
     }
@@ -5449,12 +5478,12 @@ function hexA(hex, a) {
                 <div class="w-14 h-14 rounded-full border-[3px] ${i.border} ${i.bg} overflow-hidden flex items-center justify-center text-2xl flex-shrink-0">${avatarInner(m.avatar_emoji)}</div>
                 <div class="min-w-0">
                     <h3 class="text-lg font-bold text-stone-800 truncate">${esc(m.nickname)}${isMe ? '（我）' : ''}</h3>
-                    <div class="text-[11px] ${i.color} font-bold">${esc(i.name)}光環 ・ 連續 ${Number(m.streak_days) || 0} 天</div>
+                    <div class="text-[10px] ${i.color} font-bold">${esc(i.name)}光環 ・ 連續 ${Number(m.streak_days) || 0} 天</div>
                 </div>
             </div>
             ${owe > 0.01 ? `<div class="mb-3 p-3 rounded-tile bg-pastel-greenLight border border-pastel-green/25 flex justify-between items-center">
                 <span class="text-xs font-bold text-stone-700">還沒還我</span>
-                <span class="font-bold font-rounded text-pastel-green">${fmt(owe)}</span></div>` : ''}
+                <span class="font-bold font-tabular text-pastel-green">${fmt(owe)}</span></div>` : ''}
             ${payeeBlock(m)}
             ${isMe ? `<button onclick="closeSheet();openProfileModal()" class="w-full mt-4 py-3 bg-pastel-bg border border-pastel-border text-stone-700 font-bold rounded-tile text-sm tactile">編輯我的收款資訊</button>` : ''}`);
     }
@@ -5494,7 +5523,7 @@ function hexA(hex, a) {
                     <i class="fa-solid ${g.icon}"></i></div>
                 <div class="min-w-0 flex-1">
                     <div class="font-bold text-sm text-stone-800">成長階段 · ${esc(g.name)} <span class="font-normal text-pastel-muted">累積 ${g.count} 筆</span></div>
-                    <div class="text-[11px] text-pastel-muted truncate">${esc(g.word)}</div></div>
+                    <div class="text-[10px] text-pastel-muted truncate">${esc(g.word)}</div></div>
             </div>
             <div class="flex gap-1.5 mb-2">
                 ${GROWTH.map(x => `<div class="flex-1 h-2.5 rounded-full" style="background:${x.id <= g.id ? g.color : 'rgba(0,0,0,.08)'}"></div>`).join('')}
@@ -5521,7 +5550,7 @@ function hexA(hex, a) {
                                ${t.done ? 'bg-pastel-greenLight border-transparent' : 'bg-white border-pastel-border'}">
                         <div class="w-8 h-8 rounded-full flex items-center justify-center mb-2 ${t.done ? 'bg-white/70 text-pastel-green task-tick' : 'bg-pastel-bg text-pastel-muted'}">
                             <i class="fa-solid ${t.done ? 'fa-circle-check' : t.icon} text-sm"></i></div>
-                        <div class="text-[12px] font-bold leading-tight mb-1 ${t.done ? 'text-pastel-green' : 'text-stone-700'}">${esc(t.name)}</div>
+                        <div class="text-xs font-bold leading-tight mb-1 ${t.done ? 'text-pastel-green' : 'text-stone-700'}">${esc(t.name)}</div>
                         <div class="text-[10px] text-pastel-muted leading-tight line-clamp-2">${esc(t.hint)}</div>
                     </button>`).join('')}
             </div></div>`;
@@ -5593,7 +5622,7 @@ function hexA(hex, a) {
                         <i class="fa-solid ${esc(normIcon(c.icon_emoji, c.item_group))} text-sm w-4 text-center flex-shrink-0" style="color:${catColor(c.item_name)}"></i>
                         <span class="font-bold text-stone-800 truncate flex-1">${esc(c.item_name)}</span>
                         <button class="drag-handle flex-shrink-0 flex items-center justify-center text-pastel-muted self-stretch"
-                                aria-label="按住拖曳排序"><i class="fa-solid fa-grip-lines text-base"></i></button>
+                                aria-label="按住拖曳排序"><i class="fa-solid fa-grip-lines text-sm"></i></button>
                     </div>`).join('')}
                </div>`
             : `<div class="grid grid-cols-2 gap-2 text-xs">${itemGrid(list, group)}</div>`;
@@ -5608,7 +5637,7 @@ function hexA(hex, a) {
                         onclick="archiveItem(this.dataset.n, this.dataset.g)"><i class="fa-solid fa-xmark"></i></button>
             </div>`).join('') : `<div class="col-span-2 text-xs text-pastel-muted">還沒有項目。用右上角的「新增」建立第一個</div>`;
         const sortBtn = (group) => `<button onclick="toggleSortMode('${esc(group)}')"
-            class="text-[11px] font-bold ${sortingGroup === group ? 'text-pastel-green' : 'text-pastel-muted'} tactile">
+            class="text-[10px] font-bold ${sortingGroup === group ? 'text-pastel-green' : 'text-pastel-muted'} tactile">
             <i class="fa-solid ${sortingGroup === group ? 'fa-check' : 'fa-arrow-up-arrow-down'} mr-1"></i>${sortingGroup === group ? '完成' : '調整順序'}</button>`;
 
         // 個人規則只有本人看得到；家庭規則全家可見
@@ -5640,16 +5669,16 @@ function hexA(hex, a) {
             return `<div class="flex flex-col items-center gap-1.5 min-w-0">
                         <button onclick="openMemberCard('${esc(m.member_id)}')" class="relative tactile">
                             <div class="w-14 h-14 rounded-full border-[3px] ${i.border} ${i.bg} overflow-hidden flex items-center justify-center text-2xl">${avatarInner(m.avatar_emoji)}</div>
-                            ${hasPayee(m) ? `<span class="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-white border border-pastel-border flex items-center justify-center text-[9px] text-pastel-blue"><i class="fa-solid fa-building-columns"></i></span>` : ''}
+                            ${hasPayee(m) ? `<span class="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-white border border-pastel-border flex items-center justify-center text-[10px] text-pastel-blue"><i class="fa-solid fa-building-columns"></i></span>` : ''}
                         </button>
-                        <div class="text-[11px] font-bold text-stone-700 truncate w-full text-center mt-1">${esc(m.nickname)}${isMe ? ' ·我' : ''}</div>
+                        <div class="text-[10px] font-bold text-stone-700 truncate w-full text-center mt-1">${esc(m.nickname)}${isMe ? ' ·我' : ''}</div>
                         <div class="text-[10px] ${i.color} font-bold truncate w-full text-center leading-tight">${esc(i.name)}</div>
                         <div class="text-[10px] text-pastel-muted"><i class="fa-solid fa-fire"></i> ${Number(m.streak_days) || 0}</div>
                         ${streakAtRisk(m) && !savedThisMonth()
-                    ? `<button onclick="saveStreak('${esc(m.member_id)}')" class="mt-1 px-2 py-1 rounded-full bg-pastel-blueLight text-pastel-blue text-[9px] font-bold tactile" title="幫他保住連續紀錄"><i class="fa-solid fa-heart-pulse mr-0.5"></i>續命</button>`
+                    ? `<button onclick="saveStreak('${esc(m.member_id)}')" class="mt-1 px-2 py-1 rounded-full bg-pastel-blueLight text-pastel-blue text-[10px] font-bold tactile" title="幫他保住連續紀錄"><i class="fa-solid fa-heart-pulse mr-0.5"></i>續命</button>`
                     : needsCheer(m) ? (cheeredToday(m.member_id)
-                        ? `<span class="mt-1 text-[9px] text-pastel-muted">已加油</span>`
-                        : `<button onclick="sendCheer('${esc(m.member_id)}')" class="mt-1 px-2 py-1 rounded-full bg-pastel-accentLight text-pastel-accent text-[9px] font-bold tactile"><i class="fa-solid fa-hand-fist mr-0.5"></i>加油</button>`) : ''}
+                        ? `<span class="mt-1 text-[10px] text-pastel-muted">已加油</span>`
+                        : `<button onclick="sendCheer('${esc(m.member_id)}')" class="mt-1 px-2 py-1 rounded-full bg-pastel-accentLight text-pastel-accent text-[10px] font-bold tactile"><i class="fa-solid fa-hand-fist mr-0.5"></i>加油</button>`) : ''}
                     </div>`;
         }).join('')}
                 </div>
@@ -5660,10 +5689,10 @@ function hexA(hex, a) {
                 <div class="font-bold text-sm text-stone-800 flex items-center gap-2"><i class="fa-solid fa-bullseye text-pastel-accent"></i> 預算</div>
                 <button onclick="switchViewMode('personal');openBudgetSheet()" class="w-full flex justify-between items-center p-3 bg-pastel-bg rounded-tile border border-pastel-border text-sm">
                     <span class="font-bold text-stone-700">我的每月預算</span>
-                    <span class="font-bold font-rounded text-pastel-accent">${budgetFor('personal', '') ? fmt(budgetFor('personal', '')) : '未設定'} <i class="fa-solid fa-chevron-right text-[10px] ml-1 text-pastel-muted"></i></span></button>
+                    <span class="font-bold font-tabular text-pastel-accent">${budgetFor('personal', '') ? fmt(budgetFor('personal', '')) : '未設定'} <i class="fa-solid fa-chevron-right text-[10px] ml-1 text-pastel-muted"></i></span></button>
                 <button onclick="switchViewMode('family');openBudgetSheet()" class="w-full flex justify-between items-center p-3 bg-pastel-bg rounded-tile border border-pastel-border text-sm">
                     <span class="font-bold text-stone-700">家庭公帳預算</span>
-                    <span class="font-bold font-rounded text-pastel-accent">${budgetFor('family', '') ? fmt(budgetFor('family', '')) : '未設定'} <i class="fa-solid fa-chevron-right text-[10px] ml-1 text-pastel-muted"></i></span></button>
+                    <span class="font-bold font-tabular text-pastel-accent">${budgetFor('family', '') ? fmt(budgetFor('family', '')) : '未設定'} <i class="fa-solid fa-chevron-right text-[10px] ml-1 text-pastel-muted"></i></span></button>
             </div>
 
             <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-4">
@@ -5681,10 +5710,10 @@ function hexA(hex, a) {
                                     <span class="px-1.5 py-0.5 rounded ${r.scope === 'family' ? 'bg-pastel-blueLight text-pastel-blue' : 'bg-pastel-bg text-pastel-muted'} font-bold">${r.scope === 'family' ? '家庭' : '個人'}</span>
                                     ${esc(r.freq)} · ${esc(r.auto_mode)} · 下次 ${esc(r.next_run || '—')}</div></div></div>
                         <div class="text-right flex-shrink-0 ml-2">
-                            <div class="font-bold font-rounded text-sm ${r.entry_type === '收入' ? 'text-pastel-green' : 'text-stone-800'}">${fmt(r.amount)}</div>
+                            <div class="font-bold font-tabular text-sm ${r.entry_type === '收入' ? 'text-pastel-green' : 'text-stone-800'}">${fmt(r.amount)}</div>
                             <div class="flex gap-3 mt-1 justify-end">
-                                <button class="text-[11px] text-stone-400" onclick='openRuleSheet(${JSON.stringify(r.rule_id)})'><i class="fa-solid fa-pen"></i></button>
-                                <button class="text-[11px] text-stone-400" onclick='deleteRule(${JSON.stringify(r.rule_id)})'><i class="fa-solid fa-trash"></i></button></div></div>
+                                <button class="text-[10px] text-stone-400" onclick='openRuleSheet(${JSON.stringify(r.rule_id)})'><i class="fa-solid fa-pen"></i></button>
+                                <button class="text-[10px] text-stone-400" onclick='deleteRule(${JSON.stringify(r.rule_id)})'><i class="fa-solid fa-trash"></i></button></div></div>
                     </div>`).join('') : `<div class="text-xs text-pastel-muted py-2">尚未設定。例如 Netflix、房租、每月薪水，設定後系統會自動記帳。</div>`}
                 </div></div>
 
@@ -5715,7 +5744,7 @@ function hexA(hex, a) {
 
             <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-3">
                 <div class="font-bold text-sm text-stone-800 flex items-center gap-2"><i class="fa-solid fa-plug text-pastel-blue"></i> 連線與帳本</div>
-                ${backendOutdated() ? `<div class="p-3 rounded-tile bg-pastel-redLight border border-pastel-red/30 text-pastel-red text-[11px] font-bold leading-relaxed">${esc(outdatedMsg())}</div>` : ''}
+                ${backendOutdated() ? `<div class="p-3 rounded-tile bg-pastel-redLight border border-pastel-red/30 text-pastel-red text-[10px] font-bold leading-relaxed">${esc(outdatedMsg())}</div>` : ''}
                 <div class="flex justify-between text-xs text-pastel-muted"><span>後端版本</span><span class="font-mono">${esc(BACKEND_VERSION || '未知')}</span></div>
                 <div class="text-xs text-pastel-muted">
                     <div class="mb-1">後端網址</div>
@@ -5979,7 +6008,7 @@ function hexA(hex, a) {
                 <input id="niName" value="${esc(_newItem.name)}" placeholder="名稱，例如：富邦-信用卡"
                     class="field flex-1 w-full p-3.5 rounded-tile bg-pastel-bg border border-pastel-border text-stone-800">
             </div>
-            ${ed ? `<p class="text-[11px] text-pastel-muted leading-relaxed -mt-3 mb-4">改名後，已經記過的帳會一起換成新名稱，統計不會斷成兩截。</p>` : ''}
+            ${ed ? `<p class="text-[10px] text-pastel-muted leading-relaxed -mt-3 mb-4">改名後，已經記過的帳會一起換成新名稱，統計不會斷成兩截。</p>` : ''}
             ${g === 'PAYMENT_TAG' ? `
             <div class="p-3 rounded-tile bg-pastel-bg mb-5 space-y-3">
                 <label class="flex items-center justify-between gap-3">
@@ -6037,10 +6066,10 @@ function hexA(hex, a) {
             <div class="space-y-4 mb-5">
                 ${ICON_PICKER.map(([label, list]) => `
                     <div>
-                        <div class="text-[11px] text-pastel-muted mb-1.5">${esc(label)}</div>
+                        <div class="text-[10px] text-pastel-muted mb-1.5">${esc(label)}</div>
                         <div class="grid grid-cols-7 gap-2">
                             ${list.map(ic => `<button onclick="pickNewIcon('${ic}')"
-                                class="aspect-square rounded-tile flex items-center justify-center text-base border transition-all tactile ${_newItem.icon === ic ? 'bg-pastel-accent text-white border-pastel-accent shadow-sm' : 'bg-pastel-bg text-stone-600 border-pastel-border'}">
+                                class="aspect-square rounded-tile flex items-center justify-center text-sm border transition-all tactile ${_newItem.icon === ic ? 'bg-pastel-accent text-white border-pastel-accent shadow-sm' : 'bg-pastel-bg text-stone-600 border-pastel-border'}">
                                 <i class="fa-solid ${ic}"></i></button>`).join('')}
                         </div></div>`).join('')}
             </div>
@@ -6164,7 +6193,7 @@ function hexA(hex, a) {
                 <div class="flex gap-2 p-2.5 rounded-tile border ${r.ok ? 'bg-pastel-greenLight/40 border-pastel-green/30' : 'bg-pastel-redLight border-pastel-red/30'}">
                     <i class="fa-solid ${r.ok ? 'fa-circle-check text-pastel-green' : 'fa-triangle-exclamation text-pastel-red'} text-xs mt-0.5"></i>
                     <div class="min-w-0">
-                        <div class="text-[11px] font-bold ${r.ok ? 'text-stone-700' : 'text-pastel-red'}">${esc(r.name)}</div>
+                        <div class="text-[10px] font-bold ${r.ok ? 'text-stone-700' : 'text-pastel-red'}">${esc(r.name)}</div>
                         <div class="selectable text-[10px] text-pastel-muted leading-relaxed break-all">${esc(r.detail)}</div>
                     </div></div>`).join('');
         };
