@@ -433,6 +433,16 @@
         }
         .num-sym { opacity:.45; font-weight:600; }   /* $ 與千分位降一階，凸顯數字本體 */
 
+        /* 分類圖示圓點：圓底用分類的實色（由 inline style 給），
+           圖示本體則固定黑／白，靠明暗對比讀出形狀，不跟著分類色走。
+           淺色模式用黑色圖示、深色模式用白色，兩種模式下都保持足夠對比。 */
+        .cat-dot { color:#1C1917; }
+        html.dark .cat-dot { color:#FFFFFF; }
+        /* 設定頁的分類／標籤卡片：底色固定白色（深色模式為深色卡面），
+           只有圖示本身保留分類實色，卡片外框保留。 */
+        .cat-card-icon { background:#FFFFFF !important; }
+        html.dark .cat-card-icon { background:#221F1D !important; }
+
         /* 卡片依序入場 */
         @keyframes riseIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
         .stagger > * { animation:riseIn .34s cubic-bezier(.22,.61,.36,1) both; }
@@ -632,7 +642,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.18.0',
+        VERSION: 'v6.19.0',
         MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -831,6 +841,22 @@ const buzz = (ms) => { try { navigator.vibrate && navigator.vibrate(ms || 8); } 
 
 /* 新增頁狀態（自建鍵盤用） */
 let addState = { mode: 'expense', expr: '0', cat: '', tag: '', nature: '', date: todayISO(), note: '', from: '', to: '' };
+/* 跨日守衛：PWA 從主畫面開啟後不會真的被關掉，只是被系統背景化。
+   隔天點圖示回來時 JS 往往不會重新執行，addState.date 會停在昨天，
+   使用者沒注意就把今天的帳記到昨天。這裡在「App 回到前景」時檢查是否已跨日，
+   若使用者當下沒有手動指定過日期（_dateTouched），就把它更新為今天。 */
+function refreshAddDateIfStale() {
+    const t = todayISO();
+    if (addState.date === t) return;
+    // 使用者正在編輯既有紀錄，或自己挑過日期：尊重他的選擇，不要覆蓋
+    if (editingTxnId || addState._dateTouched) return;
+    addState.date = t;
+    const inp = document.getElementById('inpDate');
+    if (inp) inp.value = t;
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshAddDateIfStale(); });
+window.addEventListener('focus', refreshAddDateIfStale);
+window.addEventListener('pageshow', refreshAddDateIfStale);
     let currentMode = 'personal';
     let currentTab = 'dashboard';
     let isAddFormExpense = true;
@@ -866,6 +892,8 @@ function hexA(hex, a) {
        等級光環（連續記帳天數）
        ========================================================== */
     /* 等級光環＝「當前」連續天數，斷了就掉回基礎階。
+       連續性有 5 天寬限（見 STREAK_GRACE_DAYS）：週末在家自己煮、連假沒消費，
+       這些日子本來就可能一筆帳都沒有，不該因此賠掉幾個月的累積。
        門檻密集在前段（21 天是習慣養成的門檻），讓新手兩三週就能看到第一次進階，
        而不是等 100 天才有第一個回饋。 */
     const AURA = [
@@ -1614,7 +1642,9 @@ function hexA(hex, a) {
         const d = new Date(String(iso).slice(0, 10) + 'T00:00:00');
         return Math.round((new Date(todayISO() + 'T00:00:00') - d) / 86400000);
     }
-    /** 超過 2 天沒記帳，連續天數快斷了 */
+    /** 超過 2 天沒記帳就可以打氣關心。
+        這個門檻刻意早於連續紀錄的 5 天寬限期 —— 打氣是低成本的提醒，
+        目的是在對方還遠沒有斷線風險時就先喚回習慣，跟「續命」是兩件事。 */
     function needsCheer(m) {
         return m.member_id !== 'family_pool' && m.member_id !== STATE.me?.member_id &&
             m.status !== '停用' && daysSince(m.last_entry_date) >= 2;
@@ -1848,9 +1878,15 @@ function hexA(hex, a) {
         const ym = currentYM();
         return (STATE.streakSaves || []).some(x => x.from_member === STATE.me?.member_id && String(x.ym) === ym);
     }
+    /* 連續記帳寬限天數：必須與後端 Code.gs 的 STREAK_GRACE_DAYS 保持一致，
+       兩邊不同步會出現「畫面說快斷了、實際上還很安全」這種互相矛盾的提示。 */
+    const STREAK_GRACE_DAYS = 5;
     function streakAtRisk(m) {
+        const gap = daysSince(m.last_entry_date);
         return m.member_id !== 'family_pool' && m.member_id !== STATE.me?.member_id &&
-            m.status !== '停用' && (Number(m.streak_days) || 0) > 0 && daysSince(m.last_entry_date) >= 2;
+            m.status !== '停用' && (Number(m.streak_days) || 0) > 0 &&
+            // 已經超過寬限期就是真的斷了，續命救不回來；只在最後兩天內提醒還來得及幫忙
+            gap >= STREAK_GRACE_DAYS - 1 && gap <= STREAK_GRACE_DAYS;
     }
     async function saveStreak(toId) {
         const m = STATE.members.find(x => x.member_id === toId); if (!m) return;
@@ -2022,7 +2058,7 @@ function hexA(hex, a) {
         ['dashboardView', 'transactionsView', 'addView', 'statsView', 'settingsView'].forEach(v => document.getElementById(v).classList.add('hidden'));
         document.getElementById(tab + 'View').classList.remove('hidden');
         document.getElementById('appMain').scrollTop = 0;
-        if (tab === 'add') setTimeout(maybeAutoOpenDrawer, 220);
+        if (tab === 'add') { refreshAddDateIfStale(); setTimeout(maybeAutoOpenDrawer, 220); }
     }
 
     function switchViewMode(mode) {
@@ -2273,7 +2309,7 @@ function hexA(hex, a) {
                 <div class="text-xs font-bold text-stone-600 pt-1">分類預算（選填）</div>
                 ${cats.map(c => `
                     <div class="flex items-center gap-3">
-                        <div class="w-9 h-9 rounded-tile flex items-center justify-center flex-shrink-0" style="background:${hexA(catColor(c.item_name), .16)};color:${catColor(c.item_name)}"><i class="fa-solid ${esc(normIcon(c.icon_emoji, c.item_group))}"></i></div>
+                        <div class="cat-dot w-9 h-9 rounded-tile flex items-center justify-center flex-shrink-0" style="background:${catColor(c.item_name)}"><i class="fa-solid ${esc(normIcon(c.icon_emoji, c.item_group))}"></i></div>
                         <span class="text-sm text-stone-700 flex-1 truncate">${esc(c.item_name)}</span>
                         <input type="number" inputmode="numeric" data-cat="${esc(c.item_name)}" value="${budgetFor(scope, c.item_name) || ''}" placeholder="—"
                             class="bud-inp w-24 p-2.5 rounded-tile bg-pastel-bg border border-pastel-border text-sm text-right font-tabular">
@@ -2423,8 +2459,8 @@ function hexA(hex, a) {
             const done = x.expected - x.remaining;
             return `<div class="p-3 rounded-tile bg-pastel-bg">
                         <div class="flex items-start gap-2.5">
-                            <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-xs"
-                                 style="background:${hexA(catColor(x.category), .16)};color:${catColor(x.category)}">
+                            <div class="cat-dot w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-xs"
+                                 style="background:${catColor(x.category)}">
                                 <i class="fa-solid ${esc(catIcon(x.category))}"></i></div>
                             <div class="flex-1 min-w-0">
                                 <div class="text-sm font-bold text-stone-800 truncate">${esc(x.note || x.category || '（無備註）')}</div>
@@ -2979,8 +3015,8 @@ function hexA(hex, a) {
             <p class="text-xs text-pastel-muted mb-5">${isEdit ? (mine ? '' : '只有建立者可以修改') : '例如「日本旅遊 $60,000」「換手機 $20,000」'}</p>
             <div class="space-y-4">
                 <div class="flex items-center gap-3">
-                    <div class="w-14 h-14 rounded-tile flex items-center justify-center text-2xl flex-shrink-0"
-                         style="background:${hexA('#F8A048', .16)};color:#F8A048"><i class="fa-solid ${esc(d.icon)}"></i></div>
+                    <div class="cat-dot w-14 h-14 rounded-tile flex items-center justify-center text-2xl flex-shrink-0"
+                         style="background:#F8A048"><i class="fa-solid ${esc(d.icon)}"></i></div>
                     <input id="glName" value="${esc(d.name)}" ${mine ? '' : 'disabled'} placeholder="目標名稱"
                         class="field flex-1 w-full p-3.5 rounded-tile bg-pastel-bg border border-pastel-border text-stone-800"></div>
                 <div class="grid grid-cols-6 gap-2">
@@ -3727,8 +3763,8 @@ function hexA(hex, a) {
             </div>
             <div class="swipe-inner bg-white px-4 py-3.5 flex justify-between items-center relative w-full">
                 <div class="flex items-center gap-3.5 min-w-0">
-                    <div class="w-10 h-10 rounded-full flex items-center justify-center text-sm flex-shrink-0"
-                         style="background:${hexA(col, .12)};color:${col}"><i class="fa-solid ${esc(icon)}"></i></div>
+                    <div class="cat-dot w-10 h-10 rounded-full flex items-center justify-center text-sm flex-shrink-0"
+                         style="background:${col}"><i class="fa-solid ${esc(icon)}"></i></div>
                     <div class="min-w-0">
                         <div class="font-bold text-stone-800 text-sm truncate">${esc(t.note || t.category || '（無備註）')}${t.recurring_rule_id ? ' <i class="fa-solid fa-rotate text-[10px] text-pastel-muted"></i>' : ''}</div>
                         <div class="text-[10px] text-pastel-muted flex items-center gap-1.5 truncate mt-0.5">
@@ -4802,7 +4838,7 @@ function hexA(hex, a) {
     function initAddForm(keepValues) {
         if (!keepValues) {
             addState = {
-                mode: 'expense', expr: '0', cat: '', note: '', date: todayISO(),
+                mode: 'expense', expr: '0', cat: '', note: '', date: todayISO(), _dateTouched: false,
                 tag: PREF.get('tag', '') || (STATE.tags[0]?.item_name || ''),
                 nature: PREF.get('nature', '純個人'),
                 from: PREF.get('tag', '') || (STATE.tags[0]?.item_name || ''),
@@ -4858,7 +4894,7 @@ function hexA(hex, a) {
 
                 <div class="px-4 py-3 flex items-center justify-between gap-3">
                     <span class="text-sm text-stone-600 flex-shrink-0">日期</span>
-                    <input id="inpDate" type="date" value="${esc(addState.date)}" onchange="addState.date=this.value"
+                    <input id="inpDate" type="date" value="${esc(addState.date)}" onchange="addState.date=this.value; addState._dateTouched=true;"
                         class="field flex-1 max-w-[190px] py-2 px-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm font-bold text-stone-800 font-sans"></div>
 
                 <div class="px-4 py-3">
@@ -5663,7 +5699,7 @@ const BANKS = [
                </div>`
             : `<div class="grid grid-cols-2 gap-2 text-xs">${itemGrid(list, group)}</div>`;
         const itemGrid = (list, group) => list.length ? list.map(c => `
-            <div class="p-2.5 rounded-tile border border-pastel-border flex items-center gap-2 justify-between min-w-0" style="background:${hexA(catColor(c.item_name), .1)}">
+            <div class="cat-card-icon p-2.5 rounded-tile border border-pastel-border flex items-center gap-2 justify-between min-w-0">
                 <button class="flex items-center gap-2 min-w-0 flex-1 text-left tactile" data-n="${esc(c.item_name)}" data-g="${esc(group)}"
                         onclick="editItem(this.dataset.n, this.dataset.g)">
                     <i class="fa-solid ${esc(normIcon(c.icon_emoji, c.item_group))} text-sm w-4 text-center" style="color:${catColor(c.item_name)}"></i>
@@ -6039,8 +6075,8 @@ const BANKS = [
         openSheet(`
             <h3 class="text-lg font-bold text-stone-800 mb-5">${title}</h3>
             <div class="flex items-center gap-3 mb-5">
-                <div class="w-14 h-14 rounded-tile flex items-center justify-center text-2xl flex-shrink-0"
-                     style="background:${hexA(col, .16)};color:${col}"><i class="fa-solid ${esc(_newItem.icon)}"></i></div>
+                <div class="cat-dot w-14 h-14 rounded-tile flex items-center justify-center text-2xl flex-shrink-0"
+                     style="background:${col}"><i class="fa-solid ${esc(_newItem.icon)}"></i></div>
                 <input id="niName" value="${esc(_newItem.name)}" placeholder="名稱，例如：富邦-信用卡"
                     class="field flex-1 w-full p-3.5 rounded-tile bg-pastel-bg border border-pastel-border text-stone-800">
             </div>
