@@ -642,8 +642,8 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.22.1',
-        MIN_BACKEND: '6.0.0',       // 低於此版本的 Code.gs 會跳更新提示
+        VERSION: 'v6.22.3',   // rc3
+        MIN_BACKEND: '6.22.3',      // v6.22.3 起寫入需要操作鍵／期別／版本契約；舊後端不支援
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
         DEMO: false
@@ -728,6 +728,18 @@
     const currentYM = () => todayISO().slice(0, 7);
     const daysInYM = ym => new Date(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0).getDate();
     const uid = () => 'tmp_' + Math.random().toString(36).slice(2, 10);
+    /* v6.22.3 操作鍵：同一次使用者動作（含 api 內自動重試、離線補送、失敗後手動重送）沿用同一個 key；
+       不同動作一律產生新 key。後端以 caller＋action＋key＋內容指紋判斷「是不是同一個操作的重送」。 */
+    const newOpKey = (p) => (p || 'op') + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
+    /** 目前登入者是否為群組管理者（戶長）。只作 UI 提示，權限以後端為準。 */
+    function isGroupAdminMe() { return !!(STATE.me && STATE.me.role === 'admin'); }
+    /** 依 txn_id 合併進清單：重送拿回的是既有那筆時，不要在本機多 push 一筆 */
+    function upsertTxnInto(list, t) {
+        if (!t || !t.txn_id) return list;
+        const i = list.findIndex(x => x.txn_id === t.txn_id);
+        if (i >= 0) list[i] = { ...list[i], ...t }; else list.push(t);
+        return list;
+    }
     /* 後端寫入的 created_at 是台北時間、無時區字尾；前端若用 toISOString()（UTC）
        會比後端小 8 小時，導致剛新增的那筆在排序時沉到同日其他紀錄下面。 */
     const localStamp = () => {
@@ -801,12 +813,39 @@
     /* ping 是「對一個全新部署發出的第一個請求」，正好是重導向抖動最容易發生的時刻，
        所以多給幾次。它是唯讀且冪等的，重試沒有任何副作用。 */
     const TRIES = { ping: 4 };
+    /* rc3：傳輸層重試契約（對應 Financial Write Boundary Matrix 的 retry 欄）。
+       分類依據是「實際副作用」，不是 action 名稱；未列入者一律不自動重試（fail safe）。
+       ・read  ：無業務副作用（bootstrap／listTransactions 會執行 recovery，但 recovery 本身冪等）→ 重試 3 次
+       ・opkey ：操作鍵去重（caller namespace＋指紋＋結果重放）→ 重試 2 次，key 在迴圈外產生一次
+       ・state ：終態轉移且沒有反向路徑、資源 ID 唯一（不會 ABA 覆蓋較新的狀態）→ 重試 2 次
+       ・none  ：不保證冪等或可能覆蓋較新狀態 → 不自動重送；連線中斷時回 RESULT_UNKNOWN，請使用者重新整理核對
+       伺服器明確回 LOCK_TIMEOUT 代表尚未寫入，任何分類都可以重試。 */
+    const RETRY_CLASS = {
+        bootstrap: 'read', listTransactions: 'read', listMembers: 'read', getReceipt: 'read', ping: 'read', diagnose: 'read',
+        addTransaction: 'opkey', updateTransaction: 'opkey', confirmReminder: 'opkey', skipReminder: 'opkey',
+        settleIntent: 'opkey', closeGoal: 'opkey',
+        deleteGoal: 'state'
+        /* RC3-03：deleteRule 曾列為 state，但 saveRule update 可對已刪除規則寫回「啟用」，
+           因此「刪除」不是不可反轉的終態：舊的 delete 重試會覆蓋另一裝置較新的排程變更。
+           最窄修補是不自動重送（none），連線中斷時回 RESULT_UNKNOWN 由使用者讀回核對。
+           deleteGoal 不同：saveGoal update 對已刪除目標會拒絕，終態成立。 */
+    };
+    function retryClassOf(action, payload) {
+        if (action === 'saveRule') return payload && payload.rule && payload.rule.rule_id ? 'none' : 'opkey';
+        if (action === 'saveGoal') return payload && payload.goal && payload.goal.goal_id ? 'none' : 'opkey';
+        return RETRY_CLASS[action] || 'none';
+    }
     const api = {
         async call(action, payload = {}) {
             if (CONFIG.DEMO) return DEMO_API(action, payload);
-            // 鎖忙碌值得多試幾次；寫入類原本只試一次是為了避免重複寫，
-            // 現在有 client_id 冪等保護，重試不會製造重複帳。
-            const tries = TRIES[action] || (READ_ONLY.includes(action) ? 3 : 2);
+            /* rc3（R3）：傳輸層操作鍵。一次 api.call 就是一個邏輯操作 —— key 在「重試迴圈之外」產生一次，
+               回應遺失後的自動重送沿用同一 key，後端據此回傳同一結果，而不是再建立一條規則。
+               呼叫端若已帶 op_key（使用者層級的穩定鍵）則沿用。 */
+            if (!READ_ONLY.includes(action) && payload && payload.op_key === undefined) {
+                payload = { ...payload, op_key: action + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10) };
+            }
+            const rclass = retryClassOf(action, payload);
+            const tries = TRIES[action] || (rclass === 'read' ? 3 : 2);
             let lastErr;
             for (let n = 0; n < tries; n++) {
                 if (n) await new Promise(z => setTimeout(z, 250 * n));   // 250ms、500ms
@@ -833,8 +872,14 @@
                     lastErr = e;
                     /* 鎖忙碌代表「現在有人在寫，等一下就好」——這一種要自動重試。
                        其餘後端明確回報的錯誤（代碼錯、金額錯）重試一百次也一樣，直接拋出。 */
-                    if (e.code === 'LOCK_TIMEOUT') { lastErr = e; continue; }
+                    if (e.code === 'LOCK_TIMEOUT') { lastErr = e; continue; }   // 伺服器明確未寫入，任何分類都可重試
                     if (!/HTTP|Failed to fetch|NetworkError|Load failed/i.test(e.message)) throw e;
+                    if (rclass === 'none') {
+                        // 不可自動重送：請求可能已提交，只能讓使用者重新整理核對，絕不盲目重送
+                        const u = new Error('連線中斷，無法確認是否已儲存；請重新整理確認後再操作');
+                        u.code = 'RESULT_UNKNOWN';
+                        throw u;
+                    }
                     e.code = e.code || 'OFFLINE';
                 }
             }
@@ -1222,6 +1267,23 @@ function hexA(hex, a) {
     function paidFor(srcId, memberId) {
         return activeTxns().filter(t => t.entry_type === '還款' && t.parent_txn_id === srcId &&
             t.settle_member_id === memberId).reduce((a, b) => a + (Number(b.amount) || 0), 0);
+    }
+    /** DH9（與後端 assertDebtEditable 同口徑）：這筆紀錄是否因債務關聯而不能走通用編輯／作廢。
+        回傳空字串代表可以；否則回傳給使用者的說明（含更正步驟）。 */
+    const DEBT_FIX_STEPS = '更正方式：①若有人標記「由公帳月結」，請先取消月結；②作廢錯誤的還款紀錄；③重新整理，確認剩餘金額；④再依正確金額重新記錄。已由公帳撥款的結算需由戶長處理。';
+    function debtLockReason(t, txns, intents, forVoid) {
+        if (!t) return '';
+        const live = (txns || []).filter(x => x.status !== '作廢' && x.status !== '已修訂' && !x.is_rollup);
+        if (t.entry_type === '還款') return forVoid ? '' : '還款／結算紀錄不能直接修改。' + DEBT_FIX_STEPS;
+        // rc2（N-1）：目標存入／提取與後端 assertGoalEditable 同口徑
+        if (!forVoid && t.entry_type === '劃撥儲蓄' && t.related_id) return '目標的存入／提取不能直接修改，請作廢後重新記錄。';
+        if (live.some(x => x.entry_type === '還款' && x.parent_txn_id === t.txn_id)) {
+            return (forVoid ? '這筆代墊還有有效的還款，不能作廢。' : '這筆代墊已經有人還款，不能直接修改。') + DEBT_FIX_STEPS;
+        }
+        if ((intents || []).some(i => i.parent_txn_id === t.txn_id && (i.status || '待沖銷') === '待沖銷')) {
+            return (forVoid ? '這筆代墊有人標記由公帳月結，不能作廢。' : '這筆代墊有人標記由公帳月結，不能直接修改。') + DEBT_FIX_STEPS;
+        }
+        return '';
     }
     /** 我被指定、還沒還完的所有項目（公帳代墊分攤 ＋ 私人拆帳，統一視圖） */
     const memberOf = id => (STATE.members || []).find(m => m.member_id === id);
@@ -1854,23 +1916,34 @@ function hexA(hex, a) {
                     </div></div>`).join('')}
         </div>`;
     }
+    /** 提醒的 payload：明確綁定「確認的是哪一期」，重送不會跑到下一期 */
+    function reminderPayload(r, opKey) { return { rule_id: r.rule_id, expected_due: r.next_run, op_key: opKey }; }
+    const STALE_CODES = ['STALE_OCCURRENCE', 'OCCURRENCE_DECIDED', 'RULE_INACTIVE', 'NOT_DUE', 'STALE_INTENT', 'STALE_VERSION',
+        'GOAL_CLOSED', 'REMAINING_CHANGED', 'SUPERSEDED', 'DEBT_SETTLED', 'DEBT_INVALID', 'NEED_UPDATE'];
     async function confirmReminder(id) {
-        const r = STATE.rules.find(x => x.rule_id === id); if (!r) return;
+        const r = STATE.rules.find(x => x.rule_id === id); if (!r || r._busy) return;
         buzz(12);
+        r._busy = true;
         try {
-            const res = await api.call('confirmReminder', { rule_id: id });
-            STATE.transactions.push({ ...res.txn, _new: true });
+            const res = await api.call('confirmReminder', reminderPayload(r, newOpKey('rem')));
+            if (res.txn) upsertTxnInto(STATE.transactions, { ...res.txn, _new: true });
             r.next_run = res.next_run;
             renderDataViews(); renderSettings(); toast('已記錄'); coinFly();
-        } catch (e) { toast('失敗：' + e.message, true); }
+        } catch (e) {
+            toast('失敗：' + e.message, true);
+            if (STALE_CODES.includes(e.code)) await refreshData();
+        } finally { delete r._busy; }
     }
     async function skipReminder(id) {
-        const r = STATE.rules.find(x => x.rule_id === id); if (!r) return;
-        const backup = r.next_run;
+        const r = STATE.rules.find(x => x.rule_id === id); if (!r || r._busy) return;
+        r._busy = true;
         try {
-            const res = await api.call('skipReminder', { rule_id: id });
+            const res = await api.call('skipReminder', reminderPayload(r, newOpKey('skip')));
             r.next_run = res.next_run; renderDataViews(); renderSettings(); toast('已略過本期');
-        } catch (e) { r.next_run = backup; renderDataViews(); toast('失敗：' + e.message, true); }
+        } catch (e) {
+            renderDataViews(); toast('失敗：' + e.message, true);
+            if (STALE_CODES.includes(e.code)) await refreshData();
+        } finally { delete r._busy; }
     }
 
     /* ---------- 家庭共鬥成就 ----------
@@ -2624,9 +2697,11 @@ function hexA(hex, a) {
         if (!from) { buzz(30); return toast('請選擇扣款帳戶', true); }
         closeSheet();
         const done = btnBusy('btnCardPay', '記錄中…');
+        const cidPay = newOpKey('c'), cidInt = newOpKey('c');
         try {
             await api.call('addTransaction', {
                 txn: {
+                    client_id: cidPay,
                     date: todayISO(), entry_type: '轉帳', category: '', tag: from, related_id: name,
                     amount: amt, note: `繳 ${name} 卡費`, nature: '純個人',
                     statement_id: d.statementId
@@ -2635,6 +2710,7 @@ function hexA(hex, a) {
             if (interest > 0) {
                 await api.call('addTransaction', {
                     txn: {
+                        client_id: cidInt,
                         date: todayISO(), entry_type: '支出', category: '貸款利息', tag: name,
                         amount: interest, note: `${name} 循環利息`, nature: '純個人'
                     }
@@ -2700,7 +2776,11 @@ function hexA(hex, a) {
         const txn = buildRepayTxn(x, amt, document.getElementById('rpDate').value,
             document.getElementById('rpNote').value, document.getElementById('rpTag').value);
         closeSheet();
-        if (x.marked) { try { await api.call('deleteIntent', { intent_id: `${x.srcId}|${STATE.me.member_id}` }); STATE.intents = STATE.intents.filter(i => i.parent_txn_id !== x.srcId || i.member_id !== STATE.me.member_id); } catch (e) { } }
+        if (x.marked) {
+            // rc2：取消月結失敗就不送還款 —— 後端會拒絕，靜默吞掉只會讓使用者以為已還
+            try { await api.call('deleteIntent', { parent_txn_id: x.srcId }); STATE.intents = STATE.intents.filter(i => i.parent_txn_id !== x.srcId || i.member_id !== STATE.me.member_id); }
+            catch (e) { return toast('取消公帳月結失敗，未送出還款：' + e.message, true); }
+        }
         await optimisticAdd(txn, null, '已歸還');
     }
 
@@ -2768,10 +2848,13 @@ function hexA(hex, a) {
         toast(`處理中… 共 ${list.length} 筆`);
         let okN = 0, failN = 0;
         try {
-            for (const x of list) {
+            // 每一筆在迴圈外先定好 client_id：api 內重試與回應遺失都不會變成兩筆還款
+            const keyed = list.map(x => ({ x, cid: newOpKey('c') }));
+            for (const { x, cid } of keyed) {
                 try {
-                    await api.call('addTransaction', { txn: buildRepayTxn(x, x.remaining) });
-                    if (x.marked) { try { await api.call('deleteIntent', { intent_id: `${x.srcId}|${STATE.me.member_id}` }); } catch (e2) { } }
+                    // rc2：後端要求先取消「由公帳月結」才能直接還款（同一債務不可兩條清償路徑並存）
+                    if (x.marked) await api.call('deleteIntent', { parent_txn_id: x.srcId });
+                    await api.call('addTransaction', { txn: { ...buildRepayTxn(x, x.remaining), client_id: cid } });
                     okN++;
                 } catch (e) { failN++; }
             }
@@ -2791,7 +2874,7 @@ function hexA(hex, a) {
         const bak = [...STATE.intents];
         STATE.intents = STATE.intents.filter(i => i.parent_txn_id !== srcId || i.member_id !== STATE.me.member_id);
         renderDashboard(); toast('已取消');
-        try { await api.call('deleteIntent', { intent_id: `${srcId}|${STATE.me.member_id}` }); }
+        try { await api.call('deleteIntent', { parent_txn_id: srcId }); }
         catch (e) { STATE.intents = bak; renderDashboard(); toast(e.message, true); }
     }
 
@@ -2818,12 +2901,15 @@ function hexA(hex, a) {
         const it = (STATE.intents || []).find(i => i.intent_id === id); if (!it) return;
         if (!confirm(`確認由公帳撥款 ${fmt(it.amount)} 給 ${nameOf(it.payer_id)}？`)) return;
         try {
-            const res = await api.call('settleIntent', { intent_id: id });
-            STATE.transactions.push(res.txn);
-            if (res.remaining > 0.01) it.amount = res.remaining;
+            const res = await api.call('settleIntent', { intent_id: id, expected_version: Number(it.version) || 0, op_key: newOpKey('stl') });
+            if (res.txn) upsertTxnInto(STATE.transactions, res.txn);
+            if (res.remaining > 0.01) { it.amount = res.remaining; it.version = res.version; }
             else STATE.intents = STATE.intents.filter(i => i.intent_id !== id);
             renderDataViews(); toast('已撥款結清');
-        } catch (e) { toast(e.message, true); }
+        } catch (e) {
+            toast(e.message, true);
+            if (STALE_CODES.includes(e.code)) await refreshData();
+        }
     }
 
     /* ---------- 存錢罐 UI ---------- */
@@ -3194,6 +3280,10 @@ function hexA(hex, a) {
     }
     async function doWithdraw(id, reserved) {
         const g = goalById(id); if (!g) return;
+        /* rc2（N-1）：提取權限與上限以後端為準；前端只做提示。
+           個人目標限建立者；家庭目標限建立者或戶長（與結案相同）。 */
+        const canWithdraw = g.owner_id === STATE.me?.member_id || (g.scope === 'family' && isGroupAdminMe());
+        if (!canWithdraw) { buzz(30); return toast('只有建立者' + (g.scope === 'family' ? '或戶長' : '') + '可以從這個目標提取', true); }
         const amt = Number(document.getElementById('wdAmt').value);
         if (!amt || amt <= 0) { buzz(30); return toast('請輸入金額', true); }
         if (amt > reserved + 0.01) { buzz(30); return toast(`不能超過可提取的 ${fmt(reserved)}`, true); }
@@ -3235,11 +3325,13 @@ function hexA(hex, a) {
         if (g) g.status = '已結案';
         renderDashboard(); toast('已結案');
         try {
-            await api.call('closeGoal', { goal_id: id, remaining, destination: dest, tag: PREF.get('tag', '') });
+            // remaining 是「使用者確認過的金額」，後端會以伺服器計算的剩餘額比對，不一致就要求重新整理
+            await api.call('closeGoal', { goal_id: id, remaining, destination: dest, tag: PREF.get('tag', ''), op_key: newOpKey('gclose') });
             await refreshData();
         } catch (e) {
             if (bak) { const i = STATE.goals.findIndex(x => x.goal_id === id); if (i >= 0) STATE.goals[i] = bak; }
             renderDashboard(); toast(e.message, true);
+            if (STALE_CODES.includes(e.code)) await refreshData();
         }
     }
 
@@ -3283,6 +3375,9 @@ function hexA(hex, a) {
     }
 
     async function settleUp(memberName, amount, dir) {
+        /* rc2：沒有 parent 的成員↔公帳淨額結算是 group-level settlement，後端限戶長。
+           前端先擋，避免一般成員送出後才看到拒絕，也避免把拒絕誤當成網路失敗重送。 */
+        if (!isGroupAdminMe()) { buzz(30); return toast('成員與公帳的結算由戶長處理', true); }
         if (!confirm(`確定要記錄一筆 ${fmt(amount)} 的結算給「${memberName}」嗎？`)) return;
         const m = STATE.members.find(x => x.nickname === memberName), isPay = dir === 'pool2member';
         await optimisticAdd({
@@ -3355,7 +3450,11 @@ function hexA(hex, a) {
         try {
             const r = await api.call('addTransaction', payload);
             const i = STATE.transactions.findIndex(t => t.txn_id === local.txn_id);
-            if (i >= 0) STATE.transactions[i] = { ...r.txn, _new: true };
+            if (i >= 0 && r.txn) {
+                // 重送拿回的若是本機已經有的那筆，移除暫存列，避免畫面上變兩筆
+                if (STATE.transactions.some((t, k) => k !== i && t.txn_id === r.txn.txn_id)) STATE.transactions.splice(i, 1);
+                else STATE.transactions[i] = { ...r.txn, _new: true };
+            }
             renderDataViews();
             coinFly();                       // 寫入成功之後才播動畫，不會出現「慶祝了但其實失敗」
             setTimeout(() => {
@@ -3392,7 +3491,8 @@ function hexA(hex, a) {
         renderDataViews();
         try {
             const r = await api.call('addTransaction', payload);
-            STATE.transactions[i] = { ...r.txn, _new: true };
+            if (r.txn && STATE.transactions.some((t, k) => k !== i && t.txn_id === r.txn.txn_id)) STATE.transactions.splice(i, 1);
+            else if (r.txn) STATE.transactions[i] = { ...r.txn, _new: true };
             renderDataViews(); toast('已重新送出');
         } catch (e) {
             row._failed = e.message; delete row._pending;
@@ -4131,6 +4231,8 @@ function hexA(hex, a) {
     let _editSplit = { id: '', map: {} };
     function openEditSplit(id) {
         const t = STATE.transactions.find(x => x.txn_id === id); if (!t) return;
+        const lock = debtLockReason(t, STATE.transactions, STATE.intents);
+        if (lock) { buzz(30); return toast(lock, true); }
         _editSplit = { id, map: {} };
         parseSplit(t).forEach(x => _editSplit.map[x.member_id] = x.amount);
         paintEditSplit();
@@ -4197,11 +4299,11 @@ function hexA(hex, a) {
         try {
             // 走 updateTransaction：舊列標「已修訂」、新列以 parent_txn_id 指回，稽核軌跡完整
             const r2 = await api.call('updateTransaction', {
-                txn_id: backup.txn_id,
+                txn_id: backup.txn_id, op_key: newOpKey('upd'),
                 txn: { ...backup, split_detail: t.split_detail, related_id: t.related_id }
             });
             const i = STATE.transactions.findIndex(x => x.txn_id === backup.txn_id);
-            if (i >= 0) STATE.transactions[i] = r2.txn;
+            if (i >= 0 && r2.txn) STATE.transactions[i] = r2.txn;
             renderDataViews();
         } catch (e) {
             const i = STATE.transactions.findIndex(x => x.txn_id === backup.txn_id);
@@ -4270,6 +4372,8 @@ function hexA(hex, a) {
 
     async function voidTxn(id) {
         const i = STATE.transactions.findIndex(t => t.txn_id === id); if (i < 0) return;
+        const lock = debtLockReason(STATE.transactions[i], STATE.transactions, STATE.intents, true);
+        if (lock) { buzz(30); return toast(lock, true); }
         const backup = { ...STATE.transactions[i] };
         STATE.transactions[i].status = '作廢';
         renderDataViews(); buzz(12);
@@ -5133,6 +5237,9 @@ function hexA(hex, a) {
 
     function editTxn(id) {
         const t = STATE.transactions.find(x => x.txn_id === id); if (!t) return;
+        /* DH9：通用編輯器會把還款載入成支出、也無法保留債務關聯，所以這類紀錄在進編輯器之前就擋下 */
+        const lock = debtLockReason(t, STATE.transactions, STATE.intents);
+        if (lock) { buzz(30); return toast(lock, true); }
         editingTxnId = id;
         addState = {
             mode: t.entry_type === '收入' ? 'income' : (t.entry_type === '轉帳' ? 'transfer' : 'expense'),
@@ -5329,13 +5436,14 @@ function hexA(hex, a) {
             editingTxnId = null; pendingReceipt = null;
             initAddForm(); renderDataViews(); switchTab('transactions'); toast('已更新'); buzz(14);
             try {
-                const r = await api.call('updateTransaction', { txn_id: oldId, txn, receipt });
+                const r = await api.call('updateTransaction', { txn_id: oldId, txn, receipt, op_key: newOpKey('upd') });
                 const i2 = STATE.transactions.findIndex(t => t.txn_id === oldId);
-                if (i2 >= 0) STATE.transactions[i2] = r.txn;
+                if (i2 >= 0 && r.txn) STATE.transactions[i2] = r.txn;
                 renderDataViews();
             } catch (e) {
                 if (backup && idx >= 0) STATE.transactions[idx] = backup;
                 renderDataViews(); toast('更新失敗：' + e.message, true);
+                if (STALE_CODES.includes(e.code)) await refreshData();
             }
             return;
         }
