@@ -642,7 +642,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.23.2',   // 前端版本；後端 API_VERSION 仍是 6.22.3（v6.23.1 起 saveRule 有修改，需搭配同版 Code.gs）
+        VERSION: 'v6.23.3',   // 前端版本；後端 API_VERSION 仍是 6.22.3（v6.23.1 起 saveRule 有修改，需搭配同版 Code.gs）
         MIN_BACKEND: '6.22.3',      // v6.22.3 起寫入需要操作鍵／期別／版本契約；舊後端不支援
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -3526,13 +3526,20 @@ function hexA(hex, a) {
     async function syncOfflineQueue(silent) {
         if (_syncing) return;
         const q = queueRead();
-        if (!q.length) return;
+        if (!q.length) return flushPendingRules(true);     // v6.23.3：沒有待補送的交易時，仍處理待建立的固定收支
         _syncing = true;
         if (!silent) toast(`正在同步 ${q.length} 筆…`);
         const left = [];
         let ok = 0;
         for (const job of q) {
-            try { await api.call('addTransaction', job.payload); ok++; }
+            try {
+                const r = await api.call('addTransaction', job.payload); ok++;
+                // 首期補送成功、拿到後端 txn_id 才排入「建立固定收支」；拿不到就不建（不能宣稱首期已記）
+                if (job.ruleAfter && r && r.txn && r.txn.txn_id) {
+                    const pq = pendingRulesRead().filter(x => x.op_key !== job.ruleAfter.op_key);
+                    pq.push({ rule: job.ruleAfter.rule, op_key: job.ruleAfter.op_key, txn_id: r.txn.txn_id }); pendingRulesWrite(pq);
+                }
+            }
             catch (e) {
                 // 只有「連不上」才留在佇列裡；資料本身有問題的重送幾次都一樣
                 if (e.code === 'OFFLINE' || /Failed to fetch|NetworkError|Load failed|HTTP/i.test(e.message)) left.push(job);
@@ -3543,12 +3550,16 @@ function hexA(hex, a) {
         paintQueueBadge();
         _syncing = false;
         if (ok) { await refreshData(); toast(left.length ? `已同步 ${ok} 筆，還有 ${left.length} 筆待重送` : `已同步 ${ok} 筆離線紀錄`); }
+        await flushPendingRules(true);
     }
     /* ---------- 樂觀寫入 ----------
        失敗時「不要把那一列刪掉」。表單早在送出前就清空了，
        刪掉等於使用者剛剛打的東西整個消失 —— 那才是真正的丟單。
        改成把那一列留在畫面上標記為未同步，點一下就重送。 */
-    async function optimisticAdd(txn, receipt, okMsg) {
+    /** 回傳 { ok:true, txn }（後端已確認寫入，含真正的 txn_id）、{ ok:false, queued:true }（離線暫存）
+        或 { ok:false, failed:true }（後端拒絕）。ruleAfter：這筆是「新增記帳＋勾選重複」的首期時，
+        固定收支要等這筆真的寫入成功、拿到後端 txn_id 之後才建立（v6.23.3）；離線或失敗時跟著這筆一起保留。 */
+    async function optimisticAdd(txn, receipt, okMsg, ruleAfter) {
         /* submitted_on：使用者「按下當下」的本機日期，不是之後補送成功的日期。
            離線佇列補送可能延遲到隔天甚至更久，若沒有這個欄位，
            後端只能用「收到請求那一刻」判斷連續天數，會把訊號差的人誤判成斷了連續紀錄。 */
@@ -3565,6 +3576,11 @@ function hexA(hex, a) {
         try {
             const r = await api.call('addTransaction', payload);
             const i = STATE.transactions.findIndex(t => t.txn_id === local.txn_id);
+            if (ruleAfter && !(r.txn && r.txn.txn_id)) {      // 後端沒有回傳可確認的交易：不能宣稱首期已記
+                if (i >= 0) { STATE.transactions[i]._failed = '寫入結果無法確認'; STATE.transactions[i]._payload = payload; STATE.transactions[i]._ruleAfter = ruleAfter; delete STATE.transactions[i]._pending; }
+                renderDataViews();
+                return { ok: false, failed: true };
+            }
             if (i >= 0 && r.txn) {
                 // 重送拿回的若是本機已經有的那筆，移除暫存列，避免畫面上變兩筆
                 if (STATE.transactions.some((t, k) => k !== i && t.txn_id === r.txn.txn_id)) STATE.transactions.splice(i, 1);
@@ -3576,24 +3592,71 @@ function hexA(hex, a) {
                 const x = STATE.transactions.find(t => t._new);
                 if (x) { delete x._new; renderTransactions(); }
             }, 3600);
+            return { ok: true, txn: r.txn || null };
         } catch (e) {
             const i = STATE.transactions.findIndex(t => t.txn_id === local.txn_id);
             const offline = e.code === 'OFFLINE' || /Failed to fetch|NetworkError|Load failed/i.test(e.message);
             if (offline) {
                 // 連不上：進佇列，那一列留著標成待同步，連線恢復自動補送
-                queuePush({ payload, at: Date.now() });
+                queuePush(ruleAfter ? { payload, at: Date.now(), ruleAfter } : { payload, at: Date.now() });
                 if (i >= 0) { STATE.transactions[i]._queued = true; delete STATE.transactions[i]._pending; }
                 renderDataViews();
-                toast('目前連不上，已暫存在本機，連線後自動補送');
+                toast(ruleAfter ? '目前連不上，已暫存；同步成功後才建立固定收支' : '目前連不上，已暫存在本機，連線後自動補送');
+                return { ok: false, queued: true };
             } else if (i >= 0) {
                 // 後端拒絕：留在畫面上並標成失敗，點一下可以重送或刪掉
                 STATE.transactions[i]._failed = e.message || '寫入失敗';
                 STATE.transactions[i]._payload = payload;
+                if (ruleAfter) STATE.transactions[i]._ruleAfter = ruleAfter;
                 delete STATE.transactions[i]._pending;
                 renderDataViews();
                 toast('儲存失敗：' + e.message, true);
             }
+            return { ok: false, failed: true };
         }
+    }
+    /* ---------- v6.23.3：首期記帳成功後才建立固定收支，並由後端綁定首筆 ----------
+       待建立的規則存在本機（PRKEY），帶著固定的 op_key：回應遺失或 App 被關掉，下次重送仍是同一個建立操作，
+       後端回同一條規則、同一個首筆連結，不會多建一條。後端明確拒絕（例如首筆已被作廢）就移除並提示，不猜、不改綁。 */
+    const PRKEY = 'pending_rule_creates';
+    const pendingRulesRead = () => { try { return JSON.parse(localStorage.getItem(PRKEY) || '[]'); } catch (e) { return []; } };
+    const pendingRulesWrite = q => { try { localStorage.setItem(PRKEY, JSON.stringify(q.slice(-20))); } catch (e) { } };
+    function newRuleAfter(rec) { return { rule: rec, op_key: newOpKey('rulefirst') }; }
+    async function createRuleAfterFirst(ruleAfter, txnId) {
+        const job = { rule: ruleAfter.rule, op_key: ruleAfter.op_key, txn_id: txnId };
+        const q = pendingRulesRead().filter(x => x.op_key !== job.op_key); q.push(job); pendingRulesWrite(q);
+        return flushPendingRules(false);
+    }
+    let _ruleFlushing = false;
+    async function flushPendingRules(silent) {
+        if (_ruleFlushing) return null;
+        const q = pendingRulesRead();
+        if (!q.length) return null;
+        _ruleFlushing = true;
+        const left = []; let last = null;
+        for (const job of q) {
+            try {
+                const r = await api.call('saveRule', { rule: job.rule, first_run_done: true, first_txn_id: job.txn_id, op_key: job.op_key });
+                if (r.rule) {
+                    const k = STATE.rules.findIndex(x => x.rule_id === r.rule.rule_id);
+                    if (k >= 0) STATE.rules[k] = r.rule; else STATE.rules.push(r.rule);
+                    const t = STATE.transactions.find(x => x.txn_id === job.txn_id);
+                    if (t && r.first_link && r.first_link.linked) t.recurring_rule_id = r.rule.rule_id;
+                }
+                last = r;
+                if (!silent) toast(r.first_link && r.first_link.linked ? '固定收支已建立，本期已記帳' : '固定收支已建立');
+            } catch (e) {
+                // 連不上或結果不明：保留（同一個 op_key 重送是安全的，後端會回同一條規則）
+                const offline = e.code === 'OFFLINE' || e.code === 'RESULT_UNKNOWN' || e.code === 'LOCK_TIMEOUT' || /Failed to fetch|NetworkError|Load failed|HTTP/i.test(e.message);
+                if (offline) left.push(job);
+                else toast(e.code === 'FIRST_TXN_INVALID' ? e.message : '固定收支建立失敗：' + e.message, true);
+            }
+        }
+        pendingRulesWrite(left);
+        _ruleFlushing = false;
+        renderSettings(); renderDataViews();
+        if (left.length && !silent) toast('記帳已完成；固定收支待連線後自動建立');
+        return last;
     }
     /** 重送一筆失敗的紀錄：帶著同一個 client_id，不會變成兩筆 */
     async function retryTxn(localId) {
@@ -3606,9 +3669,11 @@ function hexA(hex, a) {
         renderDataViews();
         try {
             const r = await api.call('addTransaction', payload);
+            const ruleAfter = row._ruleAfter;
             if (r.txn && STATE.transactions.some((t, k) => k !== i && t.txn_id === r.txn.txn_id)) STATE.transactions.splice(i, 1);
             else if (r.txn) STATE.transactions[i] = { ...r.txn, _new: true };
             renderDataViews(); toast('已重新送出');
+            if (ruleAfter && r.txn && r.txn.txn_id) await createRuleAfterFirst(ruleAfter, r.txn.txn_id);
         } catch (e) {
             row._failed = e.message; delete row._pending;
             renderDataViews(); toast('還是失敗：' + e.message, true);
@@ -4610,7 +4675,7 @@ function hexA(hex, a) {
                 <div class="text-[32px] font-bold font-tabular mb-4 ${amtCls}" id="sheetAmount">${sign}${fmt(t.amount)}</div>
                 ${isAdvance(t) ? '<div class="text-[10px] text-pastel-muted -mt-3 mb-4">原始總額（這筆代墊實際付出的全額）</div>' : ''}`;
             body = `${row('日期', t.date)}${row('類型', t.entry_type)}${fm && fm.sub ? row('來源 → 去向', fm.sub) : ''}${fm || isFund ? '' : row('分類', t.category || '—')}${fm && (fm.kind === 'transfer' || fm.kind === 'inject') ? '' : row('帳戶', displayTag(t.tag) || '—')}
-                ${fm || isFund ? '' : row('費用歸屬', t.nature || '—')}${row('記帳者', nameOf(t.member_id))}${t.recurring_rule_id ? row('來源', '固定收支自動產生') : ''}
+                ${fm || isFund ? '' : row('費用歸屬', t.nature || '—')}${row('記帳者', nameOf(t.member_id))}${t.recurring_rule_id ? row('來源', t.client_id ? '固定收支首期（新增記帳時建立）' : '固定收支自動產生') : ''}
                 ${advanceDetailHtml(t)}`;
         }
         openSheet(`
@@ -5858,14 +5923,12 @@ function hexA(hex, a) {
         viewYM = txn.date.slice(0, 7);          // 跳到該筆所在月份，確保看得到
         filters.q = ''; filters.type = 'all';
         switchTab('transactions'); buzz(14);
-        await optimisticAdd(txn, receipt);
+        /* v6.23.3：首期交易確定寫入、拿到後端 txn_id 之後，才建立固定收支並由後端綁定這筆首期；
+           離線或失敗時規則跟著這筆交易保留，補送成功後再建立。不在首期未確認時就建立「本期已處理」的規則。 */
+        const ruleAfter = rec ? newRuleAfter(rec) : null;
+        const res = await optimisticAdd(txn, receipt, undefined, ruleAfter);
         document.getElementById('appMain').scrollTop = 0;
-        if (rec) {
-            try {
-                const r = await api.call('saveRule', { rule: rec, first_run_done: true });
-                STATE.rules.push(r.rule); renderSettings(); toast('固定收支已建立');
-            } catch (e) { toast('重複規則建立失敗：' + e.message, true); }
-        }
+        if (ruleAfter && res && res.ok && res.txn && res.txn.txn_id) await createRuleAfterFirst(ruleAfter, res.txn.txn_id);
     }
 
     /* ==========================================================
@@ -6457,7 +6520,8 @@ const BANKS = [
             if (!kind) return;
             const o = fixedOccurrences(r, ym);
             if (!o.reliable) {
-                out.unreliable.push({ rule_id: r.rule_id, name: r.name, reason: o.reason, note: r._schedule_note || '', kind, scope: isGroup ? 'group' : 'personal',
+                const why = ruleScheduleReason(r, o.reason);
+                out.unreliable.push({ rule_id: r.rule_id, name: r.name, reason: o.reason, why: why.code, kind, scope: isGroup ? 'group' : 'personal',
                     next_run: String(r.next_run || '').slice(0, 10), start_date: String(r.start_date || '').slice(0, 10), freq: r.freq });
                 out.partial[isGroup ? 'group' : 'personal'][kind] = true;
                 return;
@@ -6474,21 +6538,65 @@ const BANKS = [
         no_start: () => '沒有有效的起算日',
         too_long: () => '起算日太久遠，無法推算'
     };
-    const fixedUnreliableWhy = u => (FIXED_UNRELIABLE_TEXT[u.reason] || (() => '排程資料無法核對'))(u)
-        + (u.note ? `（儲存時的判斷：${u.note}）` : '');
-    /** v6.23.2：後端回傳排程判斷的結果與原因（schedule）。只有「真的動了排程、但下次執行日沒有跟著改」時，
-        把原因記在記憶體（_schedule_note；不寫回後端、重新整理後消失），讓「部分規則未納入」的清單說得出為什麼。 */
+    const fixedUnreliableWhy = u => (FIXED_UNRELIABLE_TEXT[u.reason] || (() => '排程資料無法核對'))(u);
+    /** v6.23.3：不可靠規則的原因（短句＋可展開的說明）。
+        ・剛儲存過：用後端回傳的判斷（_schedule，只在記憶體）。
+        ・重新整理／同步之後：從資料重建 —— 下次執行日的前一期，這條規則有沒有「連結到它的記帳」、規則是不是那個月建立的。
+          資料不足以確定的情況就如實說「對不上」，不猜成某個原因。
+        畫面文字不出現欄位名稱或代碼；代碼只放在 data 屬性供測試／排查。 */
+    const RULE_SHORT = {
+        FIRST_UNLINKED: '首筆記帳尚未連結，暫未納入預計',
+        NO_LINKED: '本期記帳未連結此規則，暫未納入預計',
+        NOT_MONTHLY: '週期改過，暫未納入預計',
+        NOT_ACTIVE: '暫停或重新啟用過，暫未納入預計',
+        DAY_UNCHANGED: '只改了開始的年月，暫未納入預計',
+        CURSOR_NOT_NEXT_MONTH: '本期還沒處理，暫未納入預計',
+        NO_START: '沒有有效的開始日，暫未納入預計',
+        TOO_LONG: '開始日太久遠，暫未納入預計',
+        MISMATCH: '開始日或週期改過，暫未納入預計'
+    };
+    const RULE_LONG = {
+        FIRST_UNLINKED: '這條規則是在「新增記帳」勾選重複時建立的，當時記下的那筆沒有連結到規則（v6.23.3 之前建立的都是這樣），系統無法確認本期已記帳，所以修改開始日後沒有更新下次日期。之後新建立的規則會自動連結。這條既有規則不會被自動修改。',
+        NO_LINKED: '本期沒有找到由這條規則產生或連結的記帳（手動記的、或別條規則的記帳都不算），系統無法確認本期已記帳，所以修改開始日後沒有更新下次日期。',
+        NOT_MONTHLY: '修改前或修改後不是「每月」。改週期時要從哪一天開始還沒有決定，所以下次日期沒有更新。',
+        NOT_ACTIVE: '這次修改同時暫停或重新啟用了規則。這種情況的處理方式還沒有決定，所以下次日期沒有更新。',
+        DAY_UNCHANGED: '開始日只改了年或月，每月的日期沒有變。這種情況的處理方式還沒有決定，所以下次日期沒有更新。',
+        CURSOR_NOT_NEXT_MONTH: '本期還沒有處理（下次日期不在下個月），這種情況的處理方式還沒有決定，所以下次日期沒有更新。',
+        NO_START: '規則沒有有效的開始日，無法推算本月會發生幾次。',
+        TOO_LONG: '開始日距今太久，無法推算本月會發生幾次。',
+        MISMATCH: '依開始日推算的日期，經過不到目前的下次執行日（可能是舊版修改留下的資料），系統不猜，先不算進本月預計。'
+    };
+    function ruleScheduleReason(r, occReason) {
+        if (occReason === 'no_start') return { code: 'NO_START' };
+        if (occReason === 'too_long') return { code: 'TOO_LONG' };
+        const backend = r && r._schedule && r._schedule.reason;
+        const passthrough = ['NOT_MONTHLY', 'NOT_ACTIVE', 'DAY_UNCHANGED', 'CURSOR_NOT_NEXT_MONTH'];
+        if (passthrough.includes(backend)) return { code: backend };
+        if (r && r.freq === '每月' && /^\d{4}-\d{2}/.test(String(r.next_run || ''))) {
+            const nr = String(r.next_run).slice(0, 7);
+            const y = Number(nr.slice(0, 4)), m = Number(nr.slice(5, 7));
+            const prevYM = m === 1 ? `${y - 1}-12` : `${y}-${pad2(m - 1)}`;
+            const linked = (STATE.transactions || []).some(t => String(t.recurring_rule_id) === String(r.rule_id) && String(t.date).slice(0, 7) === prevYM);
+            if (!linked || backend === 'NO_RULE_TXN_THIS_MONTH')
+                return { code: String(r.created_at || '').slice(0, 7) === prevYM ? 'FIRST_UNLINKED' : 'NO_LINKED' };
+        }
+        return { code: 'MISMATCH' };
+    }
+    const ruleReasonShort = c => RULE_SHORT[c] || RULE_SHORT.MISMATCH;
+    const ruleReasonLong = c => RULE_LONG[c] || RULE_LONG.MISMATCH;
+    /** v6.23.3：後端回傳排程判斷（schedule）。只有「真的動了排程、但下次日期沒有跟著改」時記在規則上（只在記憶體，不寫回後端），
+        重新整理後改由 ruleScheduleReason 從資料重建。 */
     function savedRuleFromResponse(r) {
         const saved = Object.assign({}, r.rule), sc = r.schedule;
-        if (sc && !sc.applied && sc.reason !== 'NO_SCHEDULE_CHANGE') saved._schedule_note = sc.message;
+        if (sc && !sc.applied && sc.reason !== 'NO_SCHEDULE_CHANGE') saved._schedule = { reason: sc.reason, message: sc.message };
         return saved;
     }
-    /** v6.23.2：儲存規則後的提示。舊後端沒有 schedule 欄位 → 維持原本的「已儲存」。 */
-    function scheduleToastText(sc, rule) {
+    /** v6.23.3：儲存提示只說結果；原因放在固定收支區該規則旁（可展開）。舊後端沒有 schedule → 「已儲存」。 */
+    function scheduleToastText(sc) {
         if (!sc) return '已儲存';
         if (sc.applied) return `已儲存，下次執行日 ${sc.next_run}`;
         if (sc.reason === 'NO_SCHEDULE_CHANGE') return '已儲存';
-        return `已儲存；下次執行日維持 ${sc.next_run || String(rule.next_run || '').slice(0, 10)}：${sc.message}`;
+        return '已儲存，下次日期未更新';
     }
 
     function renderSettings() {
@@ -6556,19 +6664,26 @@ const BANKS = [
 
         /* 固定收支：個人／群組依既有 scope 分區。edit／delete 用 data 屬性帶 id，不在屬性裡塞 JSON。 */
         const ruleRow = (r, occ, bad) => `
-            <div class="flex justify-between items-center bg-pastel-bg p-3 rounded-tile gap-2">
+            <div class="bg-pastel-bg p-3 rounded-tile" data-rule-row="${esc(r.rule_id)}">
+            <div class="flex justify-between items-center gap-2">
                 <div class="flex items-center gap-3 min-w-0">
                     <div class="w-10 h-10 rounded-tile bg-white border border-pastel-border flex items-center justify-center flex-shrink-0" style="color:${catColor(r.category)}"><i class="fa-solid ${esc(r.category ? catIcon(r.category) : (r.entry_type === '收入' ? 'fa-sack-dollar' : 'fa-repeat'))}"></i></div>
                     <div class="min-w-0">
                         <div class="font-bold text-stone-800 text-sm truncate">${esc(r.name)}${r.status === '停用' ? ' <span class="text-[10px] bg-stone-200 text-stone-500 px-1.5 py-0.5 rounded">已停用</span>' : ''}</div>
                         <div class="text-[10px] text-pastel-muted mt-0.5 leading-snug">
                             ${esc(r.freq)} · ${esc(r.auto_mode)} · 下次 ${esc(r.next_run || '—')}${occ != null ? ` · 本月 ${occ} 次` : ''}</div>
-                        ${bad ? `<div class="text-[10px] text-pastel-red mt-0.5" data-unreliable-row="${esc(r.rule_id)}">不計入本月預計</div>` : ''}</div></div>
+                        ${bad ? `<div class="text-[10px] text-pastel-red mt-0.5 leading-snug break-words" data-unreliable-row="${esc(r.rule_id)}" data-reason="${esc(bad.why)}">${esc(ruleReasonShort(bad.why))}</div>` : ''}</div></div>
                 <div class="text-right flex-shrink-0">
                     <div class="font-tabular text-sm ${r.entry_type === '收入' ? 'text-pastel-green' : 'text-stone-800'}">${fmt(r.amount)}</div>
                     <div class="flex gap-8 mt-1 justify-end">
                         <button type="button" class="tap44 text-xs text-stone-400" aria-label="編輯" data-r="${esc(r.rule_id)}" onclick="openRuleSheet(this.dataset.r)"><i class="fa-solid fa-pen"></i></button>
                         <button type="button" class="tap44 text-xs text-stone-400" aria-label="刪除" data-r="${esc(r.rule_id)}" onclick="deleteRule(this.dataset.r)"><i class="fa-solid fa-trash"></i></button></div></div>
+            </div>
+            ${bad ? `<details class="mt-1 pl-[52px] text-[10px] text-stone-600 leading-relaxed" data-reason-detail="${esc(r.rule_id)}">
+                <summary class="tap44 inline-flex items-center cursor-pointer text-pastel-accent font-bold select-none">查看說明</summary>
+                <div class="mt-1 space-y-1 break-words">
+                    <div>${esc(ruleReasonLong(bad.why))}</div>
+                    <div class="text-pastel-muted">開始日 ${esc(bad.start_date || '—')}・下次執行日 ${esc(bad.next_run || '—')}。本月預計不含這條規則，避免估錯。</div></div></details>` : ''}
             </div>`;
         const fixedArea = (title, scope, list, p) => {
             /* p 是這一區（個人或群組）的收入／支出；不可靠與每條規則的本月次數來自整體推算，依這一區的規則篩出來 */
@@ -6584,9 +6699,9 @@ const BANKS = [
                     <div class="bg-pastel-bg rounded-tile p-3 min-w-0" data-fixed-total="expense"><div class="text-[10px] text-pastel-muted">本月預計固定支出</div><div class="font-tabular font-bold text-stone-800 text-sm mt-0.5">${fmt(p.expense)}</div>${part.expense ? '<div class="text-[10px] font-bold text-pastel-red mt-0.5" data-partial-flag="expense">部分規則未納入</div>' : ''}</div></div>
                 <p class="text-[10px] text-pastel-muted leading-relaxed">依目前啟用規則估算，含僅提醒項目</p>
                 ${unrel.length ? `<div class="text-[10px] text-pastel-red leading-relaxed space-y-0.5" data-unreliable-list>
-                    <div class="font-bold">部分規則未納入：有 ${unrel.length} 條規則無法可靠推算本月排程，上面的合計不含它們</div>
-                    ${unrel.map(u => `<div>・${esc(u.name)}（${u.kind === 'income' ? '收入' : '支出'}）：${esc(fixedUnreliableWhy(u))}</div>`).join('')}</div>` : ''}
-                ${list.length ? list.map(r => ruleRow(r, proj.occ[r.rule_id], unrel.some(u => u.rule_id === r.rule_id))).join('') : `<div class="text-xs text-pastel-muted py-1">尚未設定。例如 Netflix、房租、每月薪水，設定後系統會自動記帳。</div>`}
+                    <div class="font-bold">部分規則未納入：${unrel.length} 條暫未納入，上面的合計不含它們</div>
+                    ${unrel.map(u => `<div class="break-words">・${esc(u.name)}（${u.kind === 'income' ? '收入' : '支出'}）：${esc(ruleReasonShort(u.why))}</div>`).join('')}</div>` : ''}
+                ${list.length ? list.map(r => ruleRow(r, proj.occ[r.rule_id], unrel.find(u => u.rule_id === r.rule_id))).join('') : `<div class="text-xs text-pastel-muted py-1">尚未設定。例如 Netflix、房租、每月薪水，設定後系統會自動記帳。</div>`}
             </div>`;
         };
         const fixedBody = fixedArea('個人固定收支', 'personal', rules.filter(r => r.scope !== 'family'), proj.personal)
@@ -6762,7 +6877,7 @@ const BANKS = [
             const saved = savedRuleFromResponse(r), sc = r.schedule;
             if (i >= 0) STATE.rules[i] = saved; else STATE.rules.push(saved);
             renderSettings();
-            toast(scheduleToastText(sc, saved));
+            toast(scheduleToastText(sc));
         } catch (e) { toast('儲存失敗：' + e.message, true); }
     }
     async function deleteRule(ruleId) {
