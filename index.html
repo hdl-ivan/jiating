@@ -642,7 +642,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.23.1',   // 前端版本（修補候選）；後端契約仍是 6.22.3，本版沒有修改 Code.gs
+        VERSION: 'v6.23.2',   // 前端版本；後端 API_VERSION 仍是 6.22.3（v6.23.1 起 saveRule 有修改，需搭配同版 Code.gs）
         MIN_BACKEND: '6.22.3',      // v6.22.3 起寫入需要操作鍵／期別／版本契約；舊後端不支援
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -6457,7 +6457,7 @@ const BANKS = [
             if (!kind) return;
             const o = fixedOccurrences(r, ym);
             if (!o.reliable) {
-                out.unreliable.push({ rule_id: r.rule_id, name: r.name, reason: o.reason, kind, scope: isGroup ? 'group' : 'personal',
+                out.unreliable.push({ rule_id: r.rule_id, name: r.name, reason: o.reason, note: r._schedule_note || '', kind, scope: isGroup ? 'group' : 'personal',
                     next_run: String(r.next_run || '').slice(0, 10), start_date: String(r.start_date || '').slice(0, 10), freq: r.freq });
                 out.partial[isGroup ? 'group' : 'personal'][kind] = true;
                 return;
@@ -6474,7 +6474,22 @@ const BANKS = [
         no_start: () => '沒有有效的起算日',
         too_long: () => '起算日太久遠，無法推算'
     };
-    const fixedUnreliableWhy = u => (FIXED_UNRELIABLE_TEXT[u.reason] || (() => '排程資料無法核對'))(u);
+    const fixedUnreliableWhy = u => (FIXED_UNRELIABLE_TEXT[u.reason] || (() => '排程資料無法核對'))(u)
+        + (u.note ? `（儲存時的判斷：${u.note}）` : '');
+    /** v6.23.2：後端回傳排程判斷的結果與原因（schedule）。只有「真的動了排程、但下次執行日沒有跟著改」時，
+        把原因記在記憶體（_schedule_note；不寫回後端、重新整理後消失），讓「部分規則未納入」的清單說得出為什麼。 */
+    function savedRuleFromResponse(r) {
+        const saved = Object.assign({}, r.rule), sc = r.schedule;
+        if (sc && !sc.applied && sc.reason !== 'NO_SCHEDULE_CHANGE') saved._schedule_note = sc.message;
+        return saved;
+    }
+    /** v6.23.2：儲存規則後的提示。舊後端沒有 schedule 欄位 → 維持原本的「已儲存」。 */
+    function scheduleToastText(sc, rule) {
+        if (!sc) return '已儲存';
+        if (sc.applied) return `已儲存，下次執行日 ${sc.next_run}`;
+        if (sc.reason === 'NO_SCHEDULE_CHANGE') return '已儲存';
+        return `已儲存；下次執行日維持 ${sc.next_run || String(rule.next_run || '').slice(0, 10)}：${sc.message}`;
+    }
 
     function renderSettings() {
         /* 任何重畫都會丟掉舊的清單節點。先銷毀再重綁，
@@ -6744,8 +6759,10 @@ const BANKS = [
         try {
             const r = await api.call('saveRule', { rule });
             const i = STATE.rules.findIndex(x => x.rule_id === r.rule.rule_id);
-            if (i >= 0) STATE.rules[i] = r.rule; else STATE.rules.push(r.rule);
-            renderSettings(); toast('已儲存');
+            const saved = savedRuleFromResponse(r), sc = r.schedule;
+            if (i >= 0) STATE.rules[i] = saved; else STATE.rules.push(saved);
+            renderSettings();
+            toast(scheduleToastText(sc, saved));
         } catch (e) { toast('儲存失敗：' + e.message, true); }
     }
     async function deleteRule(ruleId) {
