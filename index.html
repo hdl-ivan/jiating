@@ -642,7 +642,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.22.3',   // rc3
+        VERSION: 'v6.23.1',   // 前端版本（修補候選）；後端契約仍是 6.22.3，本版沒有修改 Code.gs
         MIN_BACKEND: '6.22.3',      // v6.22.3 起寫入需要操作鍵／期別／版本契約；舊後端不支援
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -1013,19 +1013,22 @@ function hexA(hex, a) {
     /* 本月儲蓄率永遠在前端算：它只需要當月資料，而且要能即時反映剛記的那一筆 */
     function localSavingRate() {
         const meId = STATE.me?.member_id, ym = currentYM();
-        const mine = activeTxns().filter(t => t.payer_id === meId && inMonth(t.date, ym));
+        const mine = personalScopeRows().filter(t => inMonth(t.date, ym));
         const inc = mine.filter(t => t.entry_type === '收入').reduce((a, b) => a + Number(b.amount), 0);
-        const exp = mine.filter(t => t.entry_type === '支出').reduce((a, b) => a + Number(b.amount), 0);
+        // v6.23.1：支出只認自己的份額（代墊總額不是我的花費）
+        const exp = mine.filter(t => t.entry_type === '支出').reduce((a, b) => a + plAmount(b, 'personal'), 0);
         return inc > 0 ? Math.round((inc - exp) / inc * 100) : 0;
     }
     function localAchievementStats() {
         const meId = STATE.me?.member_id;
         const mine = activeTxns().filter(t => t.payer_id === meId);
         const per = {};
-        mine.forEach(t => {
+        // v6.23.1：月度收支看「我認列的」—— 包含我被記了一份的代墊，且代墊只算自己的份額
+        personalScopeRows().forEach(t => {
+            if (t.entry_type !== '收入' && t.entry_type !== '支出') return;
             const k = String(t.date).slice(0, 7);
             per[k] = per[k] || { inc: 0, exp: 0, fun: 0 };
-            const a = Number(t.amount) || 0;
+            const a = plAmount(t, 'personal');
             if (t.entry_type === '收入') per[k].inc += a;
             if (t.entry_type === '支出') { per[k].exp += a; if (FUN_CATS.includes(t.category)) per[k].fun += a; }
         });
@@ -1324,11 +1327,117 @@ function hexA(hex, a) {
     }
 
     /* ==========================================================
+       v6.23.1 代墊認列（單一來源）
+
+       原則：個人負擔的消費，計在「原始消費日」；之後的結清只是資金移動，
+       不再次計入收入或支出。
+         例：小明先付 1,200，我負擔 800、小明自己 400。
+             我的帳本：消費日認列 800；之後我還 800 → 不新增支出。
+             小明的帳本：消費日認列 400（他付的 1,200 裡有 800 是借出去的錢）。
+
+       · 付款人：份額 ＝ 總額 − 其他人記錄的份額（餘額，與 myShareOf 同口徑）。
+       · 債務人（split_detail 明列、或舊式私人拆帳的 related_id）：份額 ＝ 他被記錄的那一份。
+       · 沒有分攤資訊時不猜：家庭代墊沿用「整筆由公帳償還」的既有語意（付款人份額 0）；
+         私人拆帳完全沒有債務人 → 維持不計入並標示 reliable=false。
+       · 現金、卡片負債、應收、應付一律仍按實際付款與結清更新（computeSummary 的資金流不看這裡）。
+       · 這裡只回答「認列多少」；某筆算收入還是支出仍由 plKind 決定。
+       ========================================================== */
+    const ADVANCE_NATURES = ['家庭代墊', '私人拆帳'];
+    const r2 = v => Math.round((Number(v) || 0) * 100) / 100;
+    function isAdvance(t) { return !!t && t.entry_type === '支出' && ADVANCE_NATURES.includes(t.nature); }
+    /** 回傳 { share, role: 'payer'|'debtor'|'none', total, reliable, reason }；不是代墊則回傳 null。 */
+    function advanceShare(t, memberId) {
+        if (!isAdvance(t)) return null;
+        const total = r2(t.amount), me = String(memberId || ''), payer = String(t.payer_id || '');
+        const sp = parseSplit(t);
+        const explicit = !!t.split_detail && sp.length > 0;
+        const out = (share, role, reason) => ({ share: r2(share), role, total, reliable: !reason, reason: reason || '' });
+        if (me && me === payer) {
+            if (!explicit) {
+                const debtors = sp.filter(x => String(x.member_id) !== payer);
+                return out(0, 'payer', (t.nature === '家庭代墊' || debtors.length) ? '' : 'NO_DEBTOR');
+            }
+            const others = sp.filter(x => String(x.member_id) !== payer);
+            const sum = others.reduce((a, x) => a + x.amount, 0);
+            let reason = '';
+            if (others.length !== sp.length) reason = 'SPLIT_HAS_PAYER';
+            else if (new Set(sp.map(x => String(x.member_id))).size !== sp.length) reason = 'SPLIT_DUP';
+            else if (sum > total + 0.01) reason = 'SPLIT_EXCEEDS';
+            return out(Math.max(0, total - sum), 'payer', reason);
+        }
+        const mine = me ? sp.filter(x => String(x.member_id) === me) : [];
+        if (!mine.length) return out(0, 'none', '');
+        let reason = '';
+        if (mine.length > 1) reason = 'SPLIT_DUP';
+        else if (sp.reduce((a, x) => a + x.amount, 0) > total + 0.01) reason = 'SPLIT_EXCEEDS';
+        return out(Math.min(mine[0].amount, total), 'debtor', reason);
+    }
+    const ADVANCE_REASON_TEXT = {
+        NO_DEBTOR: '這筆私人拆帳沒有記錄對方，無法確認你的份額',
+        SPLIT_HAS_PAYER: '分攤明細裡包含付款人本人，份額以「總額扣掉其他人」計',
+        SPLIT_DUP: '分攤明細有重複成員，無法確認份額',
+        SPLIT_EXCEEDS: '分攤合計超過總額，無法確認份額'
+    };
+    /** 這筆交易是否屬於「我的帳本」：我付的、別人還給我的，以及我被記了一份的代墊（債務人）。 */
+    function inPersonalScope(t, meId) {
+        if (isMine(t, meId)) return true;
+        const s = advanceShare(t, meId);
+        return !!s && s.role === 'debtor';
+    }
+    function personalScopeRows() {
+        const meId = STATE.me?.member_id;
+        return activeTxns().filter(t => inPersonalScope(t, meId));
+    }
+    /** 這筆在目前帳本主體「認列的金額」。家庭帳本認全額；個人帳本的代墊只認自己的份額。 */
+    function plAmount(t, mode) {
+        if (mode !== 'family' && isAdvance(t)) {
+            const s = advanceShare(t, STATE.me?.member_id);
+            return s ? s.share : 0;
+        }
+        return Number(t && t.amount) || 0;
+    }
+    /** 列表上顯示、篩選金額區間時使用的金額（認列的才換算，資金移動維持實際金額） */
+    function displayAmount(t) {
+        return plKind(t, currentMode) ? plAmount(t, currentMode) : (Number(t.amount) || 0);
+    }
+
+    /* ==========================================================
        Saving Jar
        劃撥儲蓄不是支出，錢沒有離開，只是被標記為「保留」。
        因此它不進損益與現金流，只用來推算保留額度。
        ========================================================== */
     const NON_PL_TYPES = ['轉帳', '劃撥儲蓄'];      // 一律不進收支統計
+
+    /* ---------- v6.23.0 收支分類（單一來源） ----------
+       每日小計、明細摘要、圖表、固定收支預估、匯出合計全部呼叫這一個函式，
+       不再各自判斷「這筆算收入還是支出」。
+       回傳 'income' | 'expense' | null（null＝資金移動，不進收支）。
+
+       · 轉帳、劃撥儲蓄：NON_PL_TYPES，一律 null（繳信用卡費是轉帳，所以不會在繳卡費時再算一次；
+         刷卡當下的那筆支出已在消費日認列）。
+       · 還款（代墊結清、公帳結算）：沿用圖表既有口徑，不計入（花費在代墊當下已認列）。
+       · 注資：依「目前帳本主體」認列 —— 個人帳本＝支出（我的錢流出去），
+         家庭帳本＝收入（公帳收到錢）。同一筆資料在兩邊各認一次，不是複製交易。 */
+    function plKind(t, mode) {
+        const type = t && t.entry_type;
+        if (!type || NON_PL_TYPES.includes(type)) return null;
+        if (type === '還款') return null;
+        if (type === '注資') return mode === 'family' ? 'income' : 'expense';
+        if (type === '收入') return 'income';
+        if (type === '支出') return 'expense';
+        return null;
+    }
+    /** 某一天（或整批）的收入、支出小計。rows 已經是目前帳本主體、月份與篩選之後的交易。 */
+    function plTotals(rows, mode) {
+        const s = { income: 0, expense: 0 };
+        (rows || []).forEach(t => {
+            const k = plKind(t, mode);
+            /* v6.23.1：金額走 plAmount —— 個人帳本的代墊只認自己的份額，
+               不再把整筆代墊總額算成每個人的支出。 */
+            if (k) s[k] += plAmount(t, mode);
+        });
+        return s;
+    }
     function activeGoals(scope) {
         // 後端若尚未部署新版就不會回傳 goals，這裡必須容錯，否則整個首頁會崩潰
         return (STATE.goals || []).filter(g => g.status === '進行中' &&
@@ -1385,16 +1494,16 @@ function hexA(hex, a) {
 
         if (mode === 'personal') {
             const mine = rows.filter(t => isMine(t, meId));
+            /* v6.23.1 收支認列：與明細、每日小計、圖表共用 plKind／plTotals／plAmount。
+               · 代墊只認「自己的份額」，計在原始消費日（付款人＝總額扣掉別人的；債務人＝被記的那一份）。
+               · 還款（代墊結清）不再於還款日認列為支出 —— 消費在消費日已經認列過，
+                 結清只是資金移動（現金與欠款餘額仍在下面的 forEach 依實際付款更新）。
+               · 注資：個人帳本認列為支出（v6.23.0）。 */
+            const scope = rows.filter(t => inPersonalScope(t, meId));
+            const pl = plTotals(scope.filter(t => inMonth(t.date, ym)), 'personal');
+            s.monthlyIncome = pl.income; s.monthlyExpense = pl.expense;
             mine.forEach(t => {
                 const a = Number(t.amount) || 0;
-                if (inMonth(t.date, ym)) {
-                    if (t.entry_type === '支出' && t.payer_id === meId) s.monthlyExpense += myShareOf(t);
-                    if (t.entry_type === '收入' && t.payer_id === meId) s.monthlyIncome += a;
-                    /* 還款：家人幫我代墊的那一天，我的錢包沒動、也沒有消費決策，
-                       真正的支出發生在我按下還款的當下。所以在這裡才計入。
-                       反過來別人還我的錢不算我的支出 —— 我當初代墊的部分本來就沒算進去。 */
-                    if (t.entry_type === '還款' && t.payer_id === meId && t.related_id !== meId) s.monthlyExpense += a;
-                }
                 /* 信用卡：刷卡的當下錢還沒離開口袋，離開的是「額度」。
                    所以支出計入當月收支，但不扣現金，改記成卡片負債；
                    等到繳卡費（轉帳進卡片）時，現金與負債才同步減少。
@@ -1424,11 +1533,9 @@ function hexA(hex, a) {
                 .forEach(t => s.poolOwesMe -= Number(t.amount) || 0);
             s.iOweOthers = myPendingSettlements().reduce((x, y) => x + y.remaining, 0);
             const cm = {};
-            // 分類統計用同一個口徑，否則圓餅圖加起來會跟上面的總額對不起來
-            mine.filter(t => t.entry_type === '支出' && t.payer_id === meId && inMonth(t.date, ym))
-                .forEach(t => { const k = t.category || '未分類'; cm[k] = (cm[k] || 0) + myShareOf(t); });
-            mine.filter(t => t.entry_type === '還款' && t.payer_id === meId && t.related_id !== meId && inMonth(t.date, ym))
-                .forEach(t => { const k = t.category || '代墊歸還'; cm[k] = (cm[k] || 0) + Math.round(Number(t.amount) || 0); });
+            // 分類統計用同一個口徑（plKind＋plAmount），否則圓餅圖加起來會跟上面的總額對不起來
+            scope.filter(t => plKind(t, 'personal') === 'expense' && inMonth(t.date, ym))
+                .forEach(t => { const k = t.category || (t.entry_type === '注資' ? '公帳注資' : '未分類'); cm[k] = (cm[k] || 0) + plAmount(t, 'personal'); });
             s.byCategory = Object.entries(cm).sort((a, b) => b[1] - a[1]);
         } else {
             const fam = rows.filter(isFamilyBook);
@@ -1723,7 +1830,7 @@ function hexA(hex, a) {
         normalizeState();
         STATE.me = STATE.members.find(m => m.member_id === AUTH.memberId);
         if (!STATE.me) throw new Error('找不到此成員，請重新選擇');
-        if (d.generated > 0) setTimeout(() => toast(`已自動補記 ${d.generated} 筆重複性收支`), 800);
+        if (d.generated > 0) setTimeout(() => toast(`已自動補記 ${d.generated} 筆固定收支`), 800);
     }
 
     function enterApp() {
@@ -1855,7 +1962,9 @@ function hexA(hex, a) {
         const budget = budgetFor('personal', '');
         const n = daysInYM(currentYM());
         const dailyQuota = budget ? budget / n : 0;
-        const todayExp = mine.filter(x => x.entry_type === '支出').reduce((a, b) => a + Number(b.amount), 0);
+        // v6.23.1：每日額度看的是「我認列的支出」（代墊只算自己的份額），與首頁、明細同口徑
+        const todayExp = personalScopeRows().filter(x => x.date === t && x.entry_type === '支出')
+            .reduce((a, b) => a + plAmount(b, 'personal'), 0);
         return [
             { icon: 'fa-pen', name: '今天記一筆', done: mine.length > 0, go: 'add', hint: mine.length ? `已記 ${mine.length} 筆` : '還沒開張' },
             { icon: 'fa-receipt', name: '今天附一張單據', done: mine.some(x => x.receipt_file_id), go: 'add', hint: '拍發票更好對帳' },
@@ -1870,7 +1979,8 @@ function hexA(hex, a) {
         const budget = budgetFor('personal', '');
         const n = daysInYM(currentYM());
         const weekQuota = budget ? budget / n * 7 : 0;      // 用「總預算的週配額」而非分類預算，
-        const weekExp = mine.filter(x => x.entry_type === '支出').reduce((a, b) => a + Number(b.amount), 0);
+        const weekExp = personalScopeRows().filter(x => x.date >= ws && x.entry_type === '支出')
+            .reduce((a, b) => a + plAmount(b, 'personal'), 0);     // v6.23.1：同上，只認自己的份額
         return [
             { icon: 'fa-calendar-check', name: '本週記帳 5 天', done: days >= 5, go: 'add', hint: `${days}/5 天` },
             { icon: 'fa-wallet', name: '本週不超過週配額', done: !!weekQuota && weekExp <= weekQuota,
@@ -1901,7 +2011,7 @@ function hexA(hex, a) {
         if (!due.length) return '';
         return `<div class="space-y-2.5">
             <div class="flex items-center gap-2 text-xs font-bold text-stone-600">
-                <i class="fa-solid fa-bell fa-shake text-pastel-yellow"></i> 待確認的重複性收支
+                <i class="fa-solid fa-bell fa-shake text-pastel-yellow"></i> 待確認的固定收支
                 <span class="text-[10px] bg-pastel-yellowLight text-[#D9A216] px-2 py-0.5 rounded-full">${due.length}</span></div>
             ${due.map(r => `
                 <div class="bg-pastel-bg rounded-tile p-3">
@@ -2157,6 +2267,7 @@ function hexA(hex, a) {
         m.classList.remove('opacity-0'); c.classList.remove('translate-y-full');
     }
     function closeSheet() {
+        _sheetPos = {};                       // v6.23.1：關閉詳情就忘掉導覽位置
         // 面板被滑掉或點外面關掉時，一定要把借用狀態歸還，
         // 不然下一次記帳按的數字會被寫進上一個成員的分攤裡。
         if (kpBorrow) { const d = kpBorrow.onDone; kpBorrow = null; if (d) setTimeout(d, 0); }
@@ -2849,7 +2960,11 @@ function hexA(hex, a) {
         let okN = 0, failN = 0;
         try {
             // 每一筆在迴圈外先定好 client_id：api 內重試與回應遺失都不會變成兩筆還款
-            const keyed = list.map(x => ({ x, cid: newOpKey('c') }));
+            /* v6.23.1：同一次「一次還清」共用一個批次鍵（見 settleBatchIds），
+               明細才能可靠地列出「這次結清了哪幾筆原始消費」，不必靠日期、金額去猜。
+               每一列的 client_id 仍然各自唯一，重送與回應遺失的冪等性完全不變。 */
+            const batchIds = settleBatchIds(list.length);
+            const keyed = list.map((x, i) => ({ x, cid: batchIds[i] }));
             for (const { x, cid } of keyed) {
                 try {
                     // rc2：後端要求先取消「由公帳月結」才能直接還款（同一債務不可兩條清償路徑並存）
@@ -3527,18 +3642,27 @@ function hexA(hex, a) {
 
     /* 日期分組標題拆成「主標 + 日期」兩段，主標放大加深，
        讓它真的形成段落分隔，而不是一行不起眼的灰字。 */
-    function dateHeader(iso) {
+    /** 每日標題右側：收入與支出各自明確列出，不淨額、不合併。
+        兩項都帶文字標籤；窄螢幕可換行，但任一項都不會被藏起來。
+        只有資金移動的一天（例如只繳卡費）顯示 收入 $0 · 支出 $0，明細列在下方。 */
+    function dayTotalsHtml(tot) {
+        return `<span class="whitespace-nowrap">收入 <span class="font-tabular">${fmt(tot.income)}</span></span>` +
+            `<span aria-hidden="true">·</span>` +
+            `<span class="whitespace-nowrap">支出 <span class="font-tabular">${fmt(tot.expense)}</span></span>`;
+    }
+    function dateHeader(iso, allRows) {
         const d = new Date(iso + 'T00:00:00'), now = new Date(todayISO() + 'T00:00:00');
         const diff = Math.round((now - d) / 86400000);
         const wk = ['日', '一', '二', '三', '四', '五', '六'][d.getDay()];
         const main = diff === 0 ? '今天' : diff === 1 ? '昨天' : `星期${wk}`;
-        const sum = filteredTxns().filter(t => t.date === iso && t.entry_type === '支出')
-            .reduce((a, b) => a + Number(b.amount), 0);
-        return `<div class="flex items-baseline justify-between px-1.5 mt-6 mb-2.5">
+        /* 與圖表共用 plKind：刷卡在消費日算支出、繳卡費（轉帳）不再算、
+           不進損益的轉帳不算、注資依目前帳本主體認列。 */
+        const tot = plTotals((allRows || filteredTxns()).filter(t => t.date === iso), currentMode);
+        return `<div class="flex items-baseline justify-between gap-x-3 px-1.5 mt-6 mb-2.5">
             <div class="flex items-baseline gap-2 min-w-0">
                 <span class="text-sm font-bold text-stone-800">${main}</span>
-                <span class="text-[10px] text-pastel-muted">${d.getMonth() + 1} 月 ${d.getDate()} 日</span></div>
-            ${sum ? `<span class="text-[10px] text-pastel-muted flex-shrink-0">支出 ${fmt(sum)}</span>` : ''}
+                <span class="text-[10px] text-pastel-muted whitespace-nowrap">${d.getMonth() + 1} 月 ${d.getDate()} 日</span></div>
+            <div class="flex flex-wrap items-baseline justify-end gap-x-1.5 text-[10px] text-pastel-muted min-w-0">${dayTotalsHtml(tot)}</div>
         </div>`;
     }
     /** 這筆交易是否屬於「我的帳」。
@@ -3559,13 +3683,18 @@ function hexA(hex, a) {
     function scopedTxns(ym) {
         const meId = STATE.me?.member_id;
         const rows = activeTxns().filter(t => !ym || inMonth(t.date, ym));
-        return currentMode === 'personal' ? rows.filter(t => isMine(t, meId)) : rows.filter(isFamilyBook);
+        /* v6.23.1：個人帳本除了我付的、別人還我的，也包含「我被記了一份」的代墊（債務人）——
+           那是我的消費，要在原始消費日出現在我的明細裡。 */
+        return currentMode === 'personal' ? rows.filter(t => inPersonalScope(t, meId)) : rows.filter(isFamilyBook);
     }
     function filteredTxns() {
         // 全期間模式：跨月搜尋，找「去年那台除濕機多少錢」不必先猜月份
         let rows = filters.allTime ? scopedTxns(null) : scopedTxns(viewYM);
-        if (filters.type === 'expense') rows = rows.filter(t => t.entry_type === '支出');
-        if (filters.type === 'income') rows = rows.filter(t => t.entry_type === '收入');
+        /* v6.23.1 R3：收入／支出篩選與摘要、每日小計、圖表共用 plKind（依目前帳本主體）。
+           先前直接比 entry_type，個人注資（列為支出）與群組注資（列為收入）選了對應篩選反而消失。
+           轉帳、劃撥儲蓄、代墊結清不是收支，plKind 為 null，只在「全部」出現。 */
+        if (filters.type === 'expense') rows = rows.filter(t => plKind(t, currentMode) === 'expense');
+        if (filters.type === 'income') rows = rows.filter(t => plKind(t, currentMode) === 'income');
         if (filters.natures.length) rows = rows.filter(t => filters.natures.includes(t.nature));
         if (filters.cats.length) rows = rows.filter(t => filters.cats.includes(t.category));
         /* 家庭模式的晶片是遮罩後的名稱，所以比對也要遮罩過 ——
@@ -3576,8 +3705,9 @@ function hexA(hex, a) {
         if (currentMode === 'family' && filters.members.length) {
             rows = rows.filter(t => filters.members.includes(t.payer_id));
         }
-        if (filters.min !== '') rows = rows.filter(t => Number(t.amount) >= Number(filters.min));
-        if (filters.max !== '') rows = rows.filter(t => Number(t.amount) <= Number(filters.max));
+        // 金額區間比的是列表上看到的金額（代墊列＝我的份額）
+        if (filters.min !== '') rows = rows.filter(t => displayAmount(t) >= Number(filters.min));
+        if (filters.max !== '') rows = rows.filter(t => displayAmount(t) <= Number(filters.max));
         /* 搜尋也要比對遮罩後的名稱：
            家庭模式搜「信用卡」要找得到，搜別人的卡真名則不該找得到 —— 
            否則遮罩只是把名字從畫面上拿掉，用猜的還是問得出來。 */
@@ -3610,8 +3740,9 @@ function hexA(hex, a) {
         const rows0 = activeTxnsScoped();
         const push = (arrI, arrE, idx, tx) => {
             if (idx < 0) return;
-            if (tx.entry_type === '收入' || tx.entry_type === '注資') arrI[idx] += Number(tx.amount);
-            if (tx.entry_type === '支出') arrE[idx] += Number(tx.amount);
+            const k = plKind(tx, currentMode);       // 與每日小計、明細摘要共用同一個分類
+            if (k === 'income') arrI[idx] += plAmount(tx, currentMode);
+            if (k === 'expense') arrE[idx] += plAmount(tx, currentMode);   // v6.23.1：代墊只認自己的份額
         };
         if (range === 'week') {
             const ws = weekStartISO();
@@ -3641,7 +3772,7 @@ function hexA(hex, a) {
     function activeTxnsScoped() {
         const meId = STATE.me?.member_id;
         const rows = activeTxns();
-        return currentMode === 'personal' ? rows.filter(t => t.payer_id === meId)
+        return currentMode === 'personal' ? rows.filter(t => inPersonalScope(t, meId))
             : rows.filter(t => FAMILY_NATURES.includes(t.nature));
     }
     /** 該區間的預算額度（月預算按比例換算） */
@@ -3798,7 +3929,7 @@ function hexA(hex, a) {
         const grouped = rows.reduce((a, t) => { (a[t.date] ||= []).push(t); return a; }, {});
         // 同一天收進同一張大卡，列與列之間只用淡分隔線（iOS 群組清單的作法）
         let list = Object.keys(grouped).sort().reverse().map(date => `
-            ${dateHeader(date)}
+            ${dateHeader(date, all)}
             <div class="bg-white border border-pastel-border/60 rounded-card shadow-sm overflow-hidden mb-1">
                 ${grouped[date].map((t, i, arr) => txnRow(t, i === arr.length - 1)).join('')}
             </div>`).join('');
@@ -3854,13 +3985,11 @@ function hexA(hex, a) {
        深色底讓這一頁有自己的識別，綠／紅金額在深底上對比也更強。 */
     function summaryStrip() {
         const rows = filters.allTime ? scopedTxns(null) : scopedTxns(viewYM);
-        const inc = rows.filter(t => t.entry_type === '收入' || t.entry_type === '注資').reduce((a, b) => a + Number(b.amount), 0);
-        const exp = rows.filter(t => t.entry_type === '支出').reduce((a, b) => a + Number(b.amount), 0);
+        const { income: inc, expense: exp } = plTotals(rows, currentMode);
         const net = inc - exp;
         let cmp = '';
         if (!filters.allTime) {
-            const prev = scopedTxns(shiftYM(viewYM, -1)).filter(t => t.entry_type === '支出')
-                .reduce((a, b) => a + Number(b.amount), 0);
+            const prev = plTotals(scopedTxns(shiftYM(viewYM, -1)), currentMode).expense;
             if (prev > 0) {
                 const d = (exp - prev) / prev * 100;
                 cmp = `<div class="text-right text-[10px] font-bold mt-2 ${d <= 0 ? 'text-[#7BE0A5]' : 'text-[#FF9B85]'}">
@@ -3906,24 +4035,147 @@ function hexA(hex, a) {
         return { expected, paid, done, who };
     }
 
+    /* ---------- v6.23.0 資金移動列 ----------
+       轉帳、繳信用卡費、代墊結清、注資都不是消費：名稱維持各自的說法，
+       副行用「來源 → 去向」呈現，來源與去向一律取自交易本身記下的帳戶／成員，不寫死任何名稱。
+       缺帳戶（舊資料、帳戶已刪除）就只顯示有記錄的那一側，絕不出現空箭頭、undefined 或猜出來的名字。
+       人名不會被當成銀行帳戶。 */
+    function cleanName(v) {
+        const s = String(v == null ? '' : v).trim();
+        return (!s || s === 'undefined' || s === 'null') ? '' : s;
+    }
+
+    /* ---------- v6.23.1 代墊結清：追溯原始消費 ----------
+       關聯只認可信的欄位，不靠日期、金額、對象或備註去猜：
+       · 單筆：還款列的 parent_txn_id 指向原始代墊（後端在寫入時驗證過，且有效還款存在時原始代墊
+         不能被修改或作廢，所以這個 id 是穩定的）。
+       · 一次結清多筆：後端會為每一筆代墊各寫一列還款（各自的 parent_txn_id），沒有批次欄位。
+         v6.23.1 起，同一次「一次還清」的每一列 client_id 共用同一個批次鍵
+         （stlb_<批次鍵>_<序號>_<總筆數>）。client_id 是後端本來就會保存、原樣回傳的冪等鍵，
+         不需要改 Code.gs；舊資料沒有這個格式 → 視為單筆，不猜批次。 */
+    const SETTLE_BATCH_RE = /^stlb_([0-9a-z]+_[0-9a-z]+)_(\d+)_(\d+)$/;
+    /** 為一次「一次還清」產生 n 個 client_id（共用批次鍵；各自唯一，重送冪等性不變） */
+    function settleBatchIds(n) {
+        const key = newOpKey('stlb');                       // stlb_<時間>_<亂數>
+        return Array.from({ length: n }, (_, i) => `${key}_${i + 1}_${n}`);
+    }
+    /** 批次鍵一併綁記帳者：別人即使送出相同的 client_id 格式，也進不了我的批次。 */
+    function settleBatchOf(t) {
+        if (!t || t.entry_type !== '還款') return null;
+        const m = SETTLE_BATCH_RE.exec(String(t.client_id || ''));
+        if (!m) return null;
+        return { key: `${t.member_id}|${m[1]}`, index: Number(m[2]), size: Number(m[3]) };
+    }
+    const isLiveTxn = x => !!x && x.status !== '作廢' && x.status !== '已修訂' && !x.is_rollup;
+    /** 這列結清對應的原始代墊。只有 state==='ok' 才可以顯示內容與提供入口；
+        作廢、被修訂、找不到（含無權查看 —— 後端不會回傳）一律不顯示內容，也不提供入口。 */
+    function originalOf(t) {
+        if (!t || t.entry_type !== '還款' || !t.parent_txn_id) return { state: 'none', src: null };
+        const src = (STATE.transactions || []).find(x => x.txn_id === t.parent_txn_id);
+        if (!src || src.is_rollup) return { state: 'missing', src: null };
+        if (src.status === '作廢') return { state: 'void', src: null };
+        if (src.status === '已修訂') return { state: 'revised', src: null };
+        if (!isAdvance(src)) return { state: 'missing', src: null };     // 關聯到非代墊 → 不可信
+        return { state: 'ok', src };
+    }
+    /** 人名顯示：自己＝我、公帳＝家庭名稱，缺值回空字串（不出現 undefined 或空箭頭） */
+    function partyLabel(id) {
+        const s = cleanName(id);
+        if (!s) return '';
+        if (s === STATE.me?.member_id) return '我';
+        const n = cleanName(nameOf(s));
+        if (s === 'family_pool') return n && n !== s ? n : (cleanName(STATE.familyName) || '家庭公帳');
+        return n;
+    }
+    function originalPurpose(src) { return cleanName(src.note) || cleanName(src.category) || '（無備註）'; }
+    const ORIGINAL_MISSING_TEXT = {
+        none: '這筆結清沒有記錄對應的原始代墊（舊資料）',
+        missing: '找不到對應的原始代墊（可能已被移除，或你沒有查看權限）',
+        void: '對應的原始代墊已作廢',
+        revised: '對應的原始代墊已被修訂，無法確認這次結清對應哪個版本'
+    };
+
+    /** 結清的「付款人 → 收款對象」與付款帳戶（沒記錄就是空字串，不猜） */
+    function settleParts(t) {
+        const people = [partyLabel(t.payer_id), partyLabel(t.related_id)];
+        const arrow = people[0] && people[1] ? `${people[0]} → ${people[1]}` : (people[0] || people[1]);
+        const rawTag = cleanName(t.tag);
+        const acct = rawTag && rawTag !== '結算' ? cleanName(displayTag(rawTag)) : '';
+        return { arrow, acct };
+    }
+
+    function fundMovementInfo(t) {
+        const type = t && t.entry_type;
+        const arrow = (a, b) => a && b ? `${a} → ${b}` : a ? `來源 ${a}` : b ? `去向 ${b}` : '';
+        const isAutoNote = n => {
+            const s = cleanName(n);
+            if (!s) return true;
+            if (type === '轉帳') return s === `${cleanName(t.tag)} → ${cleanName(t.related_id)}` || /^繳 .+ 卡費$/.test(s);
+            if (type === '還款') return /^還款給/.test(s) || /^結算：/.test(s);
+            return false;
+        };
+        const custom = isAutoNote(t.note) ? '' : cleanName(t.note);
+        if (type === '轉帳') {
+            const from = cleanName(displayTag(t.tag)), to = cleanName(displayTag(t.related_id));
+            const toCard = !!cleanName(t.related_id) && isCreditCard(findItem(t.related_id));
+            return { kind: 'transfer', label: toCard ? '繳信用卡費' : '轉帳', custom, sub: arrow(from, to), sub2: '' };
+        }
+        if (type === '注資') {
+            const mine = t.payer_id === STATE.me?.member_id;
+            const acct = cleanName(displayTag(t.tag));
+            const who = mine ? '' : cleanName(nameOf(t.payer_id));
+            const from = [who, acct].filter(Boolean).join('・');
+            const to = cleanName(STATE.familyName) || '家庭公帳';
+            return { kind: 'inject', label: '公帳注資', custom, sub: arrow(from, to), sub2: '' };
+        }
+        if (type === '還款') {
+            /* v6.23.1：比照繳卡費 —— 名稱「代墊結清」、金額不帶損益正負號、
+               副行「付款人 → 收款對象 · 付款帳戶：X」、再一行「原代墊：用途」。
+               沒記錄付款帳戶（tag 空白或後端的「結算」占位）就不顯示，不猜銀行。 */
+            const sp = settleParts(t), arrow = sp.arrow, acct = sp.acct;
+            const o = originalOf(t);
+            let sub2;
+            if (o.state === 'ok') sub2 = `原代墊：${originalPurpose(o.src)}`;
+            else if (o.state === 'none' && (t.payer_id === 'family_pool' || t.related_id === 'family_pool')) sub2 = '成員與公帳結算';
+            else sub2 = '原代墊：無法取得原始明細';
+            return { kind: 'settle', label: '代墊結清', custom,
+                sub: [arrow, acct ? `付款帳戶：${acct}` : ''].filter(Boolean).join(' · '),
+                sub2 };
+        }
+        return null;
+    }
+
     function txnRow(t, isLast) {
         const meId = STATE.me?.member_id;
         const isTr = t.entry_type === '轉帳';
         const isJar = t.entry_type === '劃撥儲蓄';
         const isRepay = t.entry_type === '還款';
-        // 還款要看方向：我付出去是流出，別人還給我是流入。
-        // 先前一律當成流入而顯示綠色的 +，付款那一方看起來就變成「收入」。
         const repayIn = isRepay && t.related_id === meId && t.payer_id !== meId;
-        const isExp = t.entry_type === '支出' || t.entry_type === '注資' || (isRepay && !repayIn);
+        /* v6.23.0 注資的方向跟著帳本主體：個人＝流出（-），家庭＝流入（+）。
+           先前一律當流出，家庭明細顯示負號、同頁摘要卻算收入。 */
+        const injectIn = t.entry_type === '注資' && currentMode === 'family';
+        /* v6.23.1 代墊結清是資金移動（比照繳卡費）：金額不帶損益的 +／-，也不上色，
+           方向由「付款人 → 收款對象」那一行表達。 */
+        const isExp = t.entry_type === '支出' || (t.entry_type === '注資' && !injectIn);
+        const fm = fundMovementInfo(t);
+        /* v6.23.1 個人帳本的代墊列：金額是「我認列的份額」；份額為 0（例如我替公帳墊的錢）
+           不是我的支出 → 中性顯示、不帶負號。 */
+        const adv = currentMode === 'personal' && isAdvance(t) ? advanceShare(t, meId) : null;
+        const amt = displayAmount(t);
+        const neutral = isTr || isJar || isRepay || (adv && adv.share === 0);
         const icon = t.category ? catIcon(t.category)
             : isRepay ? (repayIn ? 'fa-hand-holding-dollar' : 'fa-money-bill-transfer')
                 : isJar ? 'fa-piggy-bank' : isTr ? 'fa-right-left' : isExp ? 'fa-money-bill-transfer' : 'fa-sack-dollar';
         const col = t.category ? catColor(t.category)
-            : (isTr ? '#3090F8' : isJar ? '#F8A048' : isRepay ? (repayIn ? '#40B868' : '#9A918A') : isExp ? '#9A918A' : '#40B868');
-        const amtCls = isTr || isJar ? 'text-pastel-blue' : isExp ? 'text-stone-800' : 'text-pastel-green';
-        const sign = isTr || isJar ? '' : isExp ? '-' : '+';
-        const repayLabel = isRepay
-            ? `還款 ・ ${esc(nameOf(t.payer_id))} → ${esc(nameOf(t.related_id))}` : '';
+            : (isTr || isRepay ? '#3090F8' : isJar ? '#F8A048' : isExp ? '#9A918A' : '#40B868');
+        const amtCls = neutral ? 'text-pastel-blue' : isExp ? 'text-stone-800' : 'text-pastel-green';
+        const sign = neutral ? '' : isExp ? '-' : '+';
+        const repayLabel = '';
+        const advLine = adv && adv.role !== 'none' ? (adv.role === 'payer'
+            ? `實付 ${fmt(adv.total)} · ${adv.share > 0 ? `我的份額 ${fmt(adv.share)}` : '不計入我的支出'}`
+            : `${partyLabel(t.payer_id)}代墊 ${fmt(adv.total)} · 我的份額 ${fmt(adv.share)}`) + (adv.reliable ? '' : ' · 份額待確認') : '';
+        // 別人記的帳（我是債務人／收款方）：後端不允許我修改或作廢，所以不提供滑動編輯／作廢
+        const readOnly = (!!adv && adv.role === 'debtor') || (isRepay && t.member_id !== meId);
         return `
         ${t._failed ? `<div class="px-4 pt-3 pb-2 bg-pastel-redLight">
             <div class="text-[10px] font-bold text-pastel-red mb-2"><i class="fa-solid fa-triangle-exclamation mr-1"></i>沒有存進去：${esc(t._failed)}</div>
@@ -3931,26 +4183,35 @@ function hexA(hex, a) {
                 <button data-i="${esc(t.txn_id)}" onclick="retryTxn(this.dataset.i)" class="flex-1 py-2 rounded-lg bg-pastel-red text-white text-[10px] font-bold tactile">重新送出</button>
                 <button data-i="${esc(t.txn_id)}" onclick="discardTxn(this.dataset.i)" class="px-3 py-2 rounded-lg bg-white border border-pastel-red/30 text-pastel-red text-[10px] font-bold tactile">捨棄</button>
             </div></div>` : ''}
-        <div class="swipe-wrap relative w-full ${isLast ? '' : 'border-b border-pastel-border/50'} ${t._pending ? 'pending' : ''} ${t._failed ? 'failed-row' : ''} ${t._new ? 'is-new' : ''}" data-id="${esc(t.txn_id)}">
-            <div class="swipe-bg absolute inset-0 flex items-center justify-between pl-3 pr-6 text-white font-bold text-sm opacity-0 bg-pastel-blue">
+        <div class="swipe-wrap relative w-full ${isLast ? '' : 'border-b border-pastel-border/50'} ${t._pending ? 'pending' : ''} ${t._failed ? 'failed-row' : ''} ${t._new ? 'is-new' : ''}" data-id="${esc(t.txn_id)}"${readOnly ? ' data-ro="1"' : ''}>
+            ${readOnly ? '' : `<div class="swipe-bg absolute inset-0 flex items-center justify-between pl-3 pr-6 text-white font-bold text-sm opacity-0 bg-pastel-blue">
                 <span class="flex items-center">
                     <span class="sw-edit flex flex-col items-center justify-center gap-0.5 w-[68px] py-1"><i class="fa-solid fa-pen"></i><span class="text-[10px]">編輯</span></span>
                     <span class="sw-copy flex flex-col items-center justify-center gap-0.5 w-[68px] py-1"><i class="fa-solid fa-copy"></i><span class="text-[10px]">再記一次</span></span>
                 </span>
                 <span class="sw-void flex items-center gap-2">作廢<i class="fa-solid fa-trash"></i></span>
-            </div>
+            </div>`}
             <div class="swipe-inner bg-white px-4 py-3.5 flex justify-between items-center relative w-full">
                 <div class="flex items-center gap-3.5 min-w-0">
                     <div class="cat-dot w-10 h-10 rounded-full flex items-center justify-center text-sm flex-shrink-0"
                          style="background:${col}"><i class="fa-solid ${esc(icon)}"></i></div>
                     <div class="min-w-0">
-                        <div class="font-bold text-stone-800 text-sm truncate">${esc(t.note || t.category || '（無備註）')}${t.recurring_rule_id ? ' <i class="fa-solid fa-rotate text-[10px] text-pastel-muted"></i>' : ''}</div>
+                        <div class="font-bold text-stone-800 text-sm truncate">${fm ? esc(fm.label) + (fm.custom ? ' ・ ' + esc(fm.custom) : '') : esc(t.note || t.category || '（無備註）')}${t.recurring_rule_id ? ' <i class="fa-solid fa-rotate text-[10px] text-pastel-muted"></i>' : ''}</div>
+                        ${fm ? `${fm.sub ? `<div class="text-[10px] text-pastel-muted truncate mt-0.5">${esc(fm.sub)}</div>` : ''}${fm.sub2 ? `<div class="text-[10px] text-pastel-muted truncate mt-0.5">${esc(fm.sub2)}</div>` : ''}` : ''}
                         <div class="text-[10px] text-pastel-muted flex items-center gap-1.5 truncate mt-0.5">
-                            <span class="truncate">${repayLabel || esc(t.category || t.entry_type)}</span>
+                            <span class="truncate">${fm ? '' : (repayLabel || esc(t.category || t.entry_type))}</span>
                             ${t._queued ? `<span class="w-1 h-2 rounded-full bg-stone-300 flex-shrink-0"></span><span class="text-pastel-accent font-bold flex-shrink-0"><i class="fa-solid fa-cloud-arrow-up mr-1"></i>待同步</span>` : ''}
-                            ${t.tag && !isRepay ? `<span class="w-1 h-2 rounded-full bg-stone-300 flex-shrink-0"></span><span class="truncate">${esc(displayTag(t.tag))}</span>` : ''}
+                            ${t.tag && !isRepay && !fm ? `<span class="w-1 h-2 rounded-full bg-stone-300 flex-shrink-0"></span><span class="truncate">${esc(displayTag(t.tag))}</span>` : ''}
                         </div>
+                        ${advLine ? `<div class="text-[10px] text-pastel-muted truncate mt-0.5">${esc(advLine)}</div>` : ''}
                         ${(() => {
+            if (adv && adv.role === 'debtor') {
+                // 債務人：看的是「我還了多少」，不是別人的進度
+                const paid = Math.min(paidFor(t.txn_id, meId), adv.share), done = paid >= adv.share - 0.01;
+                return `<div class="text-[10px] mt-1 flex items-center gap-1.5 truncate ${done ? 'text-pastel-green' : 'text-pastel-accent'}">
+                                <i class="fa-solid ${done ? 'fa-circle-check' : 'fa-hourglass-half'}"></i>
+                                <span class="truncate">我已還 ${fmt(paid)} / ${fmt(adv.share)}</span></div>`;
+            }
             const st = settleSummary(t); if (!st) return '';
             return `<div class="text-[10px] mt-1 flex items-center gap-1.5 truncate ${st.done ? 'text-pastel-green' : 'text-pastel-accent'}">
                                 <i class="fa-solid ${st.done ? 'fa-circle-check' : 'fa-hourglass-half'}"></i>
@@ -3959,7 +4220,7 @@ function hexA(hex, a) {
                     </div>
                 </div>
                 <div class="text-right flex-shrink-0 ml-2">
-                    <div class="font-tabular text-sm ${amtCls}">${sign}${fmt(t.amount)}</div>
+                    <div class="font-tabular text-sm ${amtCls}">${sign}${fmt(amt)}</div>
                     ${t.nature && t.nature !== '純個人' && t.nature !== '家庭公帳'
             ? `<div class="text-[10px] text-stone-500 bg-stone-100 px-1.5 py-0.5 rounded inline-block mt-1">${esc(t.nature)}</div>` : ''}
                 </div>
@@ -3980,10 +4241,13 @@ function hexA(hex, a) {
         document.querySelectorAll('.swipe-wrap').forEach(wrap => {
             if (wrap._bound) return; wrap._bound = true;
             const inner = wrap.querySelector('.swipe-inner');
+            const id = wrap.dataset.id;
+            /* v6.23.1 唯讀列（別人記的帳）：只能點開看詳情，沒有滑動編輯／作廢，
+               避免出現一顆按了必定被後端拒絕的按鈕。 */
+            if (wrap.dataset.ro === '1') { inner.addEventListener('click', () => openTxnSheet(id)); return; }
             const bg = wrap.querySelector('.swipe-bg');
             const eEdit = wrap.querySelector('.sw-edit'), eVoid = wrap.querySelector('.sw-void');
             const eCopy = wrap.querySelector('.sw-copy');
-            const id = wrap.dataset.id;
             /* 右滑露出兩顆按鈕（編輯／再記一次），所以展開距離要比左滑寬。
                FIRE / FIRE_R 是「手指實際滑動距離」的門檻，不是位移量。
                左滑（作廢）刻意設得比右滑遠 —— 破壞性的動作應該難一點。 */
@@ -4176,39 +4440,181 @@ function hexA(hex, a) {
             </div>`);
     }
 
-    /* 還款那一列只寫得下「還款給爸爸」，看不出還的是哪一筆代墊。
-       把原始代墊的完整內容接在詳情裡：日期、備註、全額、我的分攤，
-       以及一個直接跳過去的按鈕。沒有這個，還了錢卻對不出是哪一筆。 */
-    function sourceAdvanceBlock(t) {
-        if (t.entry_type !== '還款' || !t.parent_txn_id) return '';
-        const src = (STATE.transactions || []).find(x => x.txn_id === t.parent_txn_id);
-        if (!src) {
-            return `<div class="mt-4 p-3 rounded-tile bg-pastel-bg border border-dashed border-pastel-border text-[10px] text-pastel-muted">
-                找不到對應的原始代墊（可能已被作廢）。</div>`;
+    /* ==========================================================
+       v6.23.1 詳情：代墊結清 ↔ 原始消費，可以雙向追溯
+       ・結清詳情：本次結清（日期、金額、付款帳戶、收款對象）＋ 對應的原始消費
+         （消費日期、用途、原始總額、分攤、本次結清金額、累計已還）＋ 完整原始明細入口。
+       ・一次結清多筆：條列同一批的每一筆原始消費與「本次用於結清該筆的金額」，
+         金額直接取每一列還款自己的 amount（部分結清不會拿原始總額冒充）。
+       ・原始代墊詳情：在我的帳本認列多少、計在哪天，以及這筆的結清紀錄。
+       ・原始交易作廢／被修訂／不存在（含無權查看，後端不會回傳）：不顯示內容也不提供入口，
+         只顯示「無法取得原始明細」與原因。
+       ・入口帶著 fromId：詳情頂端有「返回」，回到剛才那一頁。
+       ========================================================== */
+    const kvLine = (k, v) => `<div class="flex justify-between gap-3 text-xs"><span class="text-pastel-muted flex-shrink-0">${esc(k)}</span><span class="selectable font-bold text-stone-800 text-right min-w-0 break-words">${esc(v)}</span></div>`;
+    const traceBtn = (id, fromId, label) => `<button data-id="${esc(id)}" data-from="${esc(fromId)}" onclick="openTxnSheet(this.dataset.id, this.dataset.from)"
+        class="w-full mt-2 py-3 rounded-tile bg-white border border-pastel-blue/30 text-xs font-bold text-pastel-blue tactile">${esc(label)}</button>`;
+    function originalMissingText(t, o) {
+        if (o.state === 'none' && (t.payer_id === 'family_pool' || t.related_id === 'family_pool')) {
+            return '這是成員與公帳的淨額結算，沒有對應的單筆原始代墊。';
         }
-        const mineShare = parseSplit(src).find(x => x.member_id === t.payer_id);
-        return `<div class="mt-4">
-            <div class="text-xs font-bold text-stone-600 mb-2"><i class="fa-solid fa-link mr-1.5 text-pastel-blue"></i>這筆還的是</div>
-            <div class="p-3 rounded-tile bg-pastel-blueLight border border-pastel-blue/25">
-                <div class="selectable text-sm font-bold text-stone-800">${esc(src.note || src.category || '（無備註）')}</div>
-                <div class="text-[10px] text-pastel-muted mt-0.5">
-                    ${esc(src.date)} ・ ${esc(src.category || '未分類')} ・ ${esc(nameOf(src.payer_id))}代墊 ${fmt(src.amount)}
-                    ${mineShare ? ` ・ 分攤給你 ${fmt(mineShare.amount)}` : ''}</div>
-                <button onclick="closeSheet();openTxnSheet('${esc(src.txn_id)}')"
-                    class="w-full mt-2 py-1.5 rounded-lg bg-white border border-pastel-blue/30 text-[10px] font-bold text-pastel-blue tactile">看原始代墊的完整內容</button>
-            </div></div>`;
+        return ORIGINAL_MISSING_TEXT[o.state] || ORIGINAL_MISSING_TEXT.missing;
+    }
+    /** 同一次「一次還清」寫入的所有結清列（同記帳者、同批次鍵）；沒有批次資訊的舊資料回傳 null */
+    /** 這一批「目前看得到、仍有效」的結清列。
+        ・記帳者（writer）：看得到自己送出的整批；批次原本 size 筆，減掉「找到的」就是 missing
+          （中途失敗沒寫成、或不在可見範圍，前端無法分辨，只能如實說找不到）。
+        ・收款方等其他人：只列「與自己有關」的列（收款對象或還款債務人是自己），
+          即使後端多給了別人的列也不顯示別人的收款對象與金額；也不揭露批次原本有幾筆。 */
+    function settleBatchRows(t) {
+        const b = settleBatchOf(t); if (!b) return null;
+        const meId = String(STATE.me?.member_id || '');
+        const writer = String(t.member_id) === meId;
+        const same = (STATE.transactions || []).filter(x => { const bx = settleBatchOf(x); return bx && bx.key === b.key; });
+        let live = same.filter(isLiveTxn);
+        if (!writer) live = live.filter(x => String(x.related_id) === meId || String(x.settle_member_id) === meId);
+        live.sort((p, q) => settleBatchOf(p).index - settleBatchOf(q).index);
+        return { size: b.size, live, voided: same.filter(x => !isLiveTxn(x)).length, missing: Math.max(0, b.size - same.length), writer };
+    }
+    function settleBatchHtml(t) {
+        const B = settleBatchRows(t);
+        if (!B || B.live.length < 2) return '';                 // 單筆不需要批次區塊
+        const total = B.live.reduce((a, x) => a + (Number(x.amount) || 0), 0);
+        /* 只有「原本 size 筆全部找到且都有效」才敢說「共 N 筆」；否則一律說「目前有效」，
+           小計也標成「目前有效合計」，不讓它被讀成完整原始批次的結果。 */
+        const complete = B.writer && B.voided === 0 && B.missing === 0 && B.live.length === B.size;
+        const multiPayee = new Set(B.live.map(x => x.related_id)).size > 1;
+        const items = B.live.map(x => {
+            const ox = originalOf(x), cur = x.txn_id === t.txn_id;
+            const head = ox.state === 'ok' ? `${ox.src.date} ${originalPurpose(ox.src)}` : '無法取得原始明細';
+            return `<div class="p-3 rounded-tile ${cur ? 'bg-pastel-accentLight border border-pastel-accent/30' : 'bg-pastel-bg'}" data-batch-item="${esc(x.txn_id)}">
+                <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0"><div class="selectable text-sm font-bold text-stone-800 break-words">${esc(head)}</div>
+                        <div class="text-[10px] text-pastel-muted mt-0.5">本次結清${multiPayee ? ` · 給 ${esc(partyLabel(x.related_id))}` : ''}${cur ? ' · 目前這一筆' : ''}</div></div>
+                    <div class="font-tabular text-sm font-bold text-pastel-blue flex-shrink-0">${fmt(x.amount)}</div></div>
+                ${ox.state === 'ok' ? traceBtn(ox.src.txn_id, t.txn_id, '查看這筆原始支出明細') : ''}
+            </div>`;
+        }).join('');
+        const headTxt = B.writer ? (complete ? `同一次結清共 ${B.live.length} 筆` : `同一次結清目前有效 ${B.live.length} 筆`) : `這次結清中與你有關的 ${B.live.length} 筆`;
+        const totalTxt = complete ? `合計 ${fmt(total)}` : `${B.writer ? '目前有效合計' : '與你有關的合計'} ${fmt(total)}`;
+        const gaps = [B.voided > 0 ? `${B.voided} 筆已作廢` : '', B.missing > 0 ? `${B.missing} 筆找不到（可能當時沒有寫入成功）` : ''].filter(Boolean);
+        return `<div class="mt-4" id="settleBatch">
+            <div class="flex items-baseline justify-between mb-2">
+                <div class="text-xs font-bold text-stone-600"><i class="fa-solid fa-layer-group mr-1.5 text-pastel-blue"></i>${headTxt}</div>
+                <div class="text-xs font-bold font-tabular text-stone-800" id="settleBatchTotal">${totalTxt}</div></div>
+            <div class="space-y-2">${items}</div>
+            ${B.writer && gaps.length ? `<div class="text-[10px] text-pastel-muted mt-2" id="settleBatchGap">這一批原本 ${B.size} 筆，另有 ${gaps.join('、')}，未計入上面的目前有效合計。</div>` : ''}
+        </div>`;
+    }
+    function settlementDetailHtml(t) {
+        const o = originalOf(t), debtorId = t.settle_member_id || t.payer_id;
+        let orig;
+        if (o.state === 'ok') {
+            const src = o.src, sh = advanceShare(src, debtorId);
+            const share = sh && sh.role === 'debtor' ? sh.share : null;
+            const paid = paidFor(src.txn_id, debtorId);
+            const who = debtorId === STATE.me?.member_id ? '我' : partyLabel(debtorId);
+            orig = `<div class="mt-4" id="settleOriginal">
+                <div class="text-xs font-bold text-stone-600 mb-2"><i class="fa-solid fa-link mr-1.5 text-pastel-blue"></i>對應的原始消費</div>
+                <div class="p-3 rounded-tile bg-pastel-blueLight border border-pastel-blue/25 space-y-1.5">
+                    <div class="selectable text-sm font-bold text-stone-800 break-words">${esc(originalPurpose(src))}</div>
+                    ${kvLine('消費日期', src.date)}
+                    ${kvLine('原始總額', fmt(src.amount))}
+                    ${kvLine('代墊者', partyLabel(src.payer_id))}
+                    ${share != null ? kvLine(`${who}的分攤`, fmt(share)) : ''}
+                    ${kvLine('本次結清', fmt(t.amount))}
+                    ${share != null ? kvLine('目前累計已還', `${fmt(paid)} / ${fmt(share)}${paid >= share - 0.01 ? ' · 已結清' : ` · 尚欠 ${fmt(share - paid)}`}`) : ''}
+                </div>
+                ${traceBtn(src.txn_id, t.txn_id, '查看完整原始支出明細')}
+            </div>`;
+        } else {
+            orig = `<div class="mt-4 p-3 rounded-tile bg-pastel-bg border border-dashed border-pastel-border" id="settleOriginal">
+                <div class="text-sm font-bold text-stone-700">無法取得原始明細</div>
+                <div class="text-[10px] text-pastel-muted mt-0.5">${esc(originalMissingText(t, o))}</div></div>`;
+        }
+        return orig + settleBatchHtml(t);
+    }
+    /** 原始代墊詳情：我的帳本認列多少，以及這筆的結清紀錄（可點進結清詳情） */
+    function advanceDetailHtml(t) {
+        const meId = STATE.me?.member_id;
+        const adv = isAdvance(t) ? advanceShare(t, meId) : null;
+        let html = '';
+        if (currentMode === 'personal' && adv && adv.role !== 'none') {
+            const others = parseSplit(t).filter(x => String(x.member_id) !== String(t.payer_id));
+            html += `<div class="mt-4 p-3 rounded-tile bg-pastel-bg space-y-1.5" id="advRecognition">
+                <div class="text-xs font-bold text-stone-600">在你的帳本裡</div>
+                ${kvLine('我的認列份額', adv.share > 0 ? `-${fmt(adv.share)}` : `${fmt(0)}（不計入我的支出）`)}
+                ${kvLine('認列日期', `${t.date}（原始消費日）`)}
+                ${adv.role === 'payer' ? kvLine('實付總額', fmt(adv.total)) : kvLine('代墊者', partyLabel(t.payer_id)) + kvLine('原始總額', fmt(adv.total))}
+                ${adv.role === 'payer' && others.length ? kvLine('別人負擔', others.map(x => `${partyLabel(x.member_id)} ${fmt(x.amount)}`).join('、')) : ''}
+                <div class="text-[10px] text-pastel-muted">之後的結清只是資金移動，不會再計一次支出。</div>
+                ${adv.reliable ? '' : `<div class="text-[10px] text-pastel-red">${esc(ADVANCE_REASON_TEXT[adv.reason] || '分攤資料不完整')}</div>`}
+            </div>`;
+        }
+        if (isAdvance(t)) {
+            const setls = activeTxns().filter(x => x.entry_type === '還款' && x.parent_txn_id === t.txn_id)
+                .sort((p, q) => String(p.date).localeCompare(String(q.date)));
+            if (setls.length) {
+                const sum = setls.reduce((a, x) => a + (Number(x.amount) || 0), 0);
+                html += `<div class="mt-4" id="advSettlements">
+                    <div class="flex items-baseline justify-between mb-2">
+                        <div class="text-xs font-bold text-stone-600"><i class="fa-solid fa-hand-holding-dollar mr-1.5 text-pastel-blue"></i>結清紀錄（${setls.length} 筆）</div>
+                        <div class="text-xs font-bold font-tabular text-stone-800">累計 ${fmt(sum)}</div></div>
+                    <div class="space-y-2">${setls.map(x => `<button data-id="${esc(x.txn_id)}" data-from="${esc(t.txn_id)}" onclick="openTxnSheet(this.dataset.id, this.dataset.from)"
+                        class="w-full text-left p-3 rounded-tile bg-pastel-bg flex items-center justify-between gap-2 tactile">
+                        <span class="min-w-0"><span class="block text-sm font-bold text-stone-800 truncate">${esc(x.date)} · ${esc(partyLabel(x.payer_id))} → ${esc(partyLabel(x.related_id))}</span>
+                            <span class="block text-[10px] text-pastel-muted">代墊結清</span></span>
+                        <span class="font-tabular text-sm font-bold text-pastel-blue flex-shrink-0">${fmt(x.amount)}</span></button>`).join('')}</div>
+                </div>`;
+            }
+        }
+        return html;
     }
 
-    function openTxnSheet(id) {
+    /* 導覽位置：從 A 點進 B 時記下 A 的捲動位置，按「返回」回到 A 時還原；
+       直接開啟的詳情一律從頂端開始（同一個捲動容器不會帶著上一頁的位置）。 */
+    let _sheetPos = {};
+    function openTxnSheet(id, fromId) {
         const t = STATE.transactions.find(x => x.txn_id === id); if (!t) return;
+        const sc = document.getElementById('sheetContent');
+        if (fromId && sc) _sheetPos[fromId] = sc.scrollTop;
+        const restoreTo = _sheetPos[id] || 0; delete _sheetPos[id];
+        const meId = STATE.me?.member_id;
+        const isSettle = t.entry_type === '還款';
         // 同類清單項目改用留白引導視覺，不再逐列畫線
         const row = (k, v) => `<div class="flex justify-between py-3 text-sm"><span class="text-pastel-muted">${esc(k)}</span><span class="font-bold text-stone-800 text-right ml-3 truncate">${esc(v)}</span></div>`;
+        /* 只有記帳者（或戶長）改得動這筆；債務人／收款方看到的是別人記的帳，不放編輯與作廢按鈕 */
+        const canWrite = t.member_id === meId || isGroupAdminMe();
+        const from = fromId ? STATE.transactions.find(x => x.txn_id === fromId) : null;
+        const back = from ? `<button data-id="${esc(from.txn_id)}" onclick="openTxnSheet(this.dataset.id)" id="sheetBack"
+            class="mb-3 -mt-2 py-2 pr-3 text-xs font-bold text-pastel-blue flex items-center gap-1.5 tactile"><i class="fa-solid fa-chevron-left"></i>${isSettle ? '返回原始支出' : '返回結清明細'}</button>` : '';
+        let head, body;
+        if (isSettle) {
+            const sp = settleParts(t), fm = fundMovementInfo(t);
+            head = `<h3 class="selectable text-lg font-bold text-stone-800 mb-4">代墊結清</h3>
+                <div class="text-[32px] font-bold font-tabular mb-4 text-pastel-blue" id="sheetAmount">${fmt(t.amount)}</div>`;
+            body = `${row('結清日期', t.date)}${row('付款人 → 收款對象', sp.arrow || '—')}${sp.acct ? row('付款帳戶', sp.acct) : ''}
+                ${fm && fm.custom ? row('備註', fm.custom) : ''}${row('記帳者', nameOf(t.member_id))}
+                ${settlementDetailHtml(t)}`;
+        } else {
+            /* v6.23.1 R2：詳情的方向、標題、來源去向與列表、摘要、圖表用同一個來源 ——
+               收支方向看 plKind（依目前帳本主體：個人注資＝支出、群組注資＝收入）；
+               轉帳（含繳信用卡費）、劃撥儲蓄是資金移動，金額不帶損益正負號、不上損益色，
+               並保留具體名稱與可確認的來源 → 去向。先前只有「支出」是負號、其餘一律 +，注資與繳卡費因此顯示 +。 */
+            const fm = fundMovementInfo(t), kind = plKind(t, currentMode);
+            const sign = kind === 'expense' ? '-' : kind === 'income' ? '+' : '';
+            const amtCls = kind === 'expense' ? 'text-pastel-red' : kind === 'income' ? 'text-pastel-green' : 'text-pastel-blue';
+            const isFund = NON_PL_TYPES.includes(t.entry_type);
+            const title = fm ? fm.label + (fm.custom ? ' ・ ' + fm.custom : '') : (t.note || t.category || (isFund ? t.entry_type : '交易明細'));
+            head = `<h3 class="selectable text-lg font-bold text-stone-800 mb-4">${esc(title)}</h3>
+                <div class="text-[32px] font-bold font-tabular mb-4 ${amtCls}" id="sheetAmount">${sign}${fmt(t.amount)}</div>
+                ${isAdvance(t) ? '<div class="text-[10px] text-pastel-muted -mt-3 mb-4">原始總額（這筆代墊實際付出的全額）</div>' : ''}`;
+            body = `${row('日期', t.date)}${row('類型', t.entry_type)}${fm && fm.sub ? row('來源 → 去向', fm.sub) : ''}${fm || isFund ? '' : row('分類', t.category || '—')}${fm && (fm.kind === 'transfer' || fm.kind === 'inject') ? '' : row('帳戶', displayTag(t.tag) || '—')}
+                ${fm || isFund ? '' : row('費用歸屬', t.nature || '—')}${row('記帳者', nameOf(t.member_id))}${t.recurring_rule_id ? row('來源', '固定收支自動產生') : ''}
+                ${advanceDetailHtml(t)}`;
+        }
         openSheet(`
-            <h3 class="selectable text-lg font-bold text-stone-800 mb-4">${esc(t.note || t.category || '交易明細')}</h3>
-            <div class="text-[32px] font-bold font-tabular mb-4 ${t.entry_type === '支出' ? 'text-pastel-red' : 'text-pastel-green'}">${t.entry_type === '支出' ? '-' : '+'}${fmt(t.amount)}</div>
-            ${row('日期', t.date)}${row('類型', t.entry_type)}${row('分類', t.category || '—')}${row('帳戶', displayTag(t.tag) || '—')}
-            ${row('費用歸屬', t.nature || '—')}${row('記帳者', nameOf(t.member_id))}${t.recurring_rule_id ? row('來源', '重複性收支自動產生') : ''}
-            ${sourceAdvanceBlock(t)}
+            ${back}${head}${body}
             ${t.receipt_file_id ? `
             <div class="mt-4">
                 <div class="text-xs font-bold text-stone-600 mb-2"><i class="fa-solid fa-receipt mr-1.5 text-pastel-accent"></i>單據</div>
@@ -4217,13 +4623,14 @@ function hexA(hex, a) {
                         <i class="fa-solid fa-image text-2xl"></i>
                         <span class="text-xs font-bold">點擊檢視單據照片</span></button>
                 </div></div>` : ''}
-            ${(t.nature === '家庭代墊' || t.nature === '私人拆帳') && t.payer_id === STATE.me?.member_id
+            ${isAdvance(t) && t.payer_id === meId
                 ? `<button onclick="closeSheet();openEditSplit('${esc(id)}')" class="w-full mt-4 py-3 bg-pastel-accentLight text-pastel-accent font-bold rounded-tile text-sm tactile"><i class="fa-solid fa-users-between-lines mr-1"></i> 調整分攤設定</button>` : ''}
-            <button onclick="closeSheet();copyTxn('${esc(id)}')" class="w-full mt-4 py-3.5 bg-pastel-blue text-white font-bold rounded-tile text-sm shadow-md tactile"><i class="fa-solid fa-copy mr-1.5"></i> 再記一次</button>
-            <div class="grid grid-cols-2 gap-3 mt-3">
-                <button onclick="closeSheet();editTxn('${esc(id)}')" class="py-3 bg-pastel-blueLight text-pastel-blue font-bold rounded-tile text-sm"><i class="fa-solid fa-pen mr-1"></i> 編輯</button>
-                <button onclick="closeSheet();voidTxn('${esc(id)}')" class="py-3 bg-pastel-redLight text-pastel-red font-bold rounded-tile text-sm"><i class="fa-solid fa-trash mr-1"></i> 作廢</button></div>
+            ${isSettle ? '' : `<button onclick="closeSheet();copyTxn('${esc(id)}')" class="w-full mt-4 py-3.5 bg-pastel-blue text-white font-bold rounded-tile text-sm shadow-md tactile"><i class="fa-solid fa-copy mr-1.5"></i> 再記一次</button>`}
+            ${canWrite ? `<div class="grid ${isSettle ? 'grid-cols-1' : 'grid-cols-2'} gap-3 mt-3">
+                ${isSettle ? '' : `<button onclick="closeSheet();editTxn('${esc(id)}')" class="py-3 bg-pastel-blueLight text-pastel-blue font-bold rounded-tile text-sm"><i class="fa-solid fa-pen mr-1"></i> 編輯</button>`}
+                <button onclick="closeSheet();voidTxn('${esc(id)}')" class="py-3 bg-pastel-redLight text-pastel-red font-bold rounded-tile text-sm"><i class="fa-solid fa-trash mr-1"></i> 作廢</button></div>` : ''}
             ${t.receipt_file_id ? `<button onclick="window.open('https://drive.google.com/file/d/${esc(t.receipt_file_id)}/view','_blank')" class="w-full mt-3 py-3 bg-pastel-bg text-stone-700 font-bold rounded-tile text-sm"><i class="fa-solid fa-receipt mr-1"></i> 檢視單據照片</button>` : ''}`);
+        if (sc) sc.scrollTop = restoreTo;
     }
 
     /* ---------- 事後調整分攤 ----------
@@ -4512,11 +4919,10 @@ function hexA(hex, a) {
        而別人還錢回來時又完全沒有反映。 */
     function myShareOf(t) {
         const a = Math.round(Number(t.amount) || 0);
-        if (t.entry_type !== '支出') return a;
-        if (t.nature !== '家庭代墊' && t.nature !== '私人拆帳') return a;
-        const sp = parseSplit(t);
-        if (!t.split_detail || !sp.length) return 0;      // 沒填分攤＝整筆都是別人要還的
-        return Math.max(0, a - sp.reduce((x, y) => x + (Number(y.amount) || 0), 0));
+        if (!isAdvance(t)) return a;
+        /* v6.23.1：改由 advanceShare 統一計算（付款人視角）。沒填分攤＝整筆都是別人要還的。
+           目前只剩家庭帳本匯出使用這個「付款人份額」口徑；個人帳本一律走 plAmount。 */
+        return Math.round(advanceShare(t, t.payer_id).share);
     }
 
     /* ---------- 帳戶標籤的歸屬過濾 ----------
@@ -5113,7 +5519,7 @@ function hexA(hex, a) {
                 ${isTr || editingTxnId ? '' : `
                 <div class="px-4 py-3.5">
                     <label class="flex items-center justify-between cursor-pointer">
-                        <span class="text-sm text-stone-600">設為重複性收支</span>
+                        <span class="text-sm text-stone-600">設為固定收支</span>
                         <span class="relative flex items-center">
                             <input type="checkbox" id="isRecurring" onchange="toggleRecurringBox()" class="peer w-5 h-5 appearance-none border-2 border-pastel-border rounded checked:bg-pastel-accent checked:border-pastel-accent transition-all">
                             <i class="fa-solid fa-check absolute text-white text-xs left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 peer-checked:opacity-100 pointer-events-none"></i></span></label>
@@ -5457,7 +5863,7 @@ function hexA(hex, a) {
         if (rec) {
             try {
                 const r = await api.call('saveRule', { rule: rec, first_run_done: true });
-                STATE.rules.push(r.rule); renderSettings(); toast('重複性收支已建立');
+                STATE.rules.push(r.rule); renderSettings(); toast('固定收支已建立');
             } catch (e) { toast('重複規則建立失敗：' + e.message, true); }
         }
     }
@@ -5469,10 +5875,12 @@ function hexA(hex, a) {
         // 圖表頁的所有數字都改吃「區間」而非固定單月
         const B = rangeBuckets(statsRange, viewYM);
         const rows = activeTxnsScoped().filter(B.inRange);
-        const inc = rows.filter(t => t.entry_type === '收入' || t.entry_type === '注資').reduce((a, b2) => a + Number(b2.amount), 0);
-        const exp = rows.filter(t => t.entry_type === '支出').reduce((a, b2) => a + Number(b2.amount), 0);
+        const { income: inc, expense: exp } = plTotals(rows, currentMode);
         const catMap = {};
-        rows.filter(t => t.entry_type === '支出').forEach(t => { const k = t.category || '未分類'; catMap[k] = (catMap[k] || 0) + Number(t.amount); });
+        rows.filter(t => plKind(t, currentMode) === 'expense').forEach(t => {
+            const k = t.category || (t.entry_type === '注資' ? '公帳注資' : '未分類');
+            catMap[k] = (catMap[k] || 0) + plAmount(t, currentMode);
+        });
         const s = Object.assign({}, computeSummary(currentMode, viewYM), {
             monthlyIncome: inc, monthlyExpense: exp,
             byCategory: Object.entries(catMap).sort((a, b2) => b2[1] - a[1])
@@ -5865,6 +6273,209 @@ const BANKS = [
     /* ==========================================================
        設定
        ========================================================== */
+    /* ==========================================================
+       v6.23.0 設定頁：單開收合
+       ========================================================== */
+    /* 只存在記憶體：不寫 localStorage、不同步、不隨資料重畫而遺失。
+       陣列最多一個元素（同時只開一區）；空陣列＝全部收合。個人資料卡與預算不在此列，永遠展開。 */
+    let settingsOpenSections = [];
+    const SORT_SECTION = { EXPENSE_CATEGORY: 'cat-expense', INCOME_CATEGORY: 'cat-income', PAYMENT_TAG: 'accounts' };
+    /* v6.23.1 R1：排序「進行中」與排序區塊「目前是否展開」是兩件事。
+       sortingGroup／sortDirty／畫面上的順序是排序草稿，離開 App 不動它；
+       sortPanelOpen 只代表排序區塊此刻是展開的：進入排序時為 true，離開 App 時和其他區塊一起收合（false），
+       使用者再點該區標題才重新展開。 */
+    let sortPanelOpen = false;
+    /** 排序區塊展開中（此時其他標題暫時不可切換，要離開請按「完成」或「取消」） */
+    const sortPanelShown = () => !!(sortingGroup && SORT_SECTION[sortingGroup] && sortPanelOpen);
+    /** 實際要展開的區塊。排序區塊展開中就強制只展開它；這只影響畫面，不改動 settingsOpenSections，
+        所以「沒離開 App」時排序結束（或取消）自然回到排序前的狀態。離開 App 之後 settingsOpenSections 已被清空、
+        sortPanelOpen 也已為 false，排序結束不會再復活舊的展開狀態。 */
+    function effectiveOpenSections() {
+        if (sortPanelShown()) return [SORT_SECTION[sortingGroup]];
+        return settingsOpenSections;
+    }
+    /** 依目前狀態更新 DOM：hidden、aria-expanded、箭頭。不重畫整頁，所以輸入中的欄位與捲動位置不受影響。 */
+    function paintSettingsSections() {
+        const open = effectiveOpenSections();
+        document.querySelectorAll('#settingsView section[data-sec]').forEach(sec => {
+            const id = sec.dataset.sec, on = open.includes(id);
+            const btn = sec.querySelector(':scope > h3 > button'), body = sec.querySelector(':scope > [role="region"]');
+            if (btn) {
+                btn.setAttribute('aria-expanded', on ? 'true' : 'false');
+                btn.setAttribute('aria-disabled', sortPanelShown() ? 'true' : 'false');
+                const chev = btn.querySelector('.sec-chev');
+                if (chev) chev.style.transform = on ? 'rotate(180deg)' : '';
+            }
+            if (body) body.classList.toggle('hidden', !on);
+        });
+    }
+    function toggleSettingsSection(id) {
+        /* 排序區塊展開中，區塊由排序狀態決定，標題不可切換；要離開請按「完成」或「取消」 */
+        if (sortPanelShown()) return;
+        if (sortingGroup && id === SORT_SECTION[sortingGroup]) {
+            /* 離開 App 後回來：排序草稿還在但區塊已收合。再點這一區＝回到排序畫面繼續（單開：先收掉其他區） */
+            settingsOpenSections = [];
+            sortPanelOpen = true;
+            paintSettingsSections();
+            buzz(6);
+            const b0 = document.getElementById('secBtn-' + id); if (b0) b0.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            return;
+        }
+        settingsOpenSections = settingsOpenSections.includes(id) ? [] : [id];
+        paintSettingsSections();
+        buzz(6);
+        const btn = document.getElementById('secBtn-' + id);
+        if (btn && settingsOpenSections.includes(id)) btn.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+    /** 離開 App 就全部收合（包含排序區塊）。只動展開狀態與 DOM 的展開屬性：
+        不清資料、不重置表單、不取消排序、不儲存排序草稿。 */
+    function resetSettingsSections() {
+        settingsOpenSections = [];
+        sortPanelOpen = false;
+        paintSettingsSections();
+    }
+    /* 偵測方式：頁面被隱藏（切到別的 App、鎖屏、切分頁）或被卸載／進入 bfcache 時就收合。
+       iOS 主畫面 App 在切換與鎖屏時會觸發 visibilitychange；pagehide 補上被凍結或丟進 bfcache 的情境。
+       平台限制：被系統直接終止的程序沒有事件，但重新開啟就是全新載入，本來就是全部收合。 */
+    document.addEventListener('visibilitychange', () => { if (document.hidden) resetSettingsSections(); });
+    window.addEventListener('pagehide', resetSettingsSections);
+
+    /* ---------- 群組與成員 ----------
+       目前系統只有一個群組。群組的穩定 id 沿用後端的 DEFAULT_GROUP_ID（'default'），
+       畫面上的名稱（STATE.familyName）是可以被改的，不能拿來當識別。
+       這裡只是把「一個群組＋它的成員」整理成一個結構，日後多群組時只需改 currentGroups()。 */
+    const DEFAULT_GROUP_ID = 'default';
+    function currentGroups() {
+        const members = (STATE.members || []).filter(m => m.member_id !== 'family_pool' && m.status !== '停用');
+        if (!STATE.familyName && !members.length) return [];
+        return [{ id: DEFAULT_GROUP_ID, name: STATE.familyName || '家庭公帳', members }];
+    }
+    /** 群組成員頭像牆。狀態：載入中、沒有群組、沒有成員、戶長／一般成員的說明文字。 */
+    function renderGroupMembers(group) {
+        if (!STATE.me) return `<div class="text-xs text-pastel-muted py-2" role="status">載入中…</div>`;
+        if (!group) return `<div class="text-xs text-pastel-muted py-2">尚未加入群組。</div>`;
+        const fam = group.members;
+        const isAdmin = STATE.me?.role === 'admin';
+        const help = isAdmin
+            ? `新增成員請在 Google Sheets 的 <b>Members</b> 分頁加一列（member_id 自取、不重複即可），回到 App 按同步即生效。家人要在自己手機上使用，用「連線與帳本」裡的「複製安裝碼」傳給他。`
+            : `新增成員需由戶長在 Google Sheets 處理。家人要在自己手機上使用，可用「連線與帳本」裡的「複製安裝碼」傳給他。`;
+        return `<div data-group-id="${esc(group.id)}" class="space-y-3">
+            <div class="flex justify-between items-center text-xs text-pastel-muted">
+                <span class="font-bold text-stone-700 truncate">${esc(group.name)}</span><span>${fam.length} 人</span></div>
+            ${fam.length ? `<div class="grid grid-cols-4 gap-3 pt-1">
+                ${fam.map(m => {
+            const i = getLevelInfo(m.streak_days);
+            const isMe = m.member_id === STATE.me?.member_id;
+            return `<div class="flex flex-col items-center gap-1.5 min-w-0">
+                        <button onclick="openMemberCard('${esc(m.member_id)}')" class="relative tactile">
+                            <div class="w-14 h-14 rounded-full border-[3px] ${i.border} ${i.bg} overflow-hidden flex items-center justify-center text-2xl">${avatarInner(m.avatar_emoji)}</div>
+                            ${hasPayee(m) ? `<span class="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-white border border-pastel-border flex items-center justify-center text-[10px] text-pastel-blue"><i class="fa-solid fa-building-columns"></i></span>` : ''}
+                        </button>
+                        <div class="text-[10px] font-bold text-stone-700 truncate w-full text-center mt-1">${esc(m.nickname)}${isMe ? ' ·我' : ''}</div>
+                        <div class="text-[10px] ${i.color} font-bold truncate w-full text-center leading-tight">${esc(i.name)}</div>
+                        <div class="text-[10px] text-pastel-muted"><i class="fa-solid fa-fire"></i> ${Number(m.streak_days) || 0}</div>
+                        ${streakAtRisk(m) && !savedThisMonth()
+                    ? `<button onclick="saveStreak('${esc(m.member_id)}')" class="mt-1 px-2 py-1 rounded-full bg-pastel-blueLight text-pastel-blue text-[10px] font-bold tactile" title="幫他保住連續紀錄"><i class="fa-solid fa-heart-pulse mr-0.5"></i>續命</button>`
+                    : needsCheer(m) ? (cheeredToday(m.member_id)
+                        ? `<span class="mt-1 text-[10px] text-pastel-muted">已加油</span>`
+                        : `<button onclick="sendCheer('${esc(m.member_id)}')" class="mt-1 px-2 py-1 rounded-full bg-pastel-accentLight text-pastel-accent text-[10px] font-bold tactile"><i class="fa-solid fa-hand-fist mr-0.5"></i>加油</button>`) : ''}
+                    </div>`;
+
+                }).join('')}
+            </div>` : `<div class="text-xs text-pastel-muted py-2">群組裡還沒有成員。</div>`}
+            <p class="text-xs text-pastel-muted leading-relaxed pt-1">${help}</p>
+        </div>`;
+    }
+
+    /* ==========================================================
+       v6.23.0 固定收支：本月預計
+       ========================================================== */
+    /* 日期推進完全鏡像後端 Code.gs 的 addDays／addMonths／nextDate：
+       每月類型以「上一期的結果」為基準往後推，遇到 31 號進 2 月會收斂到月底，
+       且之後不會自己彈回 31（這是後端既有行為，這裡照實重現，不另行修正）。
+       計算用純 UTC 曆法，等同 Asia/Taipei 的日曆日，不受裝置時區影響。 */
+    function fixedAddDays(iso, n) {
+        const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number);
+        const t = new Date(Date.UTC(y, m - 1, d + n));
+        return `${t.getUTCFullYear()}-${pad2(t.getUTCMonth() + 1)}-${pad2(t.getUTCDate())}`;
+    }
+    function fixedAddMonths(iso, n) {
+        const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number);
+        const last = new Date(Date.UTC(y, m - 1 + n + 1, 0)).getUTCDate();
+        const t = new Date(Date.UTC(y, m - 1 + n, Math.min(d, last)));
+        return `${t.getUTCFullYear()}-${pad2(t.getUTCMonth() + 1)}-${pad2(t.getUTCDate())}`;
+    }
+    function fixedNextDate(iso, freq) {
+        switch (freq) {
+            case '每日': return fixedAddDays(iso, 1);
+            case '每週': return fixedAddDays(iso, 7);
+            case '每兩週': return fixedAddDays(iso, 14);
+            case '每月': return fixedAddMonths(iso, 1);
+            case '每季': return fixedAddMonths(iso, 3);
+            case '每半年': return fixedAddMonths(iso, 6);
+            case '每年': return fixedAddMonths(iso, 12);
+            default: return fixedAddMonths(iso, 1);
+        }
+    }
+    /** 這條規則在 ym 這個月的排程日期。
+        起點是 start_date（穩定錨點）；next_run 會隨執行、略過、補跑、編輯漂移，不能拿來還原整個月。
+        可靠性檢查：從 start_date 重播的日期序列必須經過目前的 next_run，
+        否則代表開始日或週期曾被修改而排程游標沒有跟著重算 —— 此時無法可靠還原，回報 reliable:false，
+        絕不悄悄改用剩餘天數、平均或漂移後的 next_run 去湊。 */
+    function fixedOccurrences(rule, ym) {
+        const start = String(rule.start_date || '').slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) return { dates: [], reliable: false, reason: 'no_start' };
+        const monthStart = `${ym}-01`, monthEnd = `${ym}-${pad2(daysInYM(ym))}`;
+        const end = rule.end_date ? String(rule.end_date).slice(0, 10) : '';
+        const cursor = String(rule.next_run || '').slice(0, 10);
+        const stop = cursor && cursor > monthEnd ? cursor : monthEnd;
+        const dates = [];
+        let d = start, guard = 0, hitCursor = !cursor;
+        while (d <= stop && guard++ < 20000) {
+            if (d === cursor) hitCursor = true;
+            if (d >= monthStart && d <= monthEnd && (!end || d <= end)) dates.push(d);
+            d = fixedNextDate(d, rule.freq);
+        }
+        if (guard >= 20000) return { dates: [], reliable: false, reason: 'too_long' };
+        return { dates, reliable: hitCursor, reason: hitCursor ? '' : 'cursor_mismatch' };
+    }
+    /** 全月預計（規則排程的完整月份，不是剩餘）。啟用中的規則才算，含「僅提醒」；
+        已執行的期別不會因為 next_run 往後移而消失；收入與支出分開，個人與群組分開；
+        轉帳類規則是資金移動，不算收支；注資依規則範圍（個人＝支出、群組＝收入）。 */
+    function fixedMonthProjection(rules, ym) {
+        const mk = () => ({ income: 0, expense: 0 });
+        const out = { personal: mk(), group: mk(), unreliable: [], occ: {},
+            /* v6.23.1：這一區的收入／支出合計是否「不完整」（有規則因為排程不可靠而沒有算進去）。
+               不完整就不能把小計當成完整總額顯示。 */
+            partial: { personal: { income: false, expense: false }, group: { income: false, expense: false } } };
+        (rules || []).forEach(r => {
+            if (r.status !== '啟用') return;
+            const amt = Number(r.amount);
+            if (!isFinite(amt) || amt <= 0) return;
+            const isGroup = r.scope === 'family';
+            const kind = plKind({ entry_type: r.entry_type || '支出' }, isGroup ? 'family' : 'personal');
+            if (!kind) return;
+            const o = fixedOccurrences(r, ym);
+            if (!o.reliable) {
+                out.unreliable.push({ rule_id: r.rule_id, name: r.name, reason: o.reason, kind, scope: isGroup ? 'group' : 'personal',
+                    next_run: String(r.next_run || '').slice(0, 10), start_date: String(r.start_date || '').slice(0, 10), freq: r.freq });
+                out.partial[isGroup ? 'group' : 'personal'][kind] = true;
+                return;
+            }
+            out.occ[r.rule_id] = o.dates.length;
+            (isGroup ? out.group : out.personal)[kind] += amt * o.dates.length;
+        });
+        return out;
+    }
+
+    /** 無法推算的原因（給人看的文字，指名到規則）。cursor_mismatch 是編輯起算日／週期後排程游標沒有跟著重算。 */
+    const FIXED_UNRELIABLE_TEXT = {
+        cursor_mismatch: u => `起算日或週期改過，下次執行日 ${u.next_run || '—'} 對不上新的排程`,
+        no_start: () => '沒有有效的起算日',
+        too_long: () => '起算日太久遠，無法推算'
+    };
+    const fixedUnreliableWhy = u => (FIXED_UNRELIABLE_TEXT[u.reason] || (() => '排程資料無法核對'))(u);
+
     function renderSettings() {
         /* 任何重畫都會丟掉舊的清單節點。先銷毀再重綁，
            否則監聽器會留在已經不存在的 DOM 上（那正是上一版整頁凍住的形狀）。 */
@@ -5894,14 +6505,83 @@ const BANKS = [
                 <button class="tap44 text-stone-400 text-[10px] flex-shrink-0" data-n="${esc(c.item_name)}" data-g="${esc(group)}"
                         onclick="archiveItem(this.dataset.n, this.dataset.g)"><i class="fa-solid fa-xmark"></i></button>
             </div>`).join('') : `<div class="col-span-2 text-xs text-pastel-muted">還沒有項目。用右上角的「新增」建立第一個</div>`;
-        const sortBtn = (group) => `<button onclick="toggleSortMode('${esc(group)}')"
-            class="text-[10px] font-bold ${sortingGroup === group ? 'text-pastel-green' : 'text-pastel-muted'} tactile">
+        const sortBtn = (group) => `<button type="button" onclick="toggleSortMode('${esc(group)}')"
+            class="tap44 px-2 text-[10px] font-bold ${sortingGroup === group ? 'text-pastel-green' : 'text-pastel-muted'} tactile">
             <i class="fa-solid ${sortingGroup === group ? 'fa-check' : 'fa-arrow-up-arrow-down'} mr-1"></i>${sortingGroup === group ? '完成' : '調整順序'}</button>`;
 
         // 個人規則只有本人看得到；家庭規則全家可見
         const rules = (STATE.rules || []).filter(r => r.status !== '刪除' &&
             (r.scope === 'family' || r.member_id === STATE.me?.member_id));
-        const fam = STATE.members.filter(m => m.member_id !== 'family_pool' && m.status !== '停用');
+        const groups = currentGroups();
+        const proj = fixedMonthProjection(rules, currentYM());
+        const nPersonal = rules.filter(r => r.scope !== 'family').length, nGroup = rules.length - nPersonal;
+        const gCount = groups.reduce((a, g) => a + g.members.length, 0);
+        const cat = g => (STATE.categories || []).filter(c => c.item_group === g);
+
+        /* 可收合區塊：標題整列是一顆按鈕（aria-expanded），新增／調整順序等動作放在內容裡，
+           收合時看不到、展開時按它們不會觸發收合。 */
+        const section = (id, icon, title, summary, actions, body) => `
+            <section class="bg-white border border-pastel-border/60 rounded-card shadow-card overflow-hidden" data-sec="${id}">
+                <h3 class="m-0 font-normal">
+                <button type="button" id="secBtn-${id}" data-sec="${id}" onclick="toggleSettingsSection(this.dataset.sec)"
+                        aria-expanded="false" aria-controls="secBody-${id}"
+                        class="tap44 w-full flex items-center gap-3 px-5 py-4 text-left tactile min-w-0">
+                    <i class="${icon} flex-shrink-0"></i>
+                    <span class="flex-1 min-w-0">
+                        <span class="block font-bold text-sm text-stone-800 truncate">${title}</span>
+                        <span class="block text-[10px] text-pastel-muted truncate mt-0.5">${summary}</span></span>
+                    <i class="fa-solid fa-chevron-down text-[10px] text-pastel-muted flex-shrink-0 sec-chev"></i>
+                </button></h3>
+                <div id="secBody-${id}" role="region" aria-labelledby="secBtn-${id}" class="hidden px-5 pb-5 space-y-4 border-t border-pastel-border/60 pt-4">
+                    ${actions ? `<div class="flex items-center justify-end gap-3">${actions}</div>` : ''}
+                    ${body}
+                </div>
+            </section>`;
+        const addBtn = (fn) => `<button type="button" class="tap44 text-xs text-pastel-accent font-bold px-2" onclick="${fn}">新增</button>`;
+
+        /* 固定收支：個人／群組依既有 scope 分區。edit／delete 用 data 屬性帶 id，不在屬性裡塞 JSON。 */
+        const ruleRow = (r, occ, bad) => `
+            <div class="flex justify-between items-center bg-pastel-bg p-3 rounded-tile gap-2">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-10 h-10 rounded-tile bg-white border border-pastel-border flex items-center justify-center flex-shrink-0" style="color:${catColor(r.category)}"><i class="fa-solid ${esc(r.category ? catIcon(r.category) : (r.entry_type === '收入' ? 'fa-sack-dollar' : 'fa-repeat'))}"></i></div>
+                    <div class="min-w-0">
+                        <div class="font-bold text-stone-800 text-sm truncate">${esc(r.name)}${r.status === '停用' ? ' <span class="text-[10px] bg-stone-200 text-stone-500 px-1.5 py-0.5 rounded">已停用</span>' : ''}</div>
+                        <div class="text-[10px] text-pastel-muted mt-0.5 leading-snug">
+                            ${esc(r.freq)} · ${esc(r.auto_mode)} · 下次 ${esc(r.next_run || '—')}${occ != null ? ` · 本月 ${occ} 次` : ''}</div>
+                        ${bad ? `<div class="text-[10px] text-pastel-red mt-0.5" data-unreliable-row="${esc(r.rule_id)}">不計入本月預計</div>` : ''}</div></div>
+                <div class="text-right flex-shrink-0">
+                    <div class="font-tabular text-sm ${r.entry_type === '收入' ? 'text-pastel-green' : 'text-stone-800'}">${fmt(r.amount)}</div>
+                    <div class="flex gap-8 mt-1 justify-end">
+                        <button type="button" class="tap44 text-xs text-stone-400" aria-label="編輯" data-r="${esc(r.rule_id)}" onclick="openRuleSheet(this.dataset.r)"><i class="fa-solid fa-pen"></i></button>
+                        <button type="button" class="tap44 text-xs text-stone-400" aria-label="刪除" data-r="${esc(r.rule_id)}" onclick="deleteRule(this.dataset.r)"><i class="fa-solid fa-trash"></i></button></div></div>
+            </div>`;
+        const fixedArea = (title, scope, list, p) => {
+            /* p 是這一區（個人或群組）的收入／支出；不可靠與每條規則的本月次數來自整體推算，依這一區的規則篩出來 */
+            const unrel = proj.unreliable.filter(u => list.some(r => r.rule_id === u.rule_id));
+            const part = proj.partial[scope === 'family' ? 'group' : 'personal'];
+            return `
+            <div class="space-y-3" data-fixed-area="${scope}">
+                <div class="flex items-center justify-between">
+                    <div class="font-bold text-xs text-stone-700">${title}</div>
+                    ${addBtn(`openRuleSheet('', '${scope}')`)}</div>
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                    <div class="bg-pastel-bg rounded-tile p-3 min-w-0" data-fixed-total="income"><div class="text-[10px] text-pastel-muted">本月預計固定收入</div><div class="font-tabular font-bold text-pastel-green text-sm mt-0.5">${fmt(p.income)}</div>${part.income ? '<div class="text-[10px] font-bold text-pastel-red mt-0.5" data-partial-flag="income">部分規則未納入</div>' : ''}</div>
+                    <div class="bg-pastel-bg rounded-tile p-3 min-w-0" data-fixed-total="expense"><div class="text-[10px] text-pastel-muted">本月預計固定支出</div><div class="font-tabular font-bold text-stone-800 text-sm mt-0.5">${fmt(p.expense)}</div>${part.expense ? '<div class="text-[10px] font-bold text-pastel-red mt-0.5" data-partial-flag="expense">部分規則未納入</div>' : ''}</div></div>
+                <p class="text-[10px] text-pastel-muted leading-relaxed">依目前啟用規則估算，含僅提醒項目</p>
+                ${unrel.length ? `<div class="text-[10px] text-pastel-red leading-relaxed space-y-0.5" data-unreliable-list>
+                    <div class="font-bold">部分規則未納入：有 ${unrel.length} 條規則無法可靠推算本月排程，上面的合計不含它們</div>
+                    ${unrel.map(u => `<div>・${esc(u.name)}（${u.kind === 'income' ? '收入' : '支出'}）：${esc(fixedUnreliableWhy(u))}</div>`).join('')}</div>` : ''}
+                ${list.length ? list.map(r => ruleRow(r, proj.occ[r.rule_id], unrel.some(u => u.rule_id === r.rule_id))).join('') : `<div class="text-xs text-pastel-muted py-1">尚未設定。例如 Netflix、房租、每月薪水，設定後系統會自動記帳。</div>`}
+            </div>`;
+        };
+        const fixedBody = fixedArea('個人固定收支', 'personal', rules.filter(r => r.scope !== 'family'), proj.personal)
+            + `<div class="border-t border-dashed border-pastel-border"></div>`
+            + fixedArea('群組固定收支', 'family', rules.filter(r => r.scope === 'family'), proj.group);
+        const cancelSortBtn = `<button type="button" onclick="cancelSortMode()" data-sort-cancel
+            class="tap44 px-2 text-[10px] font-bold text-pastel-muted tactile"><i class="fa-solid fa-xmark mr-1"></i>取消</button>`;
+        const sortActions = (group) => (sortingGroup === group ? cancelSortBtn : '') + sortBtn(group) + addBtn(`addItem('${group}')`);
+        /* 排序草稿存在但區塊收合時（例如離開 App 後回來），在標題副行提示，避免以為排序不見了 */
+        const sortNote = (group) => sortingGroup === group ? ' · 排序中，尚未儲存' : '';
 
         document.getElementById('settingsView').innerHTML = `
             <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card text-center relative overflow-hidden">
@@ -5915,33 +6595,6 @@ const BANKS = [
                 <button onclick="openProfileModal()" class="mt-3 text-xs font-bold text-pastel-accent">查看成就與更換大頭貼 →</button>
             </div>
 
-            <!-- 家庭成員：圓形頭像牆 -->
-            <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-4">
-                <div class="flex justify-between items-center border-b border-pastel-border pb-2">
-                    <div class="font-bold text-sm text-stone-800 flex items-center gap-2"><i class="fa-solid fa-users text-pastel-blue"></i> 家庭成員</div>
-                    <span class="text-[10px] text-pastel-muted">${fam.length} 人</span></div>
-                <div class="grid grid-cols-4 gap-3 pt-1">
-                    ${fam.map(m => {
-            const i = getLevelInfo(m.streak_days);
-            const isMe = m.member_id === STATE.me?.member_id;
-            return `<div class="flex flex-col items-center gap-1.5 min-w-0">
-                        <button onclick="openMemberCard('${esc(m.member_id)}')" class="relative tactile">
-                            <div class="w-14 h-14 rounded-full border-[3px] ${i.border} ${i.bg} overflow-hidden flex items-center justify-center text-2xl">${avatarInner(m.avatar_emoji)}</div>
-                            ${hasPayee(m) ? `<span class="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-white border border-pastel-border flex items-center justify-center text-[10px] text-pastel-blue"><i class="fa-solid fa-building-columns"></i></span>` : ''}
-                        </button>
-                        <div class="text-[10px] font-bold text-stone-700 truncate w-full text-center mt-1">${esc(m.nickname)}${isMe ? ' ·我' : ''}</div>
-                        <div class="text-[10px] ${i.color} font-bold truncate w-full text-center leading-tight">${esc(i.name)}</div>
-                        <div class="text-[10px] text-pastel-muted"><i class="fa-solid fa-fire"></i> ${Number(m.streak_days) || 0}</div>
-                        ${streakAtRisk(m) && !savedThisMonth()
-                    ? `<button onclick="saveStreak('${esc(m.member_id)}')" class="mt-1 px-2 py-1 rounded-full bg-pastel-blueLight text-pastel-blue text-[10px] font-bold tactile" title="幫他保住連續紀錄"><i class="fa-solid fa-heart-pulse mr-0.5"></i>續命</button>`
-                    : needsCheer(m) ? (cheeredToday(m.member_id)
-                        ? `<span class="mt-1 text-[10px] text-pastel-muted">已加油</span>`
-                        : `<button onclick="sendCheer('${esc(m.member_id)}')" class="mt-1 px-2 py-1 rounded-full bg-pastel-accentLight text-pastel-accent text-[10px] font-bold tactile"><i class="fa-solid fa-hand-fist mr-0.5"></i>加油</button>`) : ''}
-                    </div>`;
-        }).join('')}
-                </div>
-                <p class="text-xs text-pastel-muted leading-relaxed pt-1">新增成員請在 Google Sheets 的 <b>Members</b> 分頁加一列（member_id 自取、不重複即可），回到 App 按同步即生效。家人要在自己手機上使用，用下方的「複製安裝碼」傳給他。</p>
-            </div>
 
             <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-3">
                 <div class="font-bold text-sm text-stone-800 flex items-center gap-2"><i class="fa-solid fa-bullseye text-pastel-accent"></i> 預算</div>
@@ -5953,55 +6606,31 @@ const BANKS = [
                     <span class="font-bold font-tabular text-pastel-accent">${budgetFor('family', '') ? fmt(budgetFor('family', '')) : '未設定'} <i class="fa-solid fa-chevron-right text-[10px] ml-1 text-pastel-muted"></i></span></button>
             </div>
 
-            <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-4">
-                <div class="flex justify-between items-center border-b border-pastel-border pb-2">
-                    <div class="font-bold text-sm text-stone-800 flex items-center gap-2"><i class="fa-solid fa-rotate text-pastel-green"></i> 重複性收支</div>
-                    <button class="text-xs text-pastel-accent font-bold" onclick="openRuleSheet()">新增</button></div>
-                <div class="space-y-3">
-                ${rules.length ? rules.map(r => `
-                    <div class="flex justify-between items-center bg-pastel-bg p-3 rounded-tile">
-                        <div class="flex items-center gap-3 min-w-0">
-                            <div class="w-10 h-10 rounded-tile bg-white border border-pastel-border flex items-center justify-center flex-shrink-0" style="color:${catColor(r.category)}"><i class="fa-solid ${esc(r.category ? catIcon(r.category) : (r.entry_type === '收入' ? 'fa-sack-dollar' : 'fa-repeat'))}"></i></div>
-                            <div class="min-w-0">
-                                <div class="font-bold text-stone-800 text-sm truncate">${esc(r.name)}${r.status === '停用' ? ' <span class="text-[10px] bg-stone-200 text-stone-500 px-1.5 py-0.5 rounded">已停用</span>' : ''}</div>
-                                <div class="text-[10px] text-pastel-muted mt-0.5 truncate">
-                                    <span class="px-1.5 py-0.5 rounded ${r.scope === 'family' ? 'bg-pastel-blueLight text-pastel-blue' : 'bg-pastel-bg text-pastel-muted'} font-bold">${r.scope === 'family' ? '家庭' : '個人'}</span>
-                                    ${esc(r.freq)} · ${esc(r.auto_mode)} · 下次 ${esc(r.next_run || '—')}</div></div></div>
-                        <div class="text-right flex-shrink-0 ml-2">
-                            <div class="font-tabular text-sm ${r.entry_type === '收入' ? 'text-pastel-green' : 'text-stone-800'}">${fmt(r.amount)}</div>
-                            <div class="flex gap-3 mt-1 justify-end">
-                                <button class="text-[10px] text-stone-400" onclick='openRuleSheet(${JSON.stringify(r.rule_id)})'><i class="fa-solid fa-pen"></i></button>
-                                <button class="text-[10px] text-stone-400" onclick='deleteRule(${JSON.stringify(r.rule_id)})'><i class="fa-solid fa-trash"></i></button></div></div>
-                    </div>`).join('') : `<div class="text-xs text-pastel-muted py-2">尚未設定。例如 Netflix、房租、每月薪水，設定後系統會自動記帳。</div>`}
-                </div></div>
+            ${section('groups', 'fa-solid fa-users text-pastel-blue', '群組與成員',
+                groups.length ? `${esc(groups[0].name)} · ${gCount} 人` : '尚未加入群組', '',
+                groups.length ? groups.map(g => renderGroupMembers(g)).join('') : renderGroupMembers(null))}
 
-            <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-4">
-                <div class="flex justify-between items-center border-b border-pastel-border pb-2">
-                    <div class="font-bold text-sm text-stone-800 flex items-center gap-2"><i class="fa-solid fa-icons text-pastel-blue"></i> 支出分類</div>
-                    <div class="flex items-center gap-3">${sortBtn('EXPENSE_CATEGORY')}<button class="text-xs text-pastel-accent font-bold" onclick="addItem('EXPENSE_CATEGORY')">新增</button></div></div>
-                ${itemSection(STATE.categories.filter(c => c.item_group === 'EXPENSE_CATEGORY'), 'EXPENSE_CATEGORY')}</div>
+            ${section('fixed', 'fa-solid fa-rotate text-pastel-green', '固定收支', `個人 ${nPersonal} 條 · 群組 ${nGroup} 條`, '', fixedBody)}
 
-            <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-4">
-                <div class="flex justify-between items-center border-b border-pastel-border pb-2">
-                    <div class="font-bold text-sm text-stone-800 flex items-center gap-2"><i class="fa-solid fa-sack-dollar text-pastel-green"></i> 收入分類</div>
-                    <div class="flex items-center gap-3">${sortBtn('INCOME_CATEGORY')}<button class="text-xs text-pastel-accent font-bold" onclick="addItem('INCOME_CATEGORY')">新增</button></div></div>
-                ${itemSection(STATE.categories.filter(c => c.item_group === 'INCOME_CATEGORY'), 'INCOME_CATEGORY')}</div>
+            ${section('cat-expense', 'fa-solid fa-icons text-pastel-blue', '支出分類', `${cat('EXPENSE_CATEGORY').length} 項${sortNote('EXPENSE_CATEGORY')}`,
+                sortActions('EXPENSE_CATEGORY'), itemSection(cat('EXPENSE_CATEGORY'), 'EXPENSE_CATEGORY'))}
 
-            <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-4">
-                <div class="flex justify-between items-center border-b border-pastel-border pb-2">
-                    <div class="font-bold text-sm text-stone-800 flex items-center gap-2"><i class="fa-solid fa-credit-card text-pastel-purple"></i> 帳戶 / 標籤</div>
-                    <div class="flex items-center gap-3">${sortBtn('PAYMENT_TAG')}<button class="text-xs text-pastel-accent font-bold" onclick="addItem('PAYMENT_TAG')">新增</button></div></div>
-                ${itemSection(STATE.tags, 'PAYMENT_TAG')}</div>
+            ${section('cat-income', 'fa-solid fa-sack-dollar text-pastel-green', '收入分類', `${cat('INCOME_CATEGORY').length} 項${sortNote('INCOME_CATEGORY')}`,
+                sortActions('INCOME_CATEGORY'), itemSection(cat('INCOME_CATEGORY'), 'INCOME_CATEGORY'))}
 
-            <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-3">
-                <div class="font-bold text-sm text-stone-800 flex items-center gap-2"><i class="fa-solid fa-palette text-pastel-purple"></i> 外觀</div>
+            ${section('accounts', 'fa-solid fa-credit-card text-pastel-purple', '帳戶 / 標籤', `${(STATE.tags || []).length} 項${sortNote('PAYMENT_TAG')}`,
+                sortActions('PAYMENT_TAG'), itemSection(STATE.tags || [], 'PAYMENT_TAG'))}
+
+            ${section('theme', 'fa-solid fa-palette text-pastel-purple', '外觀', esc((THEMES.find(x => x[0] === getTheme()) || [])[1] || ''), '',
+                `<div class="space-y-3">
                 <div class="flex gap-2">
                     ${THEMES.map(([v, label, ic]) => `<button onclick="setTheme('${v}')" class="flex-1 py-2.5 rounded-tile text-xs font-bold border tactile ${getTheme() === v ? 'bg-pastel-accent text-white border-pastel-accent' : 'bg-pastel-bg text-stone-600 border-pastel-border'}"><i class="fa-solid ${ic} mr-1"></i>${label}</button>`).join('')}
                 </div>
-            </div>
 
-            <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-3">
-                <div class="font-bold text-sm text-stone-800 flex items-center gap-2"><i class="fa-solid fa-plug text-pastel-blue"></i> 連線與帳本</div>
+                </div>`)}
+
+            ${section('conn', 'fa-solid fa-plug text-pastel-blue', '連線與帳本', esc(BACKEND_VERSION ? '後端 ' + BACKEND_VERSION : '後端版本未知'), '',
+                `<div class="space-y-3">
                 ${backendOutdated() ? `<div class="p-3 rounded-tile bg-pastel-redLight border border-pastel-red/30 text-pastel-red text-[10px] font-bold leading-relaxed">${esc(outdatedMsg())}</div>` : ''}
                 <div class="flex justify-between text-xs text-pastel-muted"><span>後端版本</span><span class="font-mono">${esc(BACKEND_VERSION || '未知')}</span></div>
                 <div class="text-xs text-pastel-muted">
@@ -6013,10 +6642,11 @@ const BANKS = [
                 <button onclick="shareInstall()" class="w-full py-3 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border tactile active:bg-pastel-accentLight"><i class="fa-solid fa-share-nodes mr-1.5"></i>複製安裝碼（給家人加入）</button>
                 <button onclick="changeBackend()" class="w-full py-3 bg-white text-pastel-muted font-bold rounded-tile text-xs border border-pastel-border tactile">更換後端（連到別的帳本）</button>
                 <p class="text-[10px] text-pastel-muted leading-relaxed">安裝碼包含家庭代碼，拿到的人就能看到這本帳的全部紀錄，只給家人。</p>
-            </div>
 
-            <div class="bg-white border border-pastel-border/60 rounded-card p-5 shadow-card space-y-3">
-                <div class="font-bold text-sm text-stone-800 flex items-center gap-2"><i class="fa-solid fa-circle-info text-pastel-muted"></i> 關於</div>
+                </div>`)}
+
+            ${section('about', 'fa-solid fa-circle-info text-pastel-muted', '關於', esc(CONFIG.VERSION), '',
+                `<div class="space-y-3">
                 <div class="flex justify-between text-xs text-pastel-muted"><span>版本</span><span class="font-mono">${esc(CONFIG.VERSION)}</span></div>
                 <div class="flex justify-between text-xs text-pastel-muted"><span>家庭</span><span>${esc(STATE.familyName)}</span></div>
                 <div class="text-xs text-pastel-muted">
@@ -6028,14 +6658,19 @@ const BANKS = [
                 <button id="btnSync" onclick="actSync()" class="w-full py-3 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border tactile active:bg-pastel-accentLight">立即同步資料</button>
                 <button id="btnReload" onclick="actReload()" class="w-full py-3 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border tactile active:bg-pastel-accentLight">強制重新載入（更新版本）</button>
                 <button onclick="logout()" class="w-full py-3 bg-white text-pastel-red font-bold rounded-tile text-xs border border-pastel-red/30 tactile active:bg-pastel-redLight">登出</button>
-            </div>`;
+
+                </div>`)}`;
+        paintSettingsSections();
         updateLevelDisplays();
         syncFrameHeight();
     }
 
-    /* --- 重複性收支 --- */
-    function openRuleSheet(ruleId) {
+    /* --- 固定收支 --- */
+    /* defaultScope 只決定「新增」時預選的範圍（'family' 預選全家可見，其他一律個人）；
+       編輯既有規則一律保留該規則原本的範圍；它不授予任何權限，權限仍由後端判斷。 */
+    function openRuleSheet(ruleId, defaultScope) {
         const r = ruleId ? STATE.rules.find(x => x.rule_id === ruleId) : null;
+        const preFamily = r ? r.scope === 'family' : defaultScope === 'family';
         const isExp = !r || r.entry_type !== '收入';
         const catOpts = g => STATE.categories.filter(c => c.item_group === g)
             /* 原生 <option> 沒辦法畫向量圖示，先前直接把 icon_emoji 印出來，
@@ -6043,7 +6678,7 @@ const BANKS = [
                選單裡只留純名稱，圖示交給外層卡片渲染。 */
             .map(c => `<option value="${esc(c.item_name)}" ${r && r.category === c.item_name ? 'selected' : ''}>${esc(c.item_name)}</option>`).join('');
         openSheet(`
-            <h3 class="text-lg font-bold text-stone-800 mb-5">${r ? '編輯' : '新增'}重複性收支</h3>
+            <h3 class="text-lg font-bold text-stone-800 mb-5">${r ? '編輯' : '新增'}固定收支</h3>
             <div class="space-y-4">
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">名稱</label>
                     <input id="rName" value="${esc(r?.name || '')}" placeholder="例如：Netflix 訂閱、房租" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm"></div>
@@ -6077,8 +6712,8 @@ const BANKS = [
                             ${['純個人', '家庭公帳', '家庭代墊'].map(n => `<option ${r && r.nature === n ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
                     <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">誰看得到</label>
                         <select id="rScope" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
-                            <option value="personal" ${(!r || r.scope !== 'family') ? 'selected' : ''}>只有我</option>
-                            <option value="family" ${r && r.scope === 'family' ? 'selected' : ''}>全家可見</option></select></div>
+                            <option value="personal" ${!preFamily ? 'selected' : ''}>只有我</option>
+                            <option value="family" ${preFamily ? 'selected' : ''}>全家可見</option></select></div>
                 </div>
                 ${r ? `<label class="flex items-center gap-2 text-sm text-stone-700"><input type="checkbox" id="rPaused" ${r.status === '停用' ? 'checked' : ''} class="w-4 h-4"> 暫停此規則</label>` : ''}
                 <button onclick="saveRule('${esc(ruleId || '')}')" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm">${r ? '儲存變更' : '建立規則'}</button>
@@ -6114,7 +6749,7 @@ const BANKS = [
         } catch (e) { toast('儲存失敗：' + e.message, true); }
     }
     async function deleteRule(ruleId) {
-        if (!confirm('確定要刪除這個重複性收支規則嗎？（已產生的紀錄不受影響）')) return;
+        if (!confirm('確定要刪除這個固定收支規則嗎？（已產生的紀錄不受影響）')) return;
         const backup = [...STATE.rules];
         STATE.rules = STATE.rules.filter(r => r.rule_id !== ruleId);
         renderSettings();
@@ -6164,27 +6799,51 @@ const BANKS = [
 
        教訓不是「計算寫錯」，而是：在行動裝置上，任何靠 pointerup 收尾的狀態機
        都必須假設那個事件可能不會來。要處理的邊界不只這一個，所以改用 SortableJS。 */
-    let sortingGroup = null, sortDirty = false, sortable = null;
+    let sortingGroup = null, sortDirty = false, sortable = null, sortSnapshot = null;
 
     function destroySortable() {
         if (!sortable) return;
         try { sortable.destroy(); } catch (e) { }
         sortable = null;
     }
+    const SORT_LABEL = { EXPENSE_CATEGORY: '支出分類', INCOME_CATEGORY: '收入分類', PAYMENT_TAG: '帳戶 / 標籤' };
     function toggleSortMode(group) {
         buzz();
         if (sortingGroup === group) {
             const g = sortingGroup;
-            sortingGroup = null;
+            sortingGroup = null; sortPanelOpen = false; sortSnapshot = null;
             destroySortable();          // 一定要在重畫之前銷毀，否則監聽器會留在被丟掉的 DOM 上
             renderSettings();
             saveOrder(g);
         } else {
+            if (sortingGroup) {          // 另一區還有未完成的排序草稿：不默默丟掉它，也不默默儲存它
+                toast(`「${SORT_LABEL[sortingGroup] || '其他'}」的排序還沒完成，請先回到那一區按「完成」或「取消」`, true);
+                return;
+            }
             if (typeof Sortable === 'undefined') { toast('排序功能尚未載入，請連線後重試', true); return; }
+            const all = group === 'PAYMENT_TAG' ? STATE.tags : STATE.categories;
+            sortSnapshot = (all || []).filter(c => c.item_group === group).map(c => c.item_name);
             sortingGroup = group;
+            sortPanelOpen = true;
             sortDirty = false;
             renderSettings();          // renderSettings 會負責重綁
         }
+    }
+    /** 取消排序：畫面順序還原成進入排序時的順序，不呼叫後端。展開狀態沿用目前的（不復活離開 App 前的狀態）。 */
+    function cancelSortMode() {
+        if (!sortingGroup) return;
+        buzz();
+        const g = sortingGroup, isTag = g === 'PAYMENT_TAG', all = isTag ? STATE.tags : STATE.categories;
+        const snap = sortSnapshot || [];
+        const pos = n => { const i = snap.indexOf(n); return i < 0 ? 1e9 : i; };       // 排序期間新增的項目排在最後
+        const inGroup = all.filter(c => c.item_group === g).map((c, i) => [c, i]).sort((a, b) => (pos(a[0].item_name) - pos(b[0].item_name)) || (a[1] - b[1])).map(x => x[0]);
+        let k = 0;
+        const merged = all.map(c => c.item_group === g ? inGroup[k++] : c);
+        if (isTag) STATE.tags = merged; else STATE.categories = merged;
+        sortingGroup = null; sortPanelOpen = false; sortDirty = false; sortSnapshot = null;
+        destroySortable();
+        renderSettings();
+        toast('已取消排序，順序沒有變更');
     }
     function bindDragSort() {
         const list = document.getElementById('sortList');
@@ -6555,7 +7214,8 @@ const BANKS = [
         const others = sp.reduce((a, b) => a + (Number(b.amount) || 0), 0);
         const mine = total - others;
         const parts = sp.map(s => `${nameOf(s.member_id)} ${fmt(s.amount)}`);
-        if (mine > 0) parts.push(`我自付 ${fmt(mine)}`);
+        // v6.23.1：債務人也會看到別人代墊的這筆，「自付」指的是付款人本人，不是「我」
+        if (mine > 0) parts.push(`${t.payer_id === STATE.me?.member_id ? '我' : nameOf(t.payer_id)}自付 ${fmt(mine)}`);
         return parts.join('／');
     }
 
@@ -6563,8 +7223,12 @@ const BANKS = [
         CSV 與 HTML 報表共用同一份，避免兩種格式各算各的而對不起來。 */
     function buildExportRows() {
         return filteredTxns().map(t => {
-            const pl = countsInPL(t);
-            const mine = myShareOf(t);
+            /* countsInPL 維持原規則不動；再疊一道 plKind：v6.23.1 起「結清只是資金移動」，
+               公帳撥款的結清列（還款、payer＝family_pool）不再計入匯出的支出，與首頁／明細／圖表一致。 */
+            const pl = countsInPL(t) && plKind(t, currentMode) !== null;
+            /* 我的分攤：個人帳本＝認列的份額（付款人：總額扣掉別人；債務人：被記的那一份）。
+               家庭帳本維持既有的付款人份額口徑（見更新說明「既有差異」）。 */
+            const mine = currentMode === 'personal' ? Math.round(plAmount(t, 'personal')) : myShareOf(t);
             return {
                 date: t.date,
                 type: t.entry_type,
@@ -6573,7 +7237,7 @@ const BANKS = [
                 amount: Math.round(Number(t.amount) || 0),
                 mine: mine,
                 inPL: pl,
-                isIncome: t.entry_type === '收入',
+                isIncome: plKind(t, currentMode) === 'income',
                 note: t.note || '',
                 nature: t.nature || '',
                 who: nameOf(t.member_id),
