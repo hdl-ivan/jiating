@@ -240,6 +240,8 @@
             transition:transform .2s ease, opacity .2s ease;
         }
         #appNav.kb-hide { transform:translateY(150%); opacity:0; pointer-events:none; }
+        /* v6.24.0 分攤大舞台：展開分攤時收起導覽列，空出拇指操作的空間 */
+        body.split-stage #appNav { transform:translateY(150%); opacity:0; pointer-events:none; }
         /* 只有手機要避開底部死區；桌機的模擬外框沒有這個問題 */
         @media (max-width:767px) {
             /* 死區由 JS 量出來寫進 --deadZone；再加 14px 讓陰影有空間淡出。
@@ -642,7 +644,7 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.23.3',   // 前端版本；後端 API_VERSION 仍是 6.22.3（v6.23.1 起 saveRule 有修改，需搭配同版 Code.gs）
+        VERSION: 'v6.24.0',   // 前端版本；後端 API_VERSION 6.24.0。月底錨定推算只在後端 ≥ 6.24.0 時啟用，舊後端沿用舊算法
         MIN_BACKEND: '6.22.3',      // v6.22.3 起寫入需要操作鍵／期別／版本契約；舊後端不支援
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
@@ -1276,6 +1278,19 @@ function hexA(hex, a) {
     const DEBT_FIX_STEPS = '更正方式：①若有人標記「由公帳月結」，請先取消月結；②作廢錯誤的還款紀錄；③重新整理，確認剩餘金額；④再依正確金額重新記錄。已由公帳撥款的結算需由戶長處理。';
     function debtLockReason(t, txns, intents, forVoid) {
         if (!t) return '';
+        /* v6.24.0：本機暫存的列（樂觀寫入、離線佇列、送出失敗）還沒有真正的交易編號，
+           拿去修改或作廢，後端一定找不到；同一筆修訂還在送出時再改一次，也會撞到舊版本。 */
+        const unsynced = t._pending || String(t.txn_id || '').indexOf('tmp_') === 0;
+        if (unsynced) {
+            if (t._failed) return '這筆還沒有存進去，請先按「重新送出」或「捨棄」。';
+            if (t._queued) return '這筆還在本機等待同步，連線補送完成後才能修改或作廢。';
+            return '這筆正在同步到雲端，請等幾秒、看到同步完成後再修改或作廢。';
+        }
+        /* v6.24.0：代墊的分攤是以「付款人」的角度記錄的。別人付款的代墊若由戶長修改，
+           編輯器會把剩下的份額記到戶長名下，存檔後分攤就錯了；只讓付款人本人修改。 */
+        if (!forVoid && isAdvance(t) && STATE.me && t.payer_id && t.payer_id !== STATE.me.member_id) {
+            return `這筆代墊是${nameOf(t.payer_id)}付款的，只有付款人可以修改內容與分攤。`;
+        }
         const live = (txns || []).filter(x => x.status !== '作廢' && x.status !== '已修訂' && !x.is_rollup);
         if (t.entry_type === '還款') return forVoid ? '' : '還款／結算紀錄不能直接修改。' + DEBT_FIX_STEPS;
         // rc2（N-1）：目標存入／提取與後端 assertGoalEditable 同口徑
@@ -2282,6 +2297,11 @@ function hexA(hex, a) {
        ========================================================== */
     function switchTab(tab) {
         currentTab = tab;
+        if (tab !== 'add' && addState.splitOpen) {
+            addState.splitOpen = false;
+            if (document.getElementById('splitDetailBox')) renderSplitBox(document.getElementById('inpNature')?.value);
+        }
+        setSplitStage(tab === 'add' && !!addState.splitOpen);
         document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('nav-active'));
         document.getElementById('appFrame')?.classList.toggle('mode-family', currentMode === 'family');
         document.getElementById('navAdd')?.classList.toggle('nav-add-on', tab === 'add');
@@ -3986,9 +4006,141 @@ function hexA(hex, a) {
         renderTxnList();
         buzz(6);
     }
+    /* ---------- v6.24.0 月曆視角 ----------
+       與清單共用同一份篩選結果（filteredTxns）與同一套收支口徑（plTotals），
+       所以月曆上每天的數字與清單的日期小計一致。只在單月檢視提供；全期間一律用清單。 */
+    let txnViewMode = 'list';      // 'list' | 'calendar'（只存在記憶體）
+    function toggleTxnViewMode() {
+        buzz(6);
+        txnViewMode = txnViewMode === 'list' ? 'calendar' : 'list';
+        if (txnViewMode === 'calendar' && filters.allTime) filters.allTime = false;
+        renderTransactions();
+    }
+    /** 月曆格子很窄：一萬以下照常顯示（3,250），一萬以上縮寫成「3萬」「1.2萬」；完整金額在點開的當日明細與 aria-label */
+    const calNum = v => {
+        const n = Math.round(Math.abs(Number(v) || 0));
+        if (n < 10000) return n.toLocaleString('en-US');
+        const w = n / 10000;
+        return (w < 10 ? (Math.round(w * 10) / 10) : Math.round(w)) + '萬';
+    };
+    const calFull = v => Math.round(Math.abs(Number(v) || 0)).toLocaleString('en-US');
+    function renderCalendarGrid(allRows) {
+        const ym = viewYM;
+        const [y, m] = ym.split('-').map(Number);
+        const startOffset = (new Date(Date.UTC(y, m - 1, 1)).getUTCDay() + 6) % 7;   // 週一為第一欄
+        const totalDays = daysInYM(ym);
+        const budget = budgetFor(currentMode, '');
+        const dailyQuota = budget > 0 ? budget / totalDays : 0;
+        const today = todayISO();
+        const byDate = {};
+        allRows.forEach(t => { const d = String(t.date).slice(0, 10); (byDate[d] = byDate[d] || []).push(t); });
+        const head = ['一', '二', '三', '四', '五', '六', '日']
+            .map(w => `<div class="text-center text-[10px] font-bold text-pastel-muted py-1">${w}</div>`).join('');
+        let cells = '';
+        for (let i = 0; i < startOffset; i++) cells += `<div aria-hidden="true"></div>`;
+        for (let d = 1; d <= totalDays; d++) {
+            const iso = `${ym}-${pad2(d)}`;
+            const dayRows = byDate[iso] || [];
+            const tot = plTotals(dayRows, currentMode);
+            const isToday = iso === today;
+            const over = dailyQuota > 0 && tot.expense > dailyQuota;
+            /* 同步狀態：送出失敗的列要看得出來（點開當天可直接重新送出或捨棄）；待同步的列標雲朵 */
+            const failedN = dayRows.filter(t => t._failed).length;
+            const syncN = dayRows.filter(t => !t._failed && (t._queued || t._pending)).length;
+            const expLine = tot.expense > 0
+                ? `<span class="block text-[10px] leading-tight font-tabular ${over ? 'text-pastel-red font-bold' : 'text-stone-700'} w-full text-center whitespace-nowrap" data-cal-exp>${calNum(tot.expense)}</span>` : '';
+            const incLine = tot.income > 0
+                ? `<span class="block text-[10px] leading-tight font-tabular text-pastel-green w-full text-center whitespace-nowrap" data-cal-inc>+${calNum(tot.income)}</span>` : '';
+            const body = (expLine || incLine)
+                ? `<span class="w-full flex flex-col items-center">${expLine}${incLine}</span>`
+                : dayRows.length
+                    ? `<span class="w-1.5 h-1.5 rounded-full bg-pastel-blue mb-1" title="只有資金移動"></span>`
+                    : `<span class="text-[10px] text-stone-300">·</span>`;
+            const flag = failedN
+                ? `<i class="fa-solid fa-triangle-exclamation text-[10px] text-pastel-red" data-cal-failed></i>`
+                : syncN ? `<i class="fa-solid fa-cloud-arrow-up text-[10px] text-pastel-accent" data-cal-sync></i>` : '';
+            cells += `<button type="button" data-cal-day="${iso}" onclick="openCalendarDay('${iso}')"
+                aria-label="${m} 月 ${d} 日${tot.expense > 0 ? `，支出 ${calFull(tot.expense)} 元` : ''}${tot.income > 0 ? `，收入 ${calFull(tot.income)} 元` : ''}${over ? '，超過每日額度' : ''}${failedN ? `，${failedN} 筆沒有存進去` : ''}${syncN ? `，${syncN} 筆待同步` : ''}"
+                class="h-14 min-w-0 rounded-lg border px-0.5 py-1 flex flex-col items-center justify-between tactile
+                       ${isToday ? 'border-pastel-accent bg-pastel-accentLight' : 'border-pastel-border/60 bg-white'}">
+                <span class="flex items-center gap-0.5">
+                    <span class="text-xs font-bold ${isToday ? 'text-pastel-accent' : 'text-stone-700'}">${d}</span>
+                    ${over ? `<span class="w-1.5 h-1.5 rounded-full bg-pastel-red" data-cal-over></span>` : ''}${flag}
+                </span>${body}</button>`;
+        }
+        return `<div class="bg-white border border-pastel-border/60 rounded-card p-3 shadow-card mb-3" data-calendar="${ym}">
+            <div class="grid grid-cols-7 gap-1 mb-1">${head}</div>
+            <div class="grid grid-cols-7 gap-1">${cells}</div>
+            <div class="flex flex-wrap items-center justify-between gap-1 text-[10px] text-pastel-muted mt-3 pt-2 border-t border-pastel-border/60">
+                <span>格子內為當日支出，綠色為收入；<i class="fa-solid fa-triangle-exclamation text-pastel-red"></i> 表示有紀錄沒有存進去</span>
+                ${dailyQuota > 0 ? `<span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-pastel-red"></span>單日超過 ${fmt(dailyQuota)}</span>` : ''}
+            </div></div>`;
+    }
+    /** 當天明細：列出後點一筆看詳情（詳情頁才有編輯、作廢、再記一次，不在這裡做滑動手勢） */
+    function openCalendarDay(iso) {
+        buzz(6);
+        const dayRows = filteredTxns().filter(t => String(t.date).slice(0, 10) === iso);
+        const tot = plTotals(dayRows, currentMode);
+        const [, mm, dd] = iso.split('-').map(Number);
+        const failedN = dayRows.filter(t => t._failed).length;
+        const list = dayRows.length ? `<div class="space-y-2 mt-3">${failedN ? `<div class="px-3 py-2 rounded-tile bg-pastel-redLight text-[10px] font-bold text-pastel-red" data-cal-failed-note>
+                <i class="fa-solid fa-triangle-exclamation mr-1"></i>這天有 ${failedN} 筆沒有存進去，請重新送出或捨棄</div>` : ''}${dayRows.map(t => {
+            const fm = fundMovementInfo(t), kind = plKind(t, currentMode);
+            const title = fm ? fm.label : (t.note || t.category || t.entry_type);
+            const amt = displayAmount(t);
+            const sign = kind === 'expense' ? '-' : kind === 'income' ? '+' : '';
+            const col = kind === 'expense' ? 'text-stone-800' : kind === 'income' ? 'text-pastel-green' : 'text-pastel-blue';
+            const state = t._failed ? `<span class="text-pastel-red font-bold"><i class="fa-solid fa-triangle-exclamation mr-1"></i>沒有存進去</span>`
+                : (t._queued ? `<span class="text-pastel-accent font-bold"><i class="fa-solid fa-cloud-arrow-up mr-1"></i>待同步</span>`
+                : (t._pending ? `<span class="text-pastel-muted font-bold"><i class="fa-solid fa-spinner fa-spin mr-1"></i>同步中</span>` : ''));
+            const row = `<button type="button" data-id="${esc(t.txn_id)}" onclick="openTxnSheet(this.dataset.id)"
+                class="w-full flex items-center justify-between gap-2 p-3 ${t._failed ? 'rounded-t-tile' : 'rounded-tile'} bg-pastel-bg text-left tactile">
+                <span class="min-w-0"><span class="block text-sm font-bold text-stone-800 truncate">${esc(title)}</span>
+                    <span class="block text-[10px] text-pastel-muted truncate">${state ? state + ' · ' : ''}${esc(fm ? (fm.sub || '') : (t.category || t.entry_type))}</span></span>
+                <span class="font-tabular text-sm flex-shrink-0 ${col}">${sign}${fmt(amt)}</span></button>`;
+            if (!t._failed) return row;
+            return `<div data-cal-failed-row="${esc(t.txn_id)}">${row}<div class="flex gap-2 px-3 pb-3 pt-1 bg-pastel-bg rounded-b-tile">
+                <button type="button" data-i="${esc(t.txn_id)}" onclick="calRetryTxn(this.dataset.i)" class="flex-1 py-2.5 rounded-lg bg-pastel-red text-white text-xs font-bold tactile" data-cal-retry>重新送出</button>
+                <button type="button" data-i="${esc(t.txn_id)}" onclick="calDiscardTxn(this.dataset.i, '${iso}')" class="px-4 py-2.5 rounded-lg bg-white border border-pastel-red/30 text-pastel-red text-xs font-bold tactile" data-cal-discard>捨棄</button>
+            </div></div>`;
+        }).join('')}</div>`
+            : `<div class="py-8 text-center text-xs text-pastel-muted">這天還沒有紀錄</div>`;
+        openSheet(`
+            <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                    <h3 class="text-lg font-bold text-stone-800">${mm} 月 ${dd} 日</h3>
+                    <div class="flex flex-wrap gap-x-1.5 text-xs text-pastel-muted mt-0.5">${dayTotalsHtml(tot)}</div></div>
+                <button type="button" onclick="addOnDate('${iso}')" class="flex-shrink-0 px-4 py-2.5 rounded-full bg-pastel-accent text-white text-xs font-bold tactile">
+                    <i class="fa-solid fa-plus mr-1"></i>記這天</button>
+            </div>
+            <div class="max-h-[56vh] overflow-y-auto hide-scrollbar">${list}</div>`);
+    }
+    /** 月曆當日明細裡的失敗列：沿用清單的重新送出／捨棄（同一個函式），先關掉面板讓結果回到畫面上 */
+    function calRetryTxn(id) { closeSheet(); retryTxn(id); }
+    function calDiscardTxn(id, iso) {
+        const before = STATE.transactions.length;
+        discardTxn(id);
+        if (STATE.transactions.length !== before) openCalendarDay(iso);   // 捨棄成功：重新整理當天明細
+    }
+    /** 從月曆補記某一天：一律從乾淨的表單開始，避免沿用上一筆沒存的金額或分攤 */
+    function addOnDate(iso) {
+        closeSheet();
+        editingTxnId = null;
+        initAddForm();
+        addState.date = iso;
+        addState._dateTouched = true;
+        initAddForm(true);
+        switchTab('add');
+    }
     function renderTxnList() {
         const box = document.getElementById('txnList'); if (!box) return;
         const all = filteredTxns();
+        if (txnViewMode === 'calendar' && !filters.allTime) {
+            box.innerHTML = `<button id="queueBadge" onclick="syncOfflineQueue()" class="js-hide w-full mb-3 py-2.5 rounded-tile bg-pastel-accentLight text-pastel-accent text-[10px] font-bold tactile"></button>`
+                + renderCalendarGrid(all);
+            paintQueueBadge();
+            return;
+        }
         const rows = all.slice(0, _txnShown);
         const more = all.length - rows.length;
         const grouped = rows.reduce((a, t) => { (a[t.date] ||= []).push(t); return a; }, {});
@@ -4020,16 +4172,17 @@ function hexA(hex, a) {
     }
     function toolbarRow() {
         const fc = activeFilterCount();
-        const btn = (icon, on, fn, badge) => `<button onclick="${fn}" class="tap44 relative w-9 h-9 rounded-full flex items-center justify-center border tactile ${on ? 'bg-pastel-accent text-white border-pastel-accent' : 'bg-white text-stone-500 border-pastel-border'}">
+        const btn = (icon, on, fn, badge, label) => `<button onclick="${fn}" ${label ? `aria-label="${label}"` : ''} class="tap44 relative w-9 h-9 rounded-full flex items-center justify-center border tactile ${on ? 'bg-pastel-accent text-white border-pastel-accent' : 'bg-white text-stone-500 border-pastel-border'}">
             <i class="fa-solid ${icon} text-sm"></i>${badge ? `<span class="absolute -top-1 -right-1 w-4 h-4 bg-pastel-accent text-white text-[10px] font-bold rounded-full flex items-center justify-center border border-white">${badge}</span>` : ''}</button>`;
         return `<div class="flex items-center gap-2">
             <div class="flex-1 flex items-center justify-between bg-white rounded-tile border border-pastel-border shadow-sm px-1 h-11 min-w-0">
                 ${filters.allTime
                 ? `<button onclick="toggleAllTime()" class="flex-1 h-full flex items-center justify-center gap-2 text-xs font-bold text-pastel-accent"><i class="fa-solid fa-infinity"></i>全部期間 ・ 回到單月</button>`
-                : `<button onclick="changeMonth(-1)" class="tap44 w-9 h-9 flex items-center justify-center text-stone-500"><i class="fa-solid fa-chevron-left text-sm"></i></button>
-                   <button onclick="openMonthPicker()" class="flex-1 font-bold text-stone-800 text-sm truncate">${viewYM.slice(0, 4)} 年 ${Number(viewYM.slice(5, 7))} 月<i class="fa-solid fa-caret-down text-pastel-muted text-[10px] ml-1.5"></i></button>
-                   <button onclick="changeMonth(1)" class="tap44 w-9 h-9 flex items-center justify-center text-stone-500 ${viewYM >= currentYM() ? 'opacity-30' : ''}"><i class="fa-solid fa-chevron-right text-sm"></i></button>`}
+                : `<button onclick="changeMonth(-1)" aria-label="上個月" class="tap44 w-7 min-[360px]:w-9 h-9 flex-shrink-0 flex items-center justify-center text-stone-500"><i class="fa-solid fa-chevron-left text-sm"></i></button>
+                   <button onclick="openMonthPicker()" class="flex-1 font-bold text-stone-800 text-sm truncate"><span class="hidden min-[360px]:inline">${viewYM.slice(0, 4)} 年 ${Number(viewYM.slice(5, 7))} 月</span><span class="min-[360px]:hidden">${viewYM.slice(0, 4)}/${Number(viewYM.slice(5, 7))}</span><i class="fa-solid fa-caret-down text-pastel-muted text-[10px] ml-1.5"></i></button>
+                   <button onclick="changeMonth(1)" aria-label="下個月" class="tap44 w-7 min-[360px]:w-9 h-9 flex-shrink-0 flex items-center justify-center text-stone-500 ${viewYM >= currentYM() ? 'opacity-30' : ''}"><i class="fa-solid fa-chevron-right text-sm"></i></button>`}
             </div>
+            ${btn(txnViewMode === 'calendar' ? 'fa-list-ul' : 'fa-calendar-days', txnViewMode === 'calendar', 'toggleTxnViewMode()', '', txnViewMode === 'calendar' ? '切換為清單' : '切換為月曆')}
             ${btn('fa-magnifying-glass', _searchOpen || !!filters.q, 'toggleSearchBar()')}
             ${btn('fa-sliders', fc > 0, 'openFilterSheet()', fc || '')}
         </div>
@@ -4948,6 +5101,8 @@ function hexA(hex, a) {
 
     function setAddMode(m) {
         buzz();
+        /* v6.24.0（R4-03）：切換記帳類型時一律收合分攤舞台，避免轉帳等沒有分攤區的表單留下隱藏的導覽列 */
+        addState.splitOpen = false; setSplitStage(false);
         addState.mode = m;
         addState.cat = '';
         initAddForm(true);
@@ -5150,10 +5305,23 @@ function hexA(hex, a) {
             `<button onclick="addItem('PAYMENT_TAG')" class="flex-shrink-0 px-3.5 py-2 rounded-full text-xs font-bold border border-dashed border-pastel-border text-pastel-muted">＋</button>`;
     }
 
+    /* v6.24.0：家庭模式原本只提供「家庭公帳直接支出」一種歸屬。
+       在家庭模式編輯一筆「家庭代墊／私人拆帳／我出錢請客」時，表單會把它改寫成公帳出錢、清掉分攤，
+       而後端允許「記帳者本人 ↔ 公帳」的付款人轉換，存檔後代墊就變成公帳支出。
+       編輯既有紀錄時，只要原本不是公帳出的錢，就用完整的歸屬選單。 */
+    function useFullExpenseForm(prevNature) {
+        if (currentMode === 'personal') return true;
+        if (!editingTxnId) return false;
+        return prevNature === '家庭代墊' || prevNature === '私人拆帳' || addState.poolPayer === 'me';
+    }
     function renderAddFormLogic(keepNature) {
         const c = document.getElementById('advancedLogicContainer'); if (!c) return;
         const prev = keepNature || addState.nature || document.getElementById('inpNature')?.value;
-        if (addState.mode === 'transfer') { c.innerHTML = `<input type="hidden" id="inpNature" value="純個人">`; return; }
+        const fullForm = useFullExpenseForm(prev);
+        if (addState.mode === 'transfer') {
+            addState.splitOpen = false; setSplitStage(false);   // R4-03：轉帳沒有分攤區，不得留下 split-stage
+            c.innerHTML = `<input type="hidden" id="inpNature" value="純個人">`; return;
+        }
         if (addState.mode === 'income') {
             c.innerHTML = `<div class="p-4 bg-pastel-greenLight border border-pastel-green/20 rounded-tile space-y-3">
                 <div class="font-bold text-pastel-green text-xs">收入歸屬</div>
@@ -5162,7 +5330,7 @@ function hexA(hex, a) {
                     <option value="家庭公帳">直接入家庭公帳（錢沒經過我）</option>
                     <option value="公帳注資">我出錢注入公帳（從我的現金）</option></select>
                 <p id="natureHint" class="text-[10px] text-stone-600 leading-relaxed"></p></div>`;
-        } else if (currentMode === 'personal') {
+        } else if (fullForm) {
             c.innerHTML = `<div class="p-4 bg-pastel-accentLight border border-pastel-accent/25 rounded-tile space-y-3">
                 <div class="font-bold text-pastel-accent text-xs">費用歸屬與代墊</div>
                 <select id="inpNature" onchange="addState.nature=this.value;toggleSplitConfig()" class="w-full p-3 rounded-tile bg-white border border-pastel-accent/25 text-stone-800 text-sm font-medium">
@@ -5186,7 +5354,7 @@ function hexA(hex, a) {
              收入的家庭公帳 → 選項本身就寫著「錢沒經過我」
            編輯既有紀錄時不重算，以原本存的付款人為準（見 editTxn）。 */
         if (!addState.poolPayerLocked) {
-            addState.poolPayer = (addState.mode === 'expense' && currentMode === 'personal') ? 'me' : 'pool';
+            addState.poolPayer = (addState.mode === 'expense' && fullForm) ? 'me' : 'pool';
         }
         paintNatureHint();
         toggleSplitConfig();
@@ -5265,6 +5433,20 @@ function hexA(hex, a) {
     /* 分攤面板兩態：平常只佔一行摘要，要調整才展開。
        80% 的情況（整筆代墊、固定均分）看一眼摘要就夠了，
        把完整編輯器一直攤在表單上，等於為了 20% 的情境每次都付出版面。 */
+    /** v6.24.0 分攤摘要第一行：幾個人、哪種分法、自己負擔多少（還沒分配出去的金額算在自己身上） */
+    function splitHeadline() {
+        const ids = Object.keys(addState.splits || {});
+        if (!ids.length) return '尚未設定分攤';
+        const md = splitMode();
+        const modeName = md === 'even' ? '平均' : md === 'pct' ? '比例' : '手動';
+        const total = splitTotal(), others = splitSum();
+        const mine = Math.max(0, total - others);
+        return `${ids.length} 人${modeName}分攤・${mine > 0 ? `你負擔 ${fmt(mine)}` : '你不負擔'}`;
+    }
+    /** 展開分攤時收起導覽列；離開記帳頁、收合或切到不需分攤的歸屬時一定恢復 */
+    function setSplitStage(on) {
+        document.body.classList.toggle('split-stage', !!on);
+    }
     function splitSummaryLine() {
         const ids = Object.keys(addState.splits || {});
         const others = ids.filter(i => i !== ME_ID());
@@ -5282,6 +5464,9 @@ function hexA(hex, a) {
         buzz();
         addState.splitOpen = !addState.splitOpen;
         renderSplitBox(document.getElementById('inpNature')?.value);
+        if (addState.splitOpen) {
+            setTimeout(() => document.getElementById('splitDetailBox')?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 80);
+        }
     }
     function toggleSplitConfig() {
         const v = document.getElementById('inpNature')?.value, b = document.getElementById('splitDetailBox');
@@ -5293,7 +5478,7 @@ function hexA(hex, a) {
             if (!Object.keys(addState.splits || {}).length) addState.splits = { [ME_ID()]: 0 };
             recalcSplits();
             renderSplitBox(v);
-        } else addState.splits = {};
+        } else { addState.splits = {}; addState.splitOpen = false; setSplitStage(false); }
         lockSaveIfOver();
     }
     function setSplitMode(m) {
@@ -5323,6 +5508,7 @@ function hexA(hex, a) {
         addState.pcts = addState.pcts || {};
         const md = splitMode();
 
+        setSplitStage(!!addState.splitOpen && currentTab === 'add');
         if (!addState.splitOpen) {
             const total = splitTotal(), used = allocated();
             const bad = used > total + 0.01 || (md === 'pct' && pctSum() > 100.01);
@@ -5331,8 +5517,8 @@ function hexA(hex, a) {
                     class="w-full flex items-center gap-2 p-3 rounded-tile bg-white border ${bad ? 'border-pastel-red' : 'border-pastel-accent/25'} tactile text-left">
                     <i class="fa-solid fa-users-between-lines ${bad ? 'text-pastel-red' : 'text-pastel-accent'} text-sm flex-shrink-0"></i>
                     <span class="min-w-0 flex-1">
-                        <span class="block text-[10px] text-pastel-muted">${isPool ? '分攤給誰' : '與誰拆帳'}</span>
-                        <span class="block text-sm font-bold ${bad ? 'text-pastel-red' : 'text-stone-800'} truncate">${esc(splitSummaryLine())}</span>
+                        <span class="block text-sm font-bold ${bad ? 'text-pastel-red' : 'text-stone-800'} truncate" data-split-headline>${esc(splitHeadline())}</span>
+                        <span class="block text-[10px] text-pastel-muted truncate">${isPool ? '分攤給誰' : '與誰拆帳'}：${esc(splitSummaryLine())}</span>
                     </span>
                     <span class="text-[10px] font-bold text-pastel-accent flex-shrink-0">調整<i class="fa-solid fa-chevron-down ml-1 text-[10px]"></i></span>
                 </button>`;
@@ -5345,7 +5531,7 @@ function hexA(hex, a) {
             <div class="p-3 bg-white rounded-tile border border-pastel-accent/25 space-y-3">
                 <div class="flex justify-between items-center">
                     <div class="font-bold text-stone-700 text-xs">${isPool ? '分攤給誰？' : '與誰拆帳？'}</div>
-                    <button type="button" onclick="toggleSplitOpen()" class="text-[10px] font-bold text-pastel-accent tactile">
+                    <button type="button" onclick="toggleSplitOpen()" class="tap44 text-xs font-bold text-pastel-accent tactile">
                         完成分攤<i class="fa-solid fa-chevron-up ml-1 text-[10px]"></i></button>
                 </div>
                 <div class="flex gap-3 overflow-x-auto hide-scrollbar pb-1 pt-1">
@@ -5373,6 +5559,8 @@ function hexA(hex, a) {
                 </div>
                 <div id="splitRatioBar" class="flex h-3 rounded-full overflow-hidden bg-stone-100"></div>
                 <div id="splitSummary" class="text-[10px] pt-2 border-t border-pastel-border"></div>
+                <button type="button" onclick="toggleSplitOpen()" data-split-done
+                    class="w-full py-3 rounded-tile bg-pastel-accent text-white text-sm font-bold tactile">完成分攤</button>
             </div>`;
         paintSplitSummary();
     }
@@ -5706,6 +5894,15 @@ function hexA(hex, a) {
         reader.readAsDataURL(file);
     }
 
+    /* v6.24.0：載入既有紀錄到記帳表單。
+       ・注資是「收入頁」的「我出錢注入公帳」；原本被當成支出載入，個人模式下存檔會變成一筆「純個人」支出。
+       ・試算表可能把純數字的備註存成數字，表單一律以字串處理（0 也要保留）。 */
+    const txtOf = v => (v === undefined || v === null) ? '' : String(v);
+    function loadModeOf(t) {
+        if (t.entry_type === '收入' || t.entry_type === '注資') return 'income';
+        return t.entry_type === '轉帳' ? 'transfer' : 'expense';
+    }
+    function loadNatureOf(t) { return t.entry_type === '注資' ? '公帳注資' : t.nature; }
     function editTxn(id) {
         const t = STATE.transactions.find(x => x.txn_id === id); if (!t) return;
         /* DH9：通用編輯器會把還款載入成支出、也無法保留債務關聯，所以這類紀錄在進編輯器之前就擋下 */
@@ -5713,9 +5910,9 @@ function hexA(hex, a) {
         if (lock) { buzz(30); return toast(lock, true); }
         editingTxnId = id;
         addState = {
-            mode: t.entry_type === '收入' ? 'income' : (t.entry_type === '轉帳' ? 'transfer' : 'expense'),
-            expr: String(t.amount), cat: t.category, tag: t.tag, nature: t.nature,
-            date: t.date, note: t.note || '', from: t.tag, to: t.related_id || '',
+            mode: loadModeOf(t),
+            expr: String(t.amount), cat: txtOf(t.category), tag: txtOf(t.tag), nature: loadNatureOf(t),
+            date: t.date, note: txtOf(t.note), from: txtOf(t.tag), to: txtOf(t.related_id),
             /* 既有紀錄的分攤金額是既成事實，一律用金額模式載入，
                否則切回均分會把原本談好的數字覆寫掉。 */
             splitMode: 'amt', pcts: {},
@@ -5809,14 +6006,14 @@ function hexA(hex, a) {
         pendingReceipt = null;            // 單據不繼承
         const isGoalTag = (STATE.goals || []).some(g => g.project_tag && g.project_tag === t.tag);
         addState = {
-            mode: t.entry_type === '收入' ? 'income' : (t.entry_type === '轉帳' ? 'transfer' : 'expense'),
+            mode: loadModeOf(t),
             expr: String(Math.round(Number(t.amount) || 0)),
-            cat: t.category,
-            tag: isGoalTag ? (PREF.get('tag', '') || STATE.tags[0]?.item_name || '') : t.tag,
-            nature: t.nature,
+            cat: txtOf(t.category),
+            tag: isGoalTag ? (PREF.get('tag', '') || STATE.tags[0]?.item_name || '') : txtOf(t.tag),
+            nature: loadNatureOf(t),
             date: todayISO(),             // 一律改成今天
-            note: t.note || '',
-            from: t.tag, to: t.related_id || '',
+            note: txtOf(t.note),
+            from: txtOf(t.tag), to: txtOf(t.related_id),
             replaceAmt: true,             // 金額視為已選取
             poolPayer: t.payer_id === 'family_pool' ? 'pool' : 'me', poolPayerLocked: t.nature === '家庭公帳',
             splitMode: 'amt', pcts: {},
@@ -5833,6 +6030,25 @@ function hexA(hex, a) {
         toast('已複製，確認金額後按儲存');
     }
 
+    /** 送出既有紀錄的修改（修訂）。一般收支與轉帳共用；txn 必須在清表單之前組好。 */
+    async function commitTxnEdit(txn, receipt) {
+        const oldId = editingTxnId, idx = STATE.transactions.findIndex(t => t.txn_id === oldId);
+        const backup = idx >= 0 ? { ...STATE.transactions[idx] } : null;
+        if (idx >= 0) Object.assign(STATE.transactions[idx], txn, { _pending: true });
+        editingTxnId = null; pendingReceipt = null;
+        initAddForm(); viewYM = String(txn.date).slice(0, 7);
+        renderDataViews(); switchTab('transactions'); toast('已更新'); buzz(14);
+        try {
+            const r = await api.call('updateTransaction', { txn_id: oldId, txn, receipt, op_key: newOpKey('upd') });
+            const i2 = STATE.transactions.findIndex(t => t.txn_id === oldId);
+            if (i2 >= 0 && r.txn) STATE.transactions[i2] = r.txn;
+            renderDataViews();
+        } catch (e) {
+            if (backup && idx >= 0) STATE.transactions[idx] = backup;
+            renderDataViews(); toast('更新失敗：' + e.message, true);
+            if (STALE_CODES.includes(e.code)) await refreshData();
+        }
+    }
     async function saveTransaction() {
         /* 金額一律取整再存。
            顯示端的 fmt() 本來就會四捨五入，但存進去的若是 33.33333333333336，
@@ -5848,14 +6064,18 @@ function hexA(hex, a) {
             const from = document.getElementById('trFrom').value, to = document.getElementById('trTo').value;
             if (from === to) return toast('轉出與轉入帳戶不能相同', true);
             PREF.set('tag', from);
-            const note = addState.note || `${from} → ${to}`;
+            /* v6.24.0（R4-01、R4-02）：先把要送出的內容（含使用者選的日期）完整取出，再清表單；
+               編輯既有轉帳一律走 updateTransaction（修訂），不得以新增另一筆代替。 */
+            const trTxn = {
+                date: addState.date || todayISO(), entry_type: '轉帳', category: '', tag: from, amount,
+                note: addState.note || `${from} → ${to}`, nature: '純個人', split_detail: '', related_id: to,
+                member_id: STATE.me.member_id, payer_id: STATE.me.member_id
+            };
+            if (editingTxnId) return commitTxnEdit(trTxn, null);
             initAddForm();
+            viewYM = trTxn.date.slice(0, 7);
             switchTab('transactions'); buzz(14);
-            viewYM = addState.date.slice(0, 7);
-            return optimisticAdd({
-                date: addState.date, entry_type: '轉帳', category: '', tag: from, amount, note,
-                nature: '純個人', related_id: to, member_id: STATE.me.member_id, payer_id: STATE.me.member_id
-            }, null, '轉帳已記錄');
+            return optimisticAdd(trTxn, null, '轉帳已記錄');
         }
 
         const nature = document.getElementById('inpNature')?.value || '純個人';
@@ -5900,24 +6120,7 @@ function hexA(hex, a) {
             scope: currentMode === 'family' ? 'family' : 'personal'
         } : null;
 
-        if (editingTxnId) {
-            const oldId = editingTxnId, idx = STATE.transactions.findIndex(t => t.txn_id === oldId);
-            const backup = idx >= 0 ? { ...STATE.transactions[idx] } : null;
-            if (idx >= 0) Object.assign(STATE.transactions[idx], txn, { _pending: true });
-            editingTxnId = null; pendingReceipt = null;
-            initAddForm(); renderDataViews(); switchTab('transactions'); toast('已更新'); buzz(14);
-            try {
-                const r = await api.call('updateTransaction', { txn_id: oldId, txn, receipt, op_key: newOpKey('upd') });
-                const i2 = STATE.transactions.findIndex(t => t.txn_id === oldId);
-                if (i2 >= 0 && r.txn) STATE.transactions[i2] = r.txn;
-                renderDataViews();
-            } catch (e) {
-                if (backup && idx >= 0) STATE.transactions[idx] = backup;
-                renderDataViews(); toast('更新失敗：' + e.message, true);
-                if (STALE_CODES.includes(e.code)) await refreshData();
-            }
-            return;
-        }
+        if (editingTxnId) return commitTxnEdit(txn, receipt);
 
         pendingReceipt = null; initAddForm();
         viewYM = txn.date.slice(0, 7);          // 跳到該筆所在月份，確保看得到
@@ -6462,23 +6665,45 @@ const BANKS = [
         const t = new Date(Date.UTC(y, m - 1, d + n));
         return `${t.getUTCFullYear()}-${pad2(t.getUTCMonth() + 1)}-${pad2(t.getUTCDate())}`;
     }
-    function fixedAddMonths(iso, n) {
+    function fixedAddMonths(iso, n, anchorDay) {
         const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number);
+        const day = Number(anchorDay) || d;
         const last = new Date(Date.UTC(y, m - 1 + n + 1, 0)).getUTCDate();
-        const t = new Date(Date.UTC(y, m - 1 + n, Math.min(d, last)));
+        const t = new Date(Date.UTC(y, m - 1 + n, Math.min(day, last)));
         return `${t.getUTCFullYear()}-${pad2(t.getUTCMonth() + 1)}-${pad2(t.getUTCDate())}`;
     }
-    function fixedNextDate(iso, freq) {
+    /* v6.24.0 月底錨定（鏡像後端 stepAnchorDay）：只在目前這一期「等於起算日的日」或
+       「是被月底收斂的結果」時採用起算日的日；其餘沿用目前這一期的日。 */
+    function fixedStepAnchor(iso, startISO) {
+        const cur = String(iso || '').slice(0, 10), start = String(startISO || '').slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(cur) || !/^\d{4}-\d{2}-\d{2}$/.test(start)) return 0;
+        const cd = Number(cur.slice(8, 10)), sd = Number(start.slice(8, 10));
+        if (cd === sd) return sd;
+        const [y, m] = cur.split('-').map(Number);
+        const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+        return (sd > cd && cd === last) ? sd : 0;
+    }
+    function fixedNextDate(iso, freq, startISO) {
+        const a = fixedStepAnchor(iso, startISO);
         switch (freq) {
             case '每日': return fixedAddDays(iso, 1);
             case '每週': return fixedAddDays(iso, 7);
             case '每兩週': return fixedAddDays(iso, 14);
-            case '每月': return fixedAddMonths(iso, 1);
-            case '每季': return fixedAddMonths(iso, 3);
-            case '每半年': return fixedAddMonths(iso, 6);
-            case '每年': return fixedAddMonths(iso, 12);
-            default: return fixedAddMonths(iso, 1);
+            case '每月': return fixedAddMonths(iso, 1, a);
+            case '每季': return fixedAddMonths(iso, 3, a);
+            case '每半年': return fixedAddMonths(iso, 6, a);
+            case '每年': return fixedAddMonths(iso, 12, a);
+            default: return fixedAddMonths(iso, 1, a);
         }
+    }
+    /** 這條規則是否採用月底錨定：只看後端逐條回傳的 month_end_anchor（v6.24.0 起）。
+        舊後端不回傳此欄 → 一律舊算法。不由日期推測：已漂移的舊規則跨過 2 月時，
+        「2/28」同時落在新舊兩種序列上，從日期無法分辨歷史。 */
+    function ruleAnchorsMonthEnd(rule) { return !!rule && rule.month_end_anchor === true; }
+    /** 與後端 anchorMatters 相同：以月為單位的週期、起算日 29～31 號時，兩種算法才會不同 */
+    function fixedAnchorMatters(freq, startISO) {
+        if (freq === '每日' || freq === '每週' || freq === '每兩週') return false;
+        return Number(String(startISO || '').slice(8, 10)) >= 29;
     }
     /** 這條規則在 ym 這個月的排程日期。
         起點是 start_date（穩定錨點）；next_run 會隨執行、略過、補跑、編輯漂移，不能拿來還原整個月。
@@ -6492,15 +6717,23 @@ const BANKS = [
         const end = rule.end_date ? String(rule.end_date).slice(0, 10) : '';
         const cursor = String(rule.next_run || '').slice(0, 10);
         const stop = cursor && cursor > monthEnd ? cursor : monthEnd;
-        const dates = [];
-        let d = start, guard = 0, hitCursor = !cursor;
-        while (d <= stop && guard++ < 20000) {
-            if (d === cursor) hitCursor = true;
-            if (d >= monthStart && d <= monthEnd && (!end || d <= end)) dates.push(d);
-            d = fixedNextDate(d, rule.freq);
-        }
-        if (guard >= 20000) return { dates: [], reliable: false, reason: 'too_long' };
-        return { dates, reliable: hitCursor, reason: hitCursor ? '' : 'cursor_mismatch' };
+        /* v6.24.0：依後端登記的算法重播（已登記錨定 → 錨定算法；其餘 → 舊算法），
+           不在兩種算法之間挑一個「對得上」的，避免把舊規則的歷史推成錨定序列。 */
+        const replay = anchored => {
+            const dates = [];
+            let d = start, guard = 0, hitCursor = !cursor;
+            while (d <= stop && guard++ < 20000) {
+                if (d === cursor) hitCursor = true;
+                if (d >= monthStart && d <= monthEnd && (!end || d <= end)) dates.push(d);
+                d = anchored ? fixedNextDate(d, rule.freq, start) : fixedNextDate(d, rule.freq);
+            }
+            return { dates, hitCursor, tooLong: guard >= 20000 };
+        };
+        /* 第四輪：後端暫時讀不到這條規則的排程設定（month_end_anchor === null），且兩種算法會不同 → 不猜、不推算 */
+        if (rule && rule.month_end_anchor === null && fixedAnchorMatters(rule.freq, start)) return { dates: [], reliable: false, reason: 'anchor_unknown' };
+        const r = replay(ruleAnchorsMonthEnd(rule));
+        if (r.tooLong) return { dates: [], reliable: false, reason: 'too_long' };
+        return { dates: r.dates, reliable: r.hitCursor, reason: r.hitCursor ? '' : 'cursor_mismatch' };
     }
     /** 全月預計（規則排程的完整月份，不是剩餘）。啟用中的規則才算，含「僅提醒」；
         已執行的期別不會因為 next_run 往後移而消失；收入與支出分開，個人與群組分開；
@@ -6553,6 +6786,7 @@ const BANKS = [
         CURSOR_NOT_NEXT_MONTH: '本期還沒處理，暫未納入預計',
         NO_START: '沒有有效的開始日，暫未納入預計',
         TOO_LONG: '開始日太久遠，暫未納入預計',
+        ANCHOR_UNKNOWN: '排程設定暫時讀不到，暫未納入預計',
         MISMATCH: '開始日或週期改過，暫未納入預計'
     };
     const RULE_LONG = {
@@ -6564,11 +6798,13 @@ const BANKS = [
         CURSOR_NOT_NEXT_MONTH: '本期還沒有處理（下次日期不在下個月），這種情況的處理方式還沒有決定，所以下次日期沒有更新。',
         NO_START: '規則沒有有效的開始日，無法推算本月會發生幾次。',
         TOO_LONG: '開始日距今太久，無法推算本月會發生幾次。',
+        ANCHOR_UNKNOWN: '這條規則的月底日期設定暫時讀不到，無法確定本月的日期；系統不猜，先不算進本月預計，也不會自動記帳。重新整理後通常就會恢復。',
         MISMATCH: '依開始日推算的日期，經過不到目前的下次執行日（可能是舊版修改留下的資料），系統不猜，先不算進本月預計。'
     };
     function ruleScheduleReason(r, occReason) {
         if (occReason === 'no_start') return { code: 'NO_START' };
         if (occReason === 'too_long') return { code: 'TOO_LONG' };
+        if (occReason === 'anchor_unknown') return { code: 'ANCHOR_UNKNOWN' };
         const backend = r && r._schedule && r._schedule.reason;
         const passthrough = ['NOT_MONTHLY', 'NOT_ACTIVE', 'DAY_UNCHANGED', 'CURSOR_NOT_NEXT_MONTH'];
         if (passthrough.includes(backend)) return { code: backend };
