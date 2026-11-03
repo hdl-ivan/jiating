@@ -215,6 +215,34 @@
         .swipe-inner.dragging { transition:none; }
         .swipe-bg { transition:background-color .15s linear; }
 
+        /* v6.25.0 r10 月曆：圓形印記＋右上角筆數角標。
+           App 的深色模式是 html.dark（使用者可手動切換），不是系統設定；Tailwind CDN 的 dark: 前綴只跟系統走，
+           而且全域的深色覆寫（.bg-stone-800、.text-stone-800…）會改掉這裡的配色，所以月曆用專用的 class。
+           色票：淺色＝暖灰圓 stone-200/70＋stone-800 字、角標 stone-800；深色＝白圓＋stone-950 字、角標 stone-950；
+           超額角標 #F05838（pastel-red）；今天 #F8A048（pastel-accent）外圈，與圓之間留 2px 卡片底色。 */
+        .cal-cell { position:relative; width:2.75rem; max-width:100%; height:2.75rem; margin:0 auto; display:flex; align-items:center; justify-content:center; }
+        .cal-dot { width:2.5rem; max-width:calc(100% - 2px); height:2.5rem; border-radius:9999px; display:flex; align-items:center; justify-content:center;
+                   font-size:14px; font-weight:500; font-variant-numeric:tabular-nums; color:#A8A29E; background:transparent; border:1px solid transparent;
+                   transition:transform .09s ease; }
+        .cal-dot:active { transform:scale(.94); }
+        .cal-dot.has { background:rgba(231,229,228,.7); color:#292524; font-weight:700; border-color:rgba(214,211,209,.4); box-shadow:0 1px 2px rgba(0,0,0,.05); }
+        .cal-dot.today { box-shadow:0 0 0 2px #FFFFFF, 0 0 0 4px #F8A048; }
+        .cal-badge { position:absolute; top:-0.25rem; right:-0.25rem; width:18px; height:18px; border-radius:9999px; display:flex; align-items:center; justify-content:center;
+                     font-size:10px; font-weight:700; line-height:1; font-variant-numeric:tabular-nums; color:#FFFFFF; background:#292524;
+                     box-shadow:0 0 0 2px #FFFFFF, 0 1px 2px rgba(0,0,0,.08); pointer-events:none; user-select:none; }
+        .cal-badge.over { background:#F05838; }
+        .cal-flag { position:absolute; bottom:-0.125rem; right:-0.125rem; font-size:10px; line-height:1; pointer-events:none; }
+        .cal-key { width:14px; height:14px; border-radius:9999px; display:inline-block; flex-shrink:0; }
+        .cal-key.count { background:#292524; border:1px solid #57534E; }
+        .cal-key.over { background:#F05838; box-shadow:0 0 0 1px #FFFFFF; }
+        html.dark .cal-dot { color:#78716C; }
+        html.dark .cal-dot.has { background:#FFFFFF; color:#0C0A09; border-color:transparent; box-shadow:0 4px 6px rgba(0,0,0,.3); }
+        html.dark .cal-dot.today { box-shadow:0 0 0 2px #221F1D, 0 0 0 4px #F8A048; }
+        html.dark .cal-badge { background:#0C0A09; box-shadow:0 0 0 2px #FFFFFF; }
+        html.dark .cal-badge.over { background:#F05838; box-shadow:0 0 0 2px #0C0A09; }
+        html.dark .cal-key.count { background:#0C0A09; border-color:#FFFFFF; }
+        html.dark .cal-key.over { box-shadow:none; }
+
         .js-hide { display:none !important; }
 
         /* 聯想套用後，被自動填入的區塊輕輕縮放一下，讓使用者看得出「剛剛發生了什麼」 */
@@ -547,14 +575,48 @@
             <button id="gateCodeBtn" onclick="gateSubmitCode()" class="w-full py-3.5 bg-pastel-accent text-white font-bold rounded-tile shadow-md">下一步</button>
             <button type="button" onclick="gateBackToBackend()" class="w-full text-[10px] font-bold text-pastel-muted pt-1">連到別的帳本 / 重新輸入安裝碼</button>
         </div>
+        <!-- v6.25.0 r2：登入碼。登入碼本身決定是哪一位成員，所以不再列出可以挑選的名單 -->
         <div id="gateStep2" class="hidden bg-white p-6 rounded-sheet shadow-card border border-pastel-border space-y-4">
-            <label class="block text-sm font-bold text-stone-700">你是誰？</label>
-            <div id="memberPicker" class="grid grid-cols-3 gap-3"></div>
+            <div>
+                <label for="gateLogin" class="block text-sm font-bold text-stone-700 mb-1">登入碼</label>
+                <p class="text-[10px] text-pastel-muted leading-relaxed mb-2.5">
+                    10 個英數字，由戶長產生，只能用一次。</p>
+                <input type="text" id="gateLogin" maxlength="14" inputmode="latin" autocomplete="one-time-code"
+                       autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="XXXXX-XXXXX"
+                       oninput="paintLoginCode()" onkeydown="if(event.key==='Enter')gateSubmitLogin()"
+                       class="w-full p-3 rounded-tile border-2 border-pastel-border bg-pastel-bg text-lg font-bold font-tabular text-center tracking-widest outline-none focus:border-pastel-accent">
+                <div class="flex items-center justify-center gap-3 mt-2">
+                    <button type="button" onclick="pasteLoginCode()" class="px-3 py-1.5 rounded-full bg-pastel-bg border border-pastel-border text-[10px] font-bold text-stone-600 tactile"><i class="fa-solid fa-paste mr-1"></i>貼上</button>
+                </div>
+            </div>
+            <button id="gateLoginBtn" onclick="gateSubmitLogin()" class="w-full py-3.5 bg-pastel-accent text-white font-bold rounded-tile shadow-md">登入</button>
+            <div class="text-[10px] text-pastel-muted leading-relaxed space-y-1" data-login-help>
+                <p><b>家人</b>：請戶長在 App「設定 → 群組與成員」點你的頭像，按「產生登入碼」。</p>
+                <p><b>戶長</b>：在 Google 試算表選單「🏠 家庭記帳 → 登入與安全 → 產生戶長登入碼」。</p>
+            </div>
+            <button type="button" onclick="gateBackToBackend()" class="w-full text-[10px] font-bold text-pastel-muted pt-1">連到別的帳本 / 重新輸入安裝碼</button>
+        </div>
+        <!-- v6.25.0：iPhone 在 Safari 開啟邀請 → 先加入主畫面，再在主畫面 App 裡登入 -->
+        <div id="gateStep3" class="hidden bg-white p-6 rounded-sheet shadow-card border border-pastel-border space-y-4">
+            <div class="text-sm font-bold text-stone-700">建議先加入主畫面再登入</div>
+            <p class="text-xs text-stone-600 leading-relaxed">iPhone 主畫面上的 App 和 Safari 的資料是分開的。
+                如果先在 Safari 登入，登入碼就被 Safari 用掉了，主畫面 App 需要戶長再產生一組。</p>
+            <ol class="text-xs text-stone-600 leading-relaxed space-y-1.5 list-decimal pl-5">
+                <li>按下方「複製邀請碼」</li>
+                <li>點 Safari 下方的 <i class="fa-solid fa-arrow-up-from-bracket"></i>「分享」→「加入主畫面」</li>
+                <li>從主畫面打開「家庭記帳」，在代碼畫面按「貼上」</li>
+            </ol>
+            <button id="gateInstallCopy" type="button" onclick="copyInviteForHomeScreen()" class="w-full py-3.5 bg-pastel-accent text-white font-bold rounded-tile shadow-md"><i class="fa-solid fa-copy mr-1.5"></i>複製邀請碼</button>
+            <button type="button" onclick="joinByInvite()" class="w-full text-[10px] font-bold text-pastel-muted pt-1">只在 Safari 使用（不加入主畫面）</button>
         </div>
         <p class="text-center text-[10px] text-pastel-muted mt-6">版本 <span id="appVersion">–</span></p>
     </div>
 
-    <header id="appHeader" class="px-5 py-3 bg-pastel-bg z-20 flex justify-between items-center border-b border-pastel-border/70 js-hide shrink-0">
+    <header id="appHeader" class="relative px-5 py-3 bg-pastel-bg z-20 flex justify-between items-center border-b border-pastel-border/70 js-hide shrink-0">
+        <!-- v6.25.0 同步狀態：同步超過 0.7 秒才出現；離線時說明畫面上是哪個時間的資料，點一下重試 -->
+        <button id="syncPill" type="button" onclick="syncPillTap()" aria-live="polite"
+                class="js-hide absolute left-1/2 bottom-0 z-30 px-2.5 py-1 rounded-full bg-white border border-pastel-border text-[10px] font-bold text-pastel-muted shadow-sm whitespace-nowrap"
+                style="transform:translate(-50%,50%)"></button>
         <div class="flex items-center gap-3 min-w-0">
             <div class="relative cursor-pointer flex-shrink-0" onclick="openProfileModal()">
                 <div id="userAvatar" class="w-12 h-12 rounded-full border-[3px] flex items-center justify-center text-xl overflow-hidden shadow-sm transition-all duration-500"></div>
@@ -644,8 +706,10 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.24.0',   // 前端版本；後端 API_VERSION 6.24.0。月底錨定推算只在後端 ≥ 6.24.0 時啟用，舊後端沿用舊算法
+        VERSION: 'v6.25.0',   // 前端版本；後端 API_VERSION 6.25.0（登入碼、帳本識別、伺服器耗時）。已登入的裝置接舊後端照常可用
+        BUILD: 'v6.25.0-r12',  // r4（R3-F04）：可分辨候選輪次的識別，每輪交付都要改。隨請求回報給後端（只供顯示），也顯示在「設定 → 關於」
         MIN_BACKEND: '6.22.3',      // v6.22.3 起寫入需要操作鍵／期別／版本契約；舊後端不支援
+        MIN_LOGIN_BACKEND: '6.25.0', // 登入碼（redeemLoginCode）從 6.25.0 起才有；更舊的後端無法在新裝置登入
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
         DEMO: false
@@ -657,7 +721,7 @@
         set url(v) { v ? localStorage.setItem('api', v) : localStorage.removeItem('api'); },
         get isCustom() { return !!localStorage.getItem('api'); },
         get id() { const m = EXEC_RE.exec(this.url); return m ? m[1] : ''; },
-        clear() { localStorage.removeItem('api'); }
+        clear() { localStorage.removeItem('api'); bootCacheClear(); }
     };
     let BACKEND_VERSION = '';        // 後端回報的 API 版本，握手用
 
@@ -673,6 +737,9 @@
            靜靜地把它改寫成 /exec 會給出一個看起來合理、實際上連不上的網址，
            所以寧可擋下來並說清楚。 */
         if (/\/dev(?![\w-])/.test(s)) return { dev: true };
+        /* v6.25.0：整段邀請連結（…#setup=ID.代碼）也收 —— iPhone 主畫面 App 要靠「貼上」帶入邀請 */
+        const inv = /[#?&]setup=([\w-]{20,}\.[A-Za-z0-9]{8})(?![A-Za-z0-9])/.exec(s);
+        if (inv) return parseInstall(inv[1]);
         let id = '', code = '';
         const m = /script\.google\.com\/macros\/s\/([\w-]{20,})/.exec(s);
         if (m) {
@@ -688,6 +755,12 @@
         return { url: `https://script.google.com/macros/s/${id}/exec`, code };
     }
     const installCode = () => BACKEND.id ? BACKEND.id + (AUTH.familyCode ? '.' + AUTH.familyCode : '') : '';
+    /* v6.25.0 邀請連結：#setup=部署ID.家庭代碼
+       放在 # 後面而不是 ?query：瀏覽器不會把 # 之後的內容送給伺服器，
+       GitHub Pages 的存取紀錄、LINE／Messenger 抓預覽圖的爬蟲都拿不到家庭代碼。
+       連結裡只有「哪一本帳＋家庭代碼」，沒有任何成員的 token。 */
+    const inviteLink = () => (BACKEND.id && AUTH.familyCode)
+        ? location.origin + location.pathname + '#setup=' + BACKEND.id + '.' + AUTH.familyCode : '';
 
     /** 版本比較：a < b 回傳 true。缺版本號（6.0 以前的後端）一律視為過舊。 */
     function verLt(a, b) {
@@ -805,13 +878,254 @@
         get authToken() { return localStorage.getItem('tk') || ''; },
         set authToken(v) { localStorage.setItem('tk', v); },
         get hasToken() { return !!localStorage.getItem('tk'); },
-        clear() { localStorage.removeItem('fc'); localStorage.removeItem('mid'); localStorage.removeItem('tk'); }
+        /* v6.25.0 帳本識別（後端由試算表 ID 推得）：離線待送資料用它判斷「屬於哪一本帳」，
+           部署網址或家庭代碼更換都不會變。舊後端沒有 → 空字串，改以部署 ID 判斷。 */
+        get bookId() { return localStorage.getItem('bk') || ''; },
+        set bookId(v) { v ? localStorage.setItem('bk', v) : localStorage.removeItem('bk'); },
+        /* 只清「目前登入的身分」。離線待送資料（oq1:／oqx1:）各自帶著擁有者，登出或換帳本都不刪，
+           換回原身分並經後端確認後才會補送；不是它擁有者的人看不到內容。 */
+        clear() { ['fc', 'mid', 'tk', 'bk'].forEach(k => localStorage.removeItem(k)); tabUnbind(); bootCacheClear(); },
+        /** 只清身分（token 失效、被戶長登出）：家庭代碼與後端留著，重新開啟直接到登入碼畫面 */
+        clearIdentity() { ['mid', 'tk', 'bk'].forEach(k => localStorage.removeItem(k)); tabUnbind(); bootCacheClear(); }
     };
+    /* ---------- r3：分頁身分（TAB）----------
+       登入資訊存在 localStorage，同一網域的所有分頁共用。另一個分頁切換帳本或換人登入時，
+       這個分頁畫面上的資料、正在重試的請求、待補送的資料仍屬於原本的身分。
+       因此每個分頁在「決定以某個身分運作」時記下身分指紋（後端網址＋家庭代碼＋成員＋token）：
+       ・需要身分的請求，送出前、每次重試前、收到回應後都核對指紋；不一致就停止（CONTEXT_CHANGED），
+         絕不改用新的身分或新的後端重送，晚到的回應也不套用。
+       ・「已被後端確認」綁定這個指紋；指紋變了就視為未確認，不補送任何離線資料。
+       ・離線資料的擁有者取自分頁身分，不是 localStorage 的當下值。
+       ・收到其他分頁變更登入資訊的通知（storage 事件）就重新載入；但不只依賴這個非同步通知，送出時一律核對。 */
+    const TAB = { ctx: '', owner: null, verified: false };
+    function authCtxKey() { return [BACKEND.url, AUTH.familyCode, AUTH.memberId, AUTH.authToken].join('\u0001'); }
+    function tabBind() {
+        TAB.ctx = authCtxKey(); TAB.verified = false;
+        TAB.owner = { dep: BACKEND.id || BACKEND.url || '', book: AUTH.bookId || '', member: AUTH.memberId || '' };
+    }
+    function tabUnbind() { TAB.ctx = ''; TAB.owner = null; TAB.verified = false; }
+    function tabOk() { return !!TAB.ctx && TAB.ctx === authCtxKey(); }
+    /** 這次開啟 App 之後，這個分頁的身分是否已被後端確認（成功讀到帳本）。快取畫面不算確認。
+        離線資料只在確認後才補送。指紋改變（其他分頁換帳本或換人）即自動失效。 */
+    const SESSION = {
+        get verified() { return TAB.verified && tabOk(); },
+        set verified(v) { TAB.verified = !!v && tabOk(); }
+    };
+    let _tabReload = null;
+    /* r4（R3-F01）：其他分頁換了帳本或身分時，這個分頁要重新載入，但不能把「已按送出、還沒有結果」的操作丟掉：
+       ・新增記帳在送出前就已存成待送資料（optimisticAdd），重新載入後由原擁有者補送；
+       ・其他寫入（修改、作廢、結算…）等請求有結果（或最多等 TAB_RELOAD_MAX_WAIT）才重新載入；
+         這段期間指紋已不符，不會送出任何新請求。結果沒有套用的寫入記在這個分頁的 sessionStorage，
+         重新載入後提示使用者回原帳本核對（只顯示一次）。 */
+    const TAB_RELOAD_MAX_WAIT = 90000;
+    const CTX_NOTES_KEY = 'ctx_notes_v1';
+    const ACTION_LABEL = {
+        updateTransaction: '修改記帳', voidTransaction: '作廢記帳', unvoidTransaction: '恢復記帳', settleIntent: '結算', saveIntent: '儲存待結算',
+        deleteIntent: '刪除待結算', confirmReminder: '確認提醒', skipReminder: '略過提醒', saveRule: '固定收支設定', deleteRule: '刪除固定收支',
+        saveGoal: '儲存目標', closeGoal: '結束目標', deleteGoal: '刪除目標', saveBudget: '儲存預算', updateMember: '修改成員',
+        addItem: '新增分類／標籤', updateItem: '修改分類／標籤', archiveItem: '封存分類／標籤', reorderItems: '調整排序',
+        sendCheer: '打氣', saveStreak: '連續紀錄', issueLoginCode: '產生登入碼', revokeMemberLogin: '讓成員登出', unlockAchievement: '成就',
+        applyRuleFund: '更正固定收支付款人'
+    };
+    function noteCtxWrite(action, book, timeout) {
+        try {
+            const a = JSON.parse(sessionStorage.getItem(CTX_NOTES_KEY) || '[]');
+            a.push({ action, book: book || '', timeout: !!timeout, at: Date.now() });
+            sessionStorage.setItem(CTX_NOTES_KEY, JSON.stringify(a.slice(-20)));
+        } catch (e) { }
+    }
+    function showCtxNotes() {
+        let a = [];
+        try { a = JSON.parse(sessionStorage.getItem(CTX_NOTES_KEY) || '[]'); sessionStorage.removeItem(CTX_NOTES_KEY); } catch (e) { a = []; }
+        if (!Array.isArray(a) || !a.length || document.querySelector('[data-ctx-notice]')) return;
+        const byBook = {};
+        a.forEach(x => { const k = x.book || '原帳本'; (byBook[k] = byBook[k] || []).push(ACTION_LABEL[x.action] || '其他操作'); });
+        const lines = Object.keys(byBook).map(b => `切換帳本或身分前，在「${b}」送出的 ${byBook[b].length} 項操作（${[...new Set(byBook[b])].join('、')}）結果未確認：可能已存進「${b}」，也可能沒有。請回到「${b}」核對。`);
+        const el = document.createElement('div');
+        el.dataset.ctxNotice = '1';
+        el.setAttribute('role', 'alert');
+        el.className = 'fixed left-4 right-4 top-4 z-[200] p-4 rounded-tile bg-white shadow-lg text-xs text-stone-700 leading-relaxed';
+        el.innerHTML = lines.map(l => `<p class="mb-2">${esc(l)}</p>`).join('') + '<div class="flex justify-end"><button type="button" class="tap44 px-3 text-[10px] font-bold text-pastel-accent">知道了</button></div>';
+        el.querySelector('button').onclick = () => el.remove();
+        document.body.appendChild(el);
+    }
+    /** r5（R4-F02）：畫面上「只存在記憶體」的使用者內容：送出失敗、又沒有存成待送資料（例如儲存空間不足）。
+        重新載入或關閉頁面都會讓它消失，所以自動重新載入要等它被處理（保存、複製或捨棄）。 */
+    function unsavedRows() {
+        return (STATE.transactions || []).filter(t => isTmpRow(t) && (t._unsaved || t._failed || t._queued || t._pending)
+            && t._payload && !(t._jobId && jobExists(t._jobId)));     // 送出中的新增已有預寫紀錄，不會帶 _payload
+    }
+    function unsavedText(rows) {
+        return rows.map(t => `${t.date || ''} ${t.entry_type || ''} ${t.category || ''} ${t.amount != null ? t.amount : ''} ${t.note || ''}`.replace(/\s+/g, ' ').trim()).join('\n');
+    }
+    function paintUnsavedBlock(n) {
+        let el = document.querySelector('[data-unsaved-block]');
+        if (!n) { if (el) el.remove(); return; }
+        if (el && el.dataset.n === String(n)) return;      // r6：筆數沒變就不重畫（避免按鈕在使用者點擊時被換掉）
+        if (!el) {
+            el = document.createElement('div');
+            el.dataset.unsavedBlock = '1';
+            el.setAttribute('role', 'alert');
+            el.className = 'fixed left-4 right-4 top-4 z-[200] p-4 rounded-tile bg-white shadow-lg text-xs text-stone-700 leading-relaxed';
+            document.body.appendChild(el);
+        }
+        el.dataset.n = String(n);
+        el.innerHTML = `<p class="mb-2">其他分頁已切換帳本或身分，但這個分頁還有 <b>${n}</b> 筆<b>尚未保存</b>的記帳（裝置儲存空間不足，還沒送出、也沒存在這台裝置）。</p>
+            <p class="mb-2 text-pastel-muted">請先釋放空間後在明細按「重新送出」（會存成原帳本的待送資料，不會送進別的帳本）；或複製內容、確定不要再捨棄。處理完這個分頁才會重新載入。</p>
+            <div class="flex justify-end gap-2">
+                <button type="button" data-unsaved-copy class="tap44 px-3 text-[10px] font-bold text-pastel-accent">複製內容</button>
+                <button type="button" data-unsaved-discard class="tap44 px-3 text-[10px] font-bold text-pastel-red">全部捨棄</button></div>`;
+        el.querySelector('[data-unsaved-copy]').onclick = async () => {
+            const txt = unsavedText(unsavedRows());
+            try { await navigator.clipboard.writeText(txt); toast('已複製'); } catch (e) { prompt('請手動複製以下內容', txt); }
+        };
+        el.querySelector('[data-unsaved-discard]').onclick = () => {
+            if (!confirm('要捨棄這些尚未保存的記帳嗎？捨棄後無法復原。')) return;
+            const ids = new Set(unsavedRows().map(t => t.txn_id));
+            STATE.transactions = STATE.transactions.filter(t => !ids.has(t.txn_id));
+            renderDataViews();
+        };
+    }
+    window.addEventListener('beforeunload', e => {
+        if (CONFIG.DEMO || !unsavedRows().length) return;
+        e.preventDefault(); e.returnValue = '';            // 有尚未保存的記帳：離開前讓瀏覽器提醒
+    });
+    function scheduleTabReload() {
+        if (_tabReload || CONFIG.DEMO) return;
+        try { toast(WRITES.inflight > 0 ? '帳本或登入身分已在其他分頁變更；送出中的資料有結果後，這個分頁會重新載入' : '帳本或登入身分已在其他分頁變更，這個分頁將重新載入', true); } catch (e) { }
+        const t0 = Date.now();
+        const tick = () => {
+            if (WRITES.inflight > 0 && Date.now() - t0 < TAB_RELOAD_MAX_WAIT) { _tabReload = setTimeout(tick, 300); return; }
+            // r5：有尚未保存的內容就不重新載入（沒有時間上限），直到使用者保存、複製或捨棄
+            const un = unsavedRows().length;
+            paintUnsavedBlock(un);
+            if (un) { _tabReload = setTimeout(tick, 500); return; }
+            WRITES.open.forEach(w => { if (w.action !== 'addTransaction') noteCtxWrite(w.action, w.book, true); });   // 等太久仍沒有結果
+            location.reload();
+        };
+        _tabReload = setTimeout(tick, 1500);
+    }
+    function ctxChanged() {
+        const e = new Error('帳本或登入身分已在其他分頁變更，這個請求沒有送出（或結果不套用）；這個分頁將重新載入');
+        e.code = 'CONTEXT_CHANGED';
+        TAB.verified = false;
+        scheduleTabReload();
+        return e;
+    }
+    window.addEventListener('storage', e => {
+        if (e.key !== null && !['api', 'fc', 'mid', 'tk'].includes(e.key)) return;
+        if (TAB.ctx && !tabOk()) { TAB.verified = false; scheduleTabReload(); }
+    });
+
+    /* ==========================================================
+       v6.25.0 開機快取（Stale-While-Revalidate）
+
+       開 App 時先用「上次同步的帳本」直接畫出主頁，同時在背景向後端重新讀取，
+       讀到後再無縫換上。目的是消滅開機的「連線中…」遮罩，不是取代後端：
+       ・快取只用來「顯示」。所有寫入照舊送後端、照舊由後端驗證，快取不會被當成寫入依據。
+       ・快取綁定「哪一本帳＋家庭代碼＋哪位成員」，三者任一不同就不用（換人、換帳本不會看到別人的資料）。
+       ・登出、更換後端、身分失效時一律清除。
+       ・本機尚未存進後端的列（送出失敗、離線暫存、同步中）不寫進快取；離線暫存本來就有自己的待送資料，開機時從那裡還原。
+       ・v6.25.0 r2（F02）：有寫入正在進行、或畫面上有「後端已有、但本機改到一半」的列時，一律不覆寫快取，
+         保留上一份。快取只在「完全等於某次後端回應」時才帶指紋（sig），否則下次重驗一定重畫。
+       ・超過大小上限就不快取（瀏覽器儲存空間約 5MB，與離線佇列、偏好設定共用）；寫入失敗（空間不足）也一樣不快取，照舊從後端讀取。
+       已知的取捨：快取存在這台裝置的瀏覽器裡，與 token、離線佇列同一個保護等級 ——
+       共用裝置的人打開 App 會看到上次的帳本，這點與 v6.24 以前「token 在就直接進入」相同。
+       ========================================================== */
+    var BOOT_CACHE_KEY = 'boot_cache_v1';
+    var BOOT_CACHE_SCHEMA = 1;
+    var BOOT_CACHE_MAX_CHARS = 2000000;                 // 200 萬字元（以 UTF-16 計約 4MB）；iOS Safari 整個網站約 5MB，留空間給離線佇列
+    var BOOT_CACHE_MAX_AGE = 30 * 86400000;             // 30 天沒同步過的快取不拿來顯示
+    var BOOT_STATE_KEYS = ['familyName', 'members', 'categories', 'tags', 'archivedItems', 'transactions', 'rules',
+        'budgets', 'intents', 'goals', 'achievements', 'cheers', 'memberStats', 'familyStats', 'streakSaves', 'poolInitial'];
+    var BOOT_DIAG = { cache: '', cacheChars: 0 };
+    function bootCacheOwner() { return [BACKEND.id || BACKEND.url || '', AUTH.familyCode, AUTH.memberId].join('|'); }
+    function bootCacheClear() { try { localStorage.removeItem(BOOT_CACHE_KEY); } catch (e) { } }
+    /** 本機建立、後端還沒有的列（tmp 開頭的編號）：不寫進快取 */
+    function isTmpRow(o) {
+        return !!o && typeof o === 'object' && ['txn_id', 'cheer_id', 'save_id'].some(k => String(o[k] || '').indexOf('tmp') === 0);
+    }
+    /** 後端已有、但本機正在修改（同步中／失敗／待送）的列。存在這種列時，STATE 不等於任何一次後端回應 */
+    function isDirtyRow(o) {
+        return !!o && typeof o === 'object' && !isTmpRow(o) && !!(o._pending || o._queued || o._failed);
+    }
+    /** 本機暫存列（相容舊名）：tmp 列，或帶著同步中／離線／失敗標記 */
+    function isLocalOnlyRow(o) { return isTmpRow(o) || isDirtyRow(o); }
+    function stateHasDirtyRow() {
+        return BOOT_STATE_KEYS.some(k => Array.isArray(STATE[k]) && STATE[k].some(isDirtyRow));
+    }
+    /** 去掉只存在記憶體的欄位（底線開頭：_new、_busy、_schedule…）與本機暫存列 */
+    function cacheClean(v) {
+        if (Array.isArray(v)) return v.filter(x => !isTmpRow(x)).map(cacheClean);
+        if (v && typeof v === 'object') {
+            const o = {};
+            Object.keys(v).forEach(k => { if (k.charAt(0) !== '_') o[k] = cacheClean(v[k]); });
+            return o;
+        }
+        return v;
+    }
+    /** sig：這份快取是否「原封不動等於某次後端回應」。一律由 currentSig() 決定，呼叫端不能指定：
+        本機寫入後（含寫入進行中）currentSig() 為空，下次重驗一定會重畫。
+        寫入進行中、或有後端列改到一半時不寫（回傳 false），保留上一份完整的快取。 */
+    function bootCacheWrite() {
+        if (!STATE.me || !AUTH.familyCode || !AUTH.memberId) return false;
+        if (!tabOk() && !CONFIG.DEMO) return false;     // r3：身分已在其他分頁改變，這個分頁的畫面不能寫成別人的快取
+        if (WRITES.inflight > 0 || stateHasDirtyRow()) { BOOT_DIAG.cacheSkip = (BOOT_DIAG.cacheSkip || 0) + 1; return false; }
+        const sig = currentSig();
+        try {
+            const data = {};
+            BOOT_STATE_KEYS.forEach(k => { data[k] = cacheClean(STATE[k]); });
+            const s = JSON.stringify({ schema: BOOT_CACHE_SCHEMA, owner: bootCacheOwner(), savedAt: Date.now(),
+                apiVersion: BACKEND_VERSION || '', sig: sig || '', syncedAt: LAST_SYNC_AT || 0, data });
+            BOOT_DIAG.cacheChars = s.length;
+            if (s.length > BOOT_CACHE_MAX_CHARS) { bootCacheClear(); BOOT_DIAG.cache = 'too_big'; return false; }
+            localStorage.setItem(BOOT_CACHE_KEY, s);
+            BOOT_DIAG.cache = 'ok';
+            return true;
+        } catch (e) {
+            bootCacheClear(); BOOT_DIAG.cache = 'write_failed';     // 多半是儲存空間滿了：寧可不快取，也不留半份
+            return false;
+        }
+    }
+    function bootCacheRead() {
+        let c;
+        try { c = JSON.parse(localStorage.getItem(BOOT_CACHE_KEY) || 'null'); } catch (e) { c = null; }
+        if (!c || c.schema !== BOOT_CACHE_SCHEMA || !c.data) return null;
+        if (c.owner !== bootCacheOwner()) return null;              // 別本帳、別的成員：不用
+        /* F09：新鮮度看「最後一次成功同步」的時間（syncedAt），不是寫進本機的時間（savedAt）——
+           離線開啟、切到背景都會重存，若看 savedAt，老資料可以無限延長。 */
+        const synced = Number(c.syncedAt) || 0;
+        if (!(synced > 0 && Date.now() - synced < BOOT_CACHE_MAX_AGE)) return null;
+        return c;
+    }
+    let _cacheTimer = null;
+    /** 本機寫入之後延遲存一份（寫入很密集時只存最後一次） */
+    function scheduleCacheWrite() {
+        clearTimeout(_cacheTimer);
+        _cacheTimer = setTimeout(() => { _cacheTimer = null; if (STATE.me) bootCacheWrite(); }, 1500);
+    }
+    /** 寫入追蹤：背景重驗用它判斷「這份後端快照是不是早於本機剛做的寫入」 */
+    const WRITES = { inflight: 0, epoch: 0, open: new Set() };   // r4：open＝送出中的寫入（重新載入前用來提示）
+
+    /* ---------- 開機量測 ----------
+       記下每次讀取帳本花了多久、伺服器端花了多久、資料多大，只存在這台裝置（最近 20 次）。
+       用途是讓「要不要做分頁載入、保溫排程有沒有用」由數據決定，而不是由推測決定。 */
+    var BOOT_METRIC_KEY = 'boot_metrics_v1';
+    function bootMetricPush(m) {
+        try {
+            const a = JSON.parse(localStorage.getItem(BOOT_METRIC_KEY) || '[]');
+            a.push(m);
+            localStorage.setItem(BOOT_METRIC_KEY, JSON.stringify(a.slice(-20)));
+        } catch (e) { }
+    }
+    function bootMetrics() { try { return JSON.parse(localStorage.getItem(BOOT_METRIC_KEY) || '[]'); } catch (e) { return []; } }
 
     /* GAS Web App 的 /exec 會 302 轉到 script.googleusercontent.com，
        回應較大時（例如單據影像）第一次常拿到 404 —— 這是已知的重導向抖動。
        因此對「唯讀」動作自動重試；寫入動作絕不重試，否則可能重複記帳。 */
-    const READ_ONLY = ['bootstrap', 'listMembers', 'listTransactions', 'getReceipt', 'ping', 'diagnose'];
+    /** 不需要身分的動作（登入動線）：不受分頁身分檢查 */
+    const PUBLIC_ACTIONS = ['ping', 'listMembers', 'claimMember', 'redeemLoginCode'];
+    const READ_ONLY = ['bootstrap', 'listMembers', 'listTransactions', 'getReceipt', 'ping', 'diagnose', 'loginStatus', 'previewRuleFund'];   // r6：loginStatus 只讀，不計入寫入追蹤
     /* ping 是「對一個全新部署發出的第一個請求」，正好是重導向抖動最容易發生的時刻，
        所以多給幾次。它是唯讀且冪等的，重試沒有任何副作用。 */
     const TRIES = { ping: 4 };
@@ -826,6 +1140,12 @@
         bootstrap: 'read', listTransactions: 'read', listMembers: 'read', getReceipt: 'read', ping: 'read', diagnose: 'read',
         addTransaction: 'opkey', updateTransaction: 'opkey', confirmReminder: 'opkey', skipReminder: 'opkey',
         settleIntent: 'opkey', closeGoal: 'opkey',
+        /* r6：登入相關動作明確列出分類（原本走「未列入＝不自動重送」的預設，結果相同，但契約要寫清楚）：
+           兌換登入碼、產生登入碼、讓成員登出都有副作用 → none（不自動重送；兌換的回應遺失由同一客戶端隨機值安全補發）；
+           登入狀態只讀 → read */
+        redeemLoginCode: 'none', issueLoginCode: 'none', revokeMemberLogin: 'none', loginStatus: 'read',
+        /* r8（R7-F01）：付款來源的歷史更正。預覽只讀；套用帶操作鍵，後端以操作紀錄去重，回應遺失可安全重送 */
+        previewRuleFund: 'read', applyRuleFund: 'opkey',
         deleteGoal: 'state'
         /* RC3-03：deleteRule 曾列為 state，但 saveRule update 可對已刪除規則寫回「啟用」，
            因此「刪除」不是不可反轉的終態：舊的 delete 重試會覆蓋另一裝置較新的排程變更。
@@ -838,8 +1158,34 @@
         return RETRY_CLASS[action] || 'none';
     }
     const api = {
+        /* v6.25.0：外層只負責寫入追蹤，實際送出邏輯在 _send（與 v6.24.0 的 call 相同）。
+           讀取動作（含 ping、listMembers）不計入；登入、寫入一律計入。
+           r2（F02）：寫入「開始」時就讓指紋失效（epoch++），不是等寫入結束 ——
+           否則寫入進行中離開 App，快取會帶著舊指紋、內容卻少了改到一半的那一列。 */
         async call(action, payload = {}) {
+            /* r3：固定這次邏輯請求的目的地與身分（含所有自動重試）。需要身分的動作，分頁身分必須仍與 localStorage 一致。 */
+            const pin = { url: CONFIG.API_URL, fc: AUTH.familyCode, mid: AUTH.memberId, tk: AUTH.authToken, key: authCtxKey(),
+                guard: !PUBLIC_ACTIONS.includes(action) && !CONFIG.DEMO };
+            if (pin.guard && !(TAB.ctx && TAB.ctx === pin.key)) throw ctxChanged();
+            const isWrite = !READ_ONLY.includes(action);
+            const w = { action, book: STATE.familyName || '' };
+            if (isWrite) { WRITES.inflight++; WRITES.epoch++; WRITES.open.add(w); }
+            try { return await this._send(action, payload, pin); }
+            catch (e) {
+                /* r4：已送出、但結果因身分改變而沒有套用的寫入（新增記帳另有待送資料，不在此列）→ 重新載入後提示核對 */
+                if (isWrite && e.code === 'CONTEXT_CHANGED' && pin.sent && action !== 'addTransaction') noteCtxWrite(action, w.book);
+                throw e;
+            }
+            finally {
+                if (isWrite) {
+                    WRITES.inflight--; WRITES.epoch++; WRITES.open.delete(w);
+                    if (action !== 'claimMember' && action !== 'redeemLoginCode') scheduleCacheWrite();
+                }
+            }
+        },
+        async _send(action, payload = {}, pin) {
             if (CONFIG.DEMO) return DEMO_API(action, payload);
+            pin = pin || { url: CONFIG.API_URL, fc: AUTH.familyCode, mid: AUTH.memberId, tk: AUTH.authToken, key: authCtxKey(), guard: false };
             /* rc3（R3）：傳輸層操作鍵。一次 api.call 就是一個邏輯操作 —— key 在「重試迴圈之外」產生一次，
                回應遺失後的自動重送沿用同一 key，後端據此回傳同一結果，而不是再建立一條規則。
                呼叫端若已帶 op_key（使用者層級的穩定鍵）則沿用。 */
@@ -851,16 +1197,28 @@
             let lastErr;
             for (let n = 0; n < tries; n++) {
                 if (n) await new Promise(z => setTimeout(z, 250 * n));   // 250ms、500ms
+                // r3：每次送出（含重試）前核對身分；變了就停止，不換目的地重送
+                if (pin.guard && authCtxKey() !== pin.key) throw ctxChanged();
                 try {
-                    if (!CONFIG.API_URL) throw new Error('尚未設定後端網址');
-                    const res = await fetch(CONFIG.API_URL, {
+                    if (!pin.url) throw new Error('尚未設定後端網址');
+                    const t0 = Date.now();
+                    pin.sent = true;
+                    const res = await fetch(pin.url, {
                         method: 'POST',
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                        body: JSON.stringify({ action, familyCode: AUTH.familyCode, memberId: AUTH.memberId, authToken: AUTH.authToken, ...payload }),
+                        body: JSON.stringify({ action, familyCode: pin.fc, memberId: pin.mid, authToken: pin.tk, clientVersion: CONFIG.BUILD, ...payload }),
                         redirect: 'follow'
                     });
                     if (!res.ok) throw new Error(`連線失敗 (HTTP ${res.status})`);
-                    const j = await res.json();
+                    // 先取文字再解析：開機量測需要知道回應大小；解析失敗丟出的 SyntaxError 與 res.json() 相同
+                    const txt = await res.text();
+                    const j = JSON.parse(txt);
+                    // r3：回應晚到、身分已在其他分頁改變：結果不套用（寫入若已提交，之後以同一 client_id／op_key 在原身分核對）
+                    if (pin.guard && authCtxKey() !== pin.key) throw ctxChanged();
+                    if (action === 'bootstrap' && j.ok && j.data) {
+                        bootMetricPush({ at: Date.now(), ms: Date.now() - t0, chars: txt.length,
+                            serverMs: Number(j.data.serverMs) || null, rows: (j.data.transactions || []).length, retry: n });
+                    }
                     if (!j.ok) {
                         // 把後端的錯誤碼掛在例外上，呼叫端才分得出「可重試」與「白試」
                         const err = new Error(j.error || '後端錯誤');
@@ -1611,19 +1969,44 @@ function hexA(hex, a) {
     /* ==========================================================
        開機
        ========================================================== */
-    /* 安裝連結：?api=<exec網址或ID>&code=XXXXXXXX
-       套用後把網址列清乾淨 —— 免得使用者把帶著代碼的連結分享出去。 */
-    function applyInstallLink() {
+    /* 安裝／邀請連結
+       v6.25.0：#setup=<部署ID>.<家庭代碼>（邀請卡、複製邀請連結產生的格式）
+       舊格式 ?api=<exec網址或ID>&code=XXXXXXXX 仍然收。
+       讀到就先把網址列清乾淨 —— 免得使用者把帶著代碼的連結再分享出去。
+       v6.24 以前讀到就直接覆寫後端與代碼；已登入的裝置點到「別本帳」的連結，會變成新後端配舊身分。
+       現在先讀、再依目前登入狀態決定（routeInstallLink）。 */
+    function readInstallLink() {
         const q = new URLSearchParams(location.search + '&' + location.hash.replace(/^#/, ''));
-        const api = q.get('api'), code = (q.get('code') || '').toUpperCase();
-        if (!api && !code) return false;
-        let applied = false;
-        const p = api ? parseInstall(api) : null;
-        if (p) { BACKEND.url = p.url; applied = true; }
-        const c = (p && p.code) || (/^[A-Z0-9]{8}$/.test(code) ? code : '');
-        if (c) { AUTH.familyCode = c; applied = true; }
+        const setup = q.get('setup'), api = q.get('api'), code = (q.get('code') || '').toUpperCase();
+        if (!setup && !api && !code) return null;
         try { history.replaceState(null, '', location.pathname); } catch (e) { }
-        return applied;
+        if (setup) {
+            const p = parseInstall(setup);
+            return p && !p.dev && p.code ? { url: p.url, code: p.code, kind: 'setup' } : { bad: true };
+        }
+        const p = api ? parseInstall(api) : null;
+        if (p && p.dev) return { bad: true };
+        return { url: p ? p.url : '', code: (p && p.code) || (/^[A-Z0-9]{8}$/.test(code) ? code : ''), kind: 'legacy' };
+    }
+    /** 回傳 'invite'（走邀請加入）、'legacy'（舊連結已套用，進代碼畫面）或 'ignore'（照常開機） */
+    function routeInstallLink(link) {
+        const loggedIn = !!(AUTH.familyCode && AUTH.memberId);
+        const sameBook = (link.url || BACKEND.url) === BACKEND.url && (!link.code || link.code === AUTH.familyCode);
+        if (loggedIn) {
+            if (sameBook) { setTimeout(() => toast('你已經在這本帳裡了'), 900); return 'ignore'; }
+            if (!confirm('這是另一本帳的邀請連結。\n\n要登出目前的帳本並加入新的帳本嗎？\n（目前帳本的資料仍留在原本的 Google 試算表，不會被刪除，之後可以用安裝碼連回來）')) return 'ignore';
+            AUTH.clear();
+        }
+        if (link.kind === 'setup') return 'invite';
+        if (link.url) BACKEND.url = link.url;
+        if (link.code) AUTH.familyCode = link.code;
+        return 'legacy';
+    }
+    /** iPhone／iPad 在 Safari（或其他瀏覽器分頁）裡開啟，而不是從主畫面 App 開啟 */
+    function isIOSBrowserTab() {
+        const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        const standalone = !!window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+        return ios && !standalone;
     }
 
     /** 開機失敗時，只有「代碼真的錯」或「這個成員已不存在」才算身分驗證失敗，
@@ -1647,11 +2030,29 @@ function hexA(hex, a) {
     async function bootstrap() {
         document.getElementById('appVersion').innerText = CONFIG.VERSION;
         showSplashRetry(false);
-        const fromLink = applyInstallLink();
-        if (AUTH.familyCode && AUTH.memberId) {
+        /* r2：任何身分變更（邀請連結、登出、重新登入）之前，先把升級前的舊佇列搬進隔離區，
+           候選擁有者記為「現在這台裝置登入的人」。 */
+        migrateLegacyQueue();
+        const link = readInstallLink();
+        let route = 'ignore';
+        if (link && link.bad) setTimeout(() => toast('這個邀請連結不完整，請向家人重新索取', true), 900);
+        else if (link) route = routeInstallLink(link);
+        if (route === 'invite') return startInvite(link);
+        const fromLink = route === 'legacy';
+        /* r2：沒有 token 的舊裝置（v6.22 以前登入、或 migration 期間只存 memberId）不再能使用 ——
+           後端已關閉「只憑 memberId」的過渡路徑。直接帶到登入碼畫面，不畫快取、不送任何請求。 */
+        if (AUTH.familyCode && AUTH.memberId && !AUTH.hasToken && !fromLink) {
+            bootCacheClear();
+            return enterLoginStep('這個版本改用登入碼登入，請向戶長索取登入碼');
+        }
+        if (AUTH.familyCode && AUTH.memberId && AUTH.hasToken) {
+            tabBind();                                  // r3：這個分頁從此以這個身分運作
+            /* v6.25.0：有這個身分的快取就先畫出來，背景再向後端重新讀取 */
+            const cached = bootCacheRead();
+            if (cached && enterFromCache(cached)) { revalidate({ boot: true }); return; }
             try { await loadAll(); return enterApp(); }
             catch (e) {
-                if (isAuthFailure(e)) { AUTH.clear(); }
+                if (isAuthFailure(e)) { e.code === 'BAD_CODE' ? AUTH.clear() : AUTH.clearIdentity(); }
                 else {
                     // 代碼保留，停在 splash 畫面讓使用者原地重試，不進輸入代碼畫面
                     showSplashRetry(true, e.code === 'OFFLINE' ? '連線不穩，請確認網路後重試' : '暫時連不上，請稍後重試');
@@ -1660,10 +2061,284 @@ function hexA(hex, a) {
             }
         }
         if (!CONFIG.API_URL && !CONFIG.DEMO) return showGate(0);
+        // 有家庭代碼、沒有身分（被登出、token 失效、上次登入沒完成）：直接到登入碼畫面
+        if (AUTH.familyCode && !AUTH.memberId && !fromLink) return enterLoginStep('請輸入戶長給你的登入碼');
         // 連結帶了代碼、還沒選成員：填好代碼，讓 paintOtp 自動送出（不要再手動呼叫一次）
         if (fromLink && AUTH.familyCode) document.getElementById('gateCode').value = AUTH.familyCode;
         showGate(1);
     }
+
+    /* ==========================================================
+       v6.25.0 邀請加入
+       連結只帶「哪一本帳＋家庭代碼」。身分（token）一律在這台裝置上兌換登入碼時才由後端發出。
+       ========================================================== */
+    let _invite = null;
+    function startInvite(link) {
+        AUTH.clear();                                   // 這台裝置沒有登入（或已同意登出），不留舊身分的任何東西
+        BACKEND.url = link.url;
+        AUTH.familyCode = link.code;
+        _invite = { url: link.url, code: link.code };
+        /* iPhone 的主畫面 App 與 Safari 儲存空間分開：在 Safari 用掉登入碼，主畫面 App 就需要戶長再產生一組。
+           所以 Safari 裡先引導加入主畫面，不先登入。 */
+        if (isIOSBrowserTab()) return showInstallFirst();
+        return joinByInvite();
+    }
+    function showInstallFirst() {
+        const box = document.getElementById('gateStep3');
+        if (box) box.querySelector('#gateInstallCopy').innerHTML = `<i class="fa-solid fa-copy mr-1.5"></i>複製邀請碼`;
+        showGate(3);
+    }
+    async function copyInviteForHomeScreen() {
+        const code = _invite ? `${(EXEC_RE.exec(_invite.url) || [])[1] || ''}.${_invite.code}` : installCode();
+        buzz();
+        try {
+            await navigator.clipboard.writeText(code);
+            const b = document.getElementById('gateInstallCopy');
+            if (b) b.innerHTML = `<i class="fa-solid fa-check mr-1.5"></i>已複製，接著加入主畫面`;
+            gateSay('複製好了！接著點 Safari 的「分享」→「加入主畫面」');
+        } catch (e) { prompt('複製這段邀請碼：', code); }
+    }
+    async function joinByInvite() {
+        document.getElementById('gateError').classList.add('hidden');
+        document.getElementById('gateScreen').classList.add('js-hide');
+        document.getElementById('splash').classList.remove('js-hide');
+        showSplashRetry(false);
+        document.getElementById('splashMsg').innerText = '正在連到邀請的帳本…';
+        try {
+            const p = await api.call('ping');
+            BACKEND_VERSION = p.apiVersion || '';
+            if (!p.ready) throw new Error('這本帳還沒初始化完成，請戶長在 Google 試算表執行「① 初始化 / 升級系統」。');
+            const d = await api.call('listMembers');
+            STATE.familyName = d.familyName;
+            enterLoginStep(`歡迎加入「${STATE.familyName || '家庭記帳'}」！請輸入戶長給你的登入碼`);
+        } catch (e) {
+            const badCode = e.code === 'BAD_CODE';
+            if (badCode) localStorage.removeItem('fc');
+            _otpAuto = true;                            // 不要自動重送；讓使用者看完訊息再決定
+            if (!badCode) document.getElementById('gateCode').value = AUTH.familyCode;
+            showGate(1);
+            gateSay(badCode ? '這個邀請好像過期了' : '連不上邀請的帳本');
+            showGateError(badCode ? '這個邀請已失效（家庭代碼可能已更換），請向家人索取新的邀請。'
+                : diagnoseConnError(e, BACKEND.url));
+        }
+    }
+    /* ==========================================================
+       v6.25.0 開機快取：套用、重驗
+       ========================================================== */
+    var LAST_SYNC_AT = 0, LAST_SIG = '', LAST_SIG_EPOCH = -1;
+    /** 後端回應的指紋（去掉每次都不同的耗時欄位）。只用來判斷「跟上次一模一樣、不必重畫」。 */
+    function bootSig(d) {
+        const rest = Object.assign({}, d); delete rest.serverMs; delete rest.generated;
+        const s = JSON.stringify(rest);
+        let h = 0x811c9dc5;
+        for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+        return s.length + ':' + h.toString(16);
+    }
+    /** 目前 STATE 是否仍等於最後一次後端回應（中間沒有本機寫入） */
+    const currentSig = () => (WRITES.epoch === LAST_SIG_EPOCH ? LAST_SIG : '');
+    /** 把一份帳本資料（後端回應或快取）放進 STATE。這個身分不在名單裡就回 false，且 STATE 不變。
+        本機還沒存進後端的列（送出失敗、離線暫存、同步中）保留；後端已有同 client_id 的不保留，避免重複。 */
+    function applyBootstrap(d) {
+        if (!d || !Array.isArray(d.members) || !d.members.some(m => m.member_id === AUTH.memberId)) return false;
+        const serverTx = Array.isArray(d.transactions) ? d.transactions : [];
+        const cids = new Set(serverTx.map(t => String(t.client_id || '')).filter(Boolean));
+        const keep = (STATE.transactions || []).filter(t => isLocalOnlyRow(t) &&
+            String(t.txn_id || '').indexOf('tmp_') === 0 && !(t.client_id && cids.has(String(t.client_id))));
+        Object.assign(STATE, {
+            familyName: d.familyName, members: d.members, categories: d.categories, tags: d.tags,
+            archivedItems: d.archivedItems || [], transactions: serverTx.concat(keep), rules: d.rules || [],
+            budgets: d.budgets || [], intents: d.intents || [], goals: d.goals || [], achievements: d.achievements || [],
+            cheers: d.cheers || [], memberStats: d.memberStats || {}, familyStats: d.familyStats || {},
+            streakSaves: d.streakSaves || [], poolInitial: d.poolInitial
+        });
+        normalizeState();
+        STATE.me = STATE.members.find(m => m.member_id === AUTH.memberId);
+        restoreQueuedRows();                            // F10：目前這個人的離線待送資料還原成明細上的暫存列
+        return true;
+    }
+    /** 從後端拿到資料之後的共同收尾：版本、同步時間、指紋、寫入快取、補記提示 */
+    function afterNetworkApply(d, sig) {
+        if (d.apiVersion) BACKEND_VERSION = d.apiVersion;
+        LAST_SYNC_AT = Date.now();
+        LAST_SIG = sig || bootSig(d); LAST_SIG_EPOCH = WRITES.epoch;
+        if (d.bookId && tabOk()) { AUTH.bookId = d.bookId; if (TAB.owner) TAB.owner.book = d.bookId; }
+        const firstVerify = !SESSION.verified;
+        SESSION.verified = true;                        // 後端接受了這組 token：之後才補送離線資料
+        bootCacheWrite();
+        if (firstVerify) setTimeout(() => syncOfflineQueue(true), 400);
+        else kickSync('network');                      // r5（R4-F01）：讀取帳本成功＝後端可達：有可重試的待送就一併送出
+        if (d.generated > 0) setTimeout(() => toast(`已自動補記 ${d.generated} 筆固定收支`), 800);
+    }
+    function enterFromCache(c) {
+        try {
+            if (!applyBootstrap(c.data)) return false;
+            if (c.apiVersion) BACKEND_VERSION = c.apiVersion;
+            LAST_SYNC_AT = Number(c.syncedAt) || 0;
+            LAST_SIG = c.sig || ''; LAST_SIG_EPOCH = c.sig ? WRITES.epoch : -1;
+            BOOT_DIAG.bootFrom = 'cache';
+            enterApp();
+            return true;
+        } catch (e) {
+            // 快取內容壞掉（例如舊版殘留）：丟掉，改走一般開機
+            bootCacheClear(); BOOT_DIAG.cache = 'corrupt';
+            STATE.me = null; STATE.transactions = [];
+            return false;
+        }
+    }
+    function renderAfterSync() {
+        const n = document.getElementById('displayUserName');
+        if (n && STATE.me) n.innerText = STATE.me.nickname;
+        buildMemoIndex();
+        renderDataViews(); renderSettings();
+    }
+    function writesIdle(maxMs) {
+        const until = Date.now() + (maxMs || 10000);
+        return new Promise(res => {
+            const tick = () => (!WRITES.inflight || Date.now() > until) ? res() : setTimeout(tick, 150);
+            tick();
+        });
+    }
+    /** 身分已失效（家庭代碼更換、token 被撤銷、成員被移除）：清掉快取與登入資訊，回到加入畫面 */
+    function handleAuthLost(e) {
+        const kept = jobsMine().length > 0;             // 先算：清掉身分之後就不是「我的」了
+        // 家庭代碼錯 → 全清（回到輸入代碼）；token 失效 → 只清身分（家庭代碼留著，直接到登入碼畫面）。離線待送資料都不刪
+        if (e && e.code === 'BAD_CODE') AUTH.clear(); else AUTH.clearIdentity();
+        toast((e && e.code === 'BAD_CODE' ? '家庭代碼已更換，請重新輸入新的代碼' : '登入狀態已失效，請重新登入')
+            + (kept ? '（還沒送出的紀錄已保留，重新登入後會補送）' : ''), true);
+        setTimeout(() => location.reload(), 1600);
+    }
+    let _reval = null, _revalTimer = null;
+    /** 背景重新讀取帳本。同一時間只跑一個；呼叫端拿到 { ok, error }。
+        關鍵規則：請求送出到回來之間，只要這台裝置有任何寫入開始或完成，這份回應就可能「早於」那筆寫入，
+        直接套用會把剛記的帳從畫面上洗掉（或把剛改的改回去）—— 所以丟掉重抓，最多三次。 */
+    function revalidate(opts) {
+        opts = opts || {};
+        if (_reval) return _reval;
+        clearTimeout(_revalTimer); _revalTimer = null;
+        _reval = (async () => {
+            syncPill('syncing');
+            try {
+                for (let attempt = 0; attempt < 3; attempt++) {
+                    await writesIdle(10000);
+                    const ep = WRITES.epoch;
+                    const d = await api.call('bootstrap');
+                    if (WRITES.inflight || WRITES.epoch !== ep) continue;
+                    const sig = bootSig(d);
+                    if (sig === currentSig() && STATE.me) {
+                        afterNetworkApply(d, sig);          // 內容沒變：只更新同步時間與快取，不重畫
+                    } else {
+                        if (!applyBootstrap(d)) throw Object.assign(new Error('找不到此成員，請重新選擇'), { code: 'NEED_AUTH' });
+                        afterNetworkApply(d, sig);
+                        renderAfterSync();
+                    }
+                    syncPill('ok');
+                    return { ok: true };
+                }
+                syncPill('stale');
+                _revalTimer = setTimeout(() => revalidate(), 8000);
+                ensureSyncProgress();
+                return { ok: false, error: new Error('資料正在寫入，稍後會再同步') };
+            } catch (e) {
+                if (isAuthFailure(e)) { handleAuthLost(e); return { ok: false, error: e, auth: true }; }
+                syncPill('offline');
+                ensureSyncProgress();                       // r7：讀取暫時失敗，仍保有補送排程
+                return { ok: false, error: e };
+            }
+        })().finally(() => { _reval = null; });
+        return _reval;
+    }
+    /* ---------- 同步狀態膠囊（標題列下緣） ----------
+       同步中：超過 0.7 秒才出現，避免每次開 App 都閃一下。
+       離線／未同步：留著，說明畫面上是什麼時候的資料；點一下重試。 */
+    let _pillTimer = null;
+    function fmtSyncTime(ms) {
+        if (!ms) return '';
+        const d = new Date(ms), t = `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+        const iso = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+        return iso === todayISO() ? `今天 ${t}` : `${d.getMonth() + 1}/${d.getDate()} ${t}`;
+    }
+    function syncPill(state) {
+        const el = document.getElementById('syncPill');
+        if (!el) return;
+        clearTimeout(_pillTimer);
+        el.dataset.state = state;
+        if (state === 'syncing') {
+            _pillTimer = setTimeout(() => {
+                el.innerHTML = `<i class="fa-solid fa-rotate spin-slow mr-1"></i>同步中…`;
+                el.classList.remove('js-hide');
+            }, 700);
+            return;
+        }
+        if (state === 'ok') {
+            /* r5（R4-F01）：「讀取帳本成功」不等於「本機全部送出」。還有送出中、待送、被拒絕或尚未保存的內容時，
+               膠囊改為提示筆數（點一下就同步），不能讓讀取成功的狀態看起來像全部已保存。 */
+            const n = localUnsent();
+            if (!n.total) { el.classList.add('js-hide'); return; }
+            el.dataset.state = 'pending';
+            el.innerHTML = `<i class="fa-solid fa-cloud-arrow-up mr-1"></i>帳本已讀取 · 這台裝置還有 ${n.total} 筆尚未送出${n.rejected ? `（其中 ${n.rejected} 筆被拒絕，待處理）` : ''}`;
+            el.classList.remove('js-hide');
+            return;
+        }
+        el.innerHTML = `<i class="fa-solid fa-cloud mr-1"></i>${state === 'offline' ? '離線中' : '尚未同步'} · ${LAST_SYNC_AT ? `顯示 ${esc(fmtSyncTime(LAST_SYNC_AT))} 的資料` : '顯示上次同步的資料'}`;
+        el.classList.remove('js-hide');
+    }
+    async function syncPillTap() { return manualSync(); }
+    /** r5：本機尚未送進後端的筆數（這個身分的待送＋送出中＋被拒絕＋尚未保存）。別人的資料不計、也不顯示筆數。 */
+    function localUnsent() {
+        let mine = [];
+        try { mine = jobsMine().filter(j => j.kind === 'txn' || j.kind === 'rule'); } catch (e) { mine = []; }
+        const un = unsavedRows().length;
+        return { total: mine.length + un, rejected: mine.filter(j => j.state === 'rejected').length };
+    }
+    /* ---------- r5（R4-F01）：自動補送的觸發與退避 ----------
+       觸發：開 App 首次確認身分、讀取帳本成功（含背景重驗與手動同步）、回到前景、瀏覽器恢復連線、
+       記帳時暫存成待送之後；只在這個分頁的身分已確認時，只送「這個身分、可重試」的資料。
+       被拒絕、需要確認歸屬（升級前的舊資料）、其他帳本或其他成員的資料一律不自動送。
+       失敗後以退避排程重試（15 秒起、加倍、最長 5 分鐘、最多 12 次），App 在背景時不打 API；
+       到上限就停，等下一次開 App／回前景／恢復連線／手動同步再重新計算。
+       App 被關閉或被系統暫停時不會在背景上傳（沒有背景同步機制）：下次開啟並確認身分後才補送。 */
+    const SYNC_RETRY = { base: 15000, max: 300000, maxTries: 12 };
+    let _syncRetryTimer = null, _syncRetryN = 0, _lastSyncTry = 0;
+    function retryableMine() {
+        try { return jobsMineIdle().filter(j => (j.kind === 'txn' || j.kind === 'rule') && j.state === 'pending'); } catch (e) { return []; }
+    }
+    function kickSync(reason) {
+        if (!SESSION.verified || !STATE.me || _syncing || !retryableMine().length) return;
+        // 「讀取成功」會在補送後的重新讀取時再觸發一次：3 秒內不重複（避免補送↔讀取來回）。回前景、退避重試、手動不受此限
+        if (reason === 'network' && Date.now() - _lastSyncTry < 3000) return ensureSyncProgress();
+        setTimeout(() => syncOfflineQueue(true), 300);
+    }
+    /** r7（R6-F01）：補送排程的不變式——這個分頁的身分已確認、有自己可重試的待送時，
+        一定是「正在補送」或「已排好下一次」其中之一。任何會取消排程或略過補送的路徑（回前景重設、讀取失敗、去重略過）
+        結束時都呼叫這裡補上；重試額度用完、身分未確認或失效、沒有可重試的待送（被拒絕的不算）時不排。
+        r6 回前景時先取消舊排程，若接著讀取帳本暫時失敗，就沒有任何排程，API 恢復後也不會自動補送。 */
+    function ensureSyncProgress() {
+        if (!SESSION.verified || !STATE.me || _syncing || _syncRetryTimer) return;
+        if (!retryableMine().length) return;
+        scheduleSyncRetry(true);
+    }
+    function scheduleSyncRetry(stillPending) {
+        clearTimeout(_syncRetryTimer); _syncRetryTimer = null;
+        if (!stillPending) { _syncRetryN = 0; return; }
+        if (_syncRetryN >= SYNC_RETRY.maxTries) return;
+        const wait = Math.min(SYNC_RETRY.max, SYNC_RETRY.base * Math.pow(2, _syncRetryN++));
+        _syncRetryTimer = setTimeout(() => { _syncRetryTimer = null; if (!document.hidden) kickSync('retry'); }, wait);
+    }
+    function ensureSyncRetry() { if (!_syncRetryTimer) scheduleSyncRetry(true); }
+    /** 重新計算重試額度（回到前景、恢復連線、手動同步）：歸零並取消已排的下一次，避免重複排程 */
+    function resetSyncRetry() { _syncRetryN = 0; clearTimeout(_syncRetryTimer); _syncRetryTimer = null; }
+    /** 使用者按「同步」：讀回帳本，並把這個身分可重試的待送一起送出 */
+    async function manualSync() {
+        resetSyncRetry();
+        await refreshData();
+        if (SESSION.verified && retryableMine().length) await syncOfflineQueue(false);
+        syncPillRefresh();
+    }
+    function syncPillRefresh() {
+        const el = document.getElementById('syncPill');
+        if (el && (el.dataset.state === 'ok' || el.dataset.state === 'pending')) syncPill('ok');
+    }
+
     function paintOtp() {
         const el = document.getElementById('gateCode'); if (!el) return;
         const v = el.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
@@ -1682,11 +2357,15 @@ function hexA(hex, a) {
     let _otpAuto = false;
     async function pasteCode() {
         const el = document.getElementById('gateCode');
-        try {
-            const txt = await navigator.clipboard.readText();
-            el.value = String(txt || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
-            paintOtp(); buzz();
-        } catch (e) { el.focus(); toast('請長按方格選擇「貼上」', true); }
+        let txt;
+        try { txt = await navigator.clipboard.readText(); }
+        catch (e) { el.focus(); toast('請長按方格選擇「貼上」', true); return; }
+        /* v6.25.0：剪貼簿是邀請碼（部署ID.代碼）或整段邀請連結 → 直接走邀請加入。
+           iPhone 從 Safari 加入主畫面後，靠的就是這一步把邀請帶進主畫面 App。 */
+        const inv = parseInstall(txt);
+        if (inv && !inv.dev && inv.code) { buzz(); return startInvite({ url: inv.url, code: inv.code, kind: 'setup' }); }
+        el.value = String(txt || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+        paintOtp(); buzz();
     }
     function clearCode() {
         const el = document.getElementById('gateCode');
@@ -1706,12 +2385,14 @@ function hexA(hex, a) {
         gateStep(step == null ? (CONFIG.API_URL ? 1 : 0) : step);
         document.getElementById('gateScreen').classList.remove('js-hide');
         document.getElementById('splash').classList.add('js-hide');
+        showCtxNotes();
     }
     function gateStep(n) {
-        [0, 1, 2].forEach(i => document.getElementById('gateStep' + i).classList.toggle('hidden', i !== n));
+        [0, 1, 2, 3].forEach(i => document.getElementById('gateStep' + i)?.classList.toggle('hidden', i !== n));
         gateSay(n === 0 ? '先連上你的帳本，貼上安裝碼吧！'
             : n === 1 ? '請輸入 8 位家庭代碼，跟家人連線吧！'
-                : '太好了，你是哪一位呢？');
+                : n === 2 ? '請輸入戶長給你的登入碼'
+                    : '先把家庭記帳加到主畫面吧！');
     }
     function showGateError(m) { const e = document.getElementById('gateError'); e.innerText = m; e.classList.remove('hidden'); }
 
@@ -1774,55 +2455,114 @@ function hexA(hex, a) {
         try {
             AUTH.familyCode = code;
             const d = await api.call('listMembers');
-            STATE.members = d.members; STATE.familyName = d.familyName;
-            normalizeState();
-            renderMemberPicker();
-            document.getElementById('gateError').classList.add('hidden');
-            gateStep(2);
-            if (backendOutdated()) showGateError(outdatedMsg());
+            STATE.familyName = d.familyName;
+            enterLoginStep('請輸入戶長給你的登入碼');
         } catch (e) { AUTH.clear(); _otpAuto = false; gateSay('這組代碼好像不對，再確認一次？'); showGateError(e.message); }
         finally { b.disabled = false; b.innerText = '下一步'; }
     }
 
-    function renderMemberPicker() {
-        document.getElementById('memberPicker').innerHTML = STATE.members
-            .filter(m => m.member_id !== 'family_pool' && m.status !== '停用')
-            .map(m => {
-                const i = getLevelInfo(m.streak_days);
-                return `<button onclick="pickMember('${esc(m.member_id)}')" class="flex flex-col items-center gap-2 p-2">
-                    <div class="w-14 h-14 rounded-full border-[3px] ${i.border} ${i.bg} overflow-hidden flex items-center justify-center text-2xl">${avatarInner(m.avatar_emoji)}</div>
-                    <span class="text-xs font-bold text-stone-700 truncate w-full text-center">${esc(m.nickname)}</span></button>`;
-            }).join('');
+    /* ==========================================================
+       v6.25.0 r2 登入碼
+       登入碼由戶長產生、只能用一次，後端兌換時發 token。登入碼本身決定是哪一位成員，畫面不列名單。
+       回應遺失：同一組碼重試時沿用同一個客戶端隨機值（login_pending），後端可在 10 分鐘內補發；
+       換一組碼、換帳本或超過 15 分鐘就重新產生隨機值。token 只存 localStorage，絕不放進網址。
+       ========================================================== */
+    const LOGIN_PENDING_KEY = 'login_pending';
+    const LOGIN_FINAL_CODES = ['LOGIN_CODE_INVALID', 'LOGIN_CODE_EXPIRED', 'LOGIN_CODE_USED', 'LOGIN_CODE_REVOKED', 'FORBIDDEN', 'NOT_FOUND', 'BAD_REQUEST'];
+    function normLoginInput(v) { return String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10); }
+    function randomNonce() {
+        const a = new Uint8Array(24);
+        (window.crypto || window.msCrypto).getRandomValues(a);
+        return Array.from(a, b => b.toString(16).padStart(2, '0')).join('');
     }
-
-    async function pickMember(id) {
-        AUTH.memberId = id;
-        const picked = STATE.members.find(m => m.member_id === id);
-        document.getElementById('gateStep2').classList.add('hidden');
-        /* 認領身分並取得 token。這是整個登入動線裡唯一會拿到 token 的地方，
-           之後每個請求都靠它證明身分。 */
-        try {
-            const d = await api.call('claimMember', { memberId: id });
-            if (d && d.authToken) AUTH.authToken = d.authToken;
-        } catch (e) {
-            document.getElementById('gateStep2').classList.remove('hidden');
-            if (e.code === 'RECLAIM_BLOCKED') {
-                gateSay('這個身分已經在別的裝置上使用了');
-                return showGateError(e.message);
+    function paintLoginCode() {
+        const el = document.getElementById('gateLogin'); if (!el) return;
+        const v = normLoginInput(el.value);
+        const shown = v.length > 5 ? v.slice(0, 5) + '-' + v.slice(5) : v;
+        if (el.value !== shown) el.value = shown;
+    }
+    async function pasteLoginCode() {
+        const el = document.getElementById('gateLogin');
+        try { el.value = await navigator.clipboard.readText() || ''; paintLoginCode(); buzz(); }
+        catch (e) { el.focus(); toast('請長按輸入框選擇「貼上」', true); }
+    }
+    /** 進入登入碼畫面。順便確認後端版本：6.25.0 以前的後端沒有登入碼，直接說清楚，不讓使用者白試。 */
+    function enterLoginStep(msg) {
+        showGate(2);
+        gateSay(msg || '請輸入戶長給你的登入碼');
+        const el = document.getElementById('gateLogin'); if (el) el.value = '';
+        api.call('ping').then(p => {
+            BACKEND_VERSION = p.apiVersion || '';
+            if (verLt(BACKEND_VERSION, CONFIG.MIN_LOGIN_BACKEND)) {
+                showGateError(`這本帳的後端是 ${BACKEND_VERSION || '舊版'}，還不支援登入碼。請戶長先把 Google 試算表的 Code.gs 更新到 ${CONFIG.MIN_LOGIN_BACKEND} 以上並重新部署。`);
             }
-            // 其他錯誤（含連線問題）不擋下登入：migration 期間舊後端沒有這個端點
-            if (e.code !== 'FORBIDDEN') document.getElementById('gateStep2').classList.add('hidden');
-            else return showGateError(e.message);
+        }).catch(() => { });
+    }
+    function loginErrorText(e) {
+        if (e && e.code === 'RESULT_UNKNOWN') return '連線中斷，不確定是否已登入。請直接再按一次「登入」（同一組登入碼可以安全重試）。';
+        if (e && (e.code === 'OFFLINE' || /Failed to fetch|NetworkError|Load failed|HTTP/i.test(e.message || ''))) return '連不上帳本，請確認網路後再按一次「登入」。';
+        if (e && /未知的 action/.test(e.message || '')) return '這本帳的後端還不支援登入碼，請戶長先更新 Code.gs 並重新部署。';
+        return (e && e.message) || '登入失敗';
+    }
+    let _loginBusy = false;
+    async function gateSubmitLogin() {
+        if (_loginBusy) return;
+        const el = document.getElementById('gateLogin');
+        const code = normLoginInput(el && el.value);
+        if (code.length !== 10) return showGateError('登入碼是 10 個英數字（中間的「-」可以不打）');
+        let pend = null;
+        try { pend = JSON.parse(localStorage.getItem(LOGIN_PENDING_KEY) || 'null'); } catch (e) { pend = null; }
+        if (!pend || pend.code !== code || pend.dep !== BACKEND.id || Date.now() - Number(pend.at) > 15 * 60000) {
+            pend = { code, nonce: randomNonce(), dep: BACKEND.id, at: Date.now() };
+            try { localStorage.setItem(LOGIN_PENDING_KEY, JSON.stringify(pend)); } catch (e) { }
         }
-        gateSay(`哈囉，${picked ? picked.nickname : ''}，歡迎回來！`);
-        await new Promise(z => setTimeout(z, 700));      // 讓歡迎語有時間被看到
-        document.getElementById('splash').classList.remove('js-hide');
-        try { await loadAll(); enterApp(); }
-        catch (e) {
-            document.getElementById('splash').classList.add('js-hide');
-            document.getElementById('gateStep2').classList.remove('hidden');
-            showGateError(e.message);
-        }
+        _loginBusy = true;
+        const b = document.getElementById('gateLoginBtn'); b.disabled = true; b.innerText = '登入中…';
+        document.getElementById('gateError').classList.add('hidden');
+        /* r4（R3-F02）：記下這次登入嘗試開始時的共用登入設定（後端網址＋家庭代碼＋成員＋token）。
+           回應或錯誤回來時，若共用設定已被其他分頁改變（換了帳本、或另一個分頁已完成登入），
+           這次的結果一律不套用：不寫入憑證、不清除任何登入資訊，改為重新載入顯示目前的登入。
+           勝出規則：以「最後完成、且開始時共用設定仍是最新」的登入為準，不看網路回應到達的先後。
+           登入暫存（同一組碼＋隨機值）保留，回到原帳本時同一組碼可在補發期限內安全重試。 */
+        const attempt = authCtxKey();
+        const stale = () => authCtxKey() !== attempt;
+        const dropStale = () => {
+            // 這次的登入暫存放回去（只在沒有其他暫存時），回到原帳本輸入同一組碼可在補發期限內取回；不覆蓋較新的嘗試
+            try { if (!localStorage.getItem(LOGIN_PENDING_KEY)) localStorage.setItem(LOGIN_PENDING_KEY, JSON.stringify(pend)); } catch (x) { }
+            gateSay('登入設定已在其他分頁變更');
+            showGateError('其他分頁已切換帳本或完成登入，這次登入的結果沒有套用。這個分頁將重新載入。');
+            setTimeout(() => location.reload(), 1500);
+        };
+        try {
+            const d = await api.call('redeemLoginCode', { loginCode: code, clientNonce: pend.nonce });
+            if (stale()) return dropStale();
+            if (!d || !d.authToken || !d.memberId) throw Object.assign(new Error('登入回應不完整，請再按一次「登入」'), { code: 'RESULT_UNKNOWN' });
+            try { localStorage.removeItem(LOGIN_PENDING_KEY); } catch (e) { }
+            AUTH.memberId = d.memberId;
+            AUTH.authToken = d.authToken;
+            AUTH.bookId = d.bookId || '';
+            tabBind();
+            if (d.apiVersion) BACKEND_VERSION = d.apiVersion;
+            gateSay(`哈囉，${d.nickname || ''}！`);
+            await new Promise(z => setTimeout(z, 500));
+            document.getElementById('splash').classList.remove('js-hide');
+            try { await loadAll(); enterApp(); }
+            catch (e) {
+                document.getElementById('splash').classList.add('js-hide');
+                if (e.code === 'CONTEXT_CHANGED') return dropStale();
+                if (isAuthFailure(e)) { e.code === 'BAD_CODE' ? AUTH.clear() : AUTH.clearIdentity(); return e.code === 'BAD_CODE' ? showGate(1) : enterLoginStep('登入沒有成功，請再試一次'); }
+                showGate(2); showGateError('已登入，但讀取帳本失敗：' + e.message + '。請稍後重新開啟 App。');
+            }
+        } catch (e) {
+            if (stale()) return dropStale();              // r4：舊的登入嘗試以錯誤收場，但共用設定已被其他分頁改變：不清除任何東西
+            if (e.code === 'BAD_CODE') {                  // 家庭代碼已更換：回到輸入代碼
+                localStorage.removeItem('fc'); _otpAuto = true; showGate(1);
+                return showGateError('家庭代碼已更換，請向戶長索取新的安裝碼或家庭代碼。');
+            }
+            if (LOGIN_FINAL_CODES.includes(e.code)) { try { localStorage.removeItem(LOGIN_PENDING_KEY); } catch (x) { } }
+            gateSay(e.code === 'LOGIN_CODE_USED' ? '這組登入碼已經用過了' : e.code === 'LOGIN_CODE_EXPIRED' ? '這組登入碼過期了' : '登入沒有成功');
+            showGateError(loginErrorText(e));
+        } finally { _loginBusy = false; b.disabled = false; b.innerText = '登入'; }
     }
 
     /* 統一正規化：只要有任何一個陣列欄位是 undefined（例如後端尚未部署新版），
@@ -1838,14 +2578,8 @@ function hexA(hex, a) {
 
     async function loadAll() {
         const d = await api.call('bootstrap');
-        Object.assign(STATE, {
-            familyName: d.familyName, members: d.members, categories: d.categories,
-            tags: d.tags, archivedItems: d.archivedItems || [], transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], goals: d.goals || [], achievements: d.achievements || [], cheers: d.cheers || [], memberStats: d.memberStats || {}, familyStats: d.familyStats || {}, streakSaves: d.streakSaves || [], poolInitial: d.poolInitial
-        });
-        normalizeState();
-        STATE.me = STATE.members.find(m => m.member_id === AUTH.memberId);
-        if (!STATE.me) throw new Error('找不到此成員，請重新選擇');
-        if (d.generated > 0) setTimeout(() => toast(`已自動補記 ${d.generated} 筆固定收支`), 800);
+        if (!applyBootstrap(d)) throw new Error('找不到此成員，請重新選擇');
+        afterNetworkApply(d);
     }
 
     function enterApp() {
@@ -1860,6 +2594,7 @@ function hexA(hex, a) {
         requestAnimationFrame(() => { syncFrameHeight(); requestAnimationFrame(syncFrameHeight); });
         setTimeout(syncFrameHeight, 80);
         setTimeout(syncFrameHeight, 400);
+        showCtxNotes();
     }
 
     function renderAll() { renderDashboard(); renderTransactions(); initAddForm(); renderStats(); renderSettings(); }
@@ -2230,12 +2965,11 @@ function hexA(hex, a) {
         if (btn) { btn.dataset.busy = '1'; btn.classList.add('opacity-50', 'pointer-events-none'); }
         ic?.classList.add('spin-slow');
         try {
-            const d = await api.call('bootstrap');
-            Object.assign(STATE, { transactions: d.transactions, rules: d.rules || [], budgets: d.budgets || [], intents: d.intents || [], goals: d.goals || [], achievements: d.achievements || [], cheers: d.cheers || [], memberStats: d.memberStats || {}, familyStats: d.familyStats || {}, streakSaves: d.streakSaves || [], categories: d.categories, tags: d.tags, archivedItems: d.archivedItems || [], members: d.members });
-            normalizeState();
-            STATE.me = STATE.members.find(m => m.member_id === AUTH.memberId) || STATE.me;
-            buildMemoIndex();
-            renderDataViews(); renderSettings(); toast('已同步');
+            /* v6.25.0：與開機背景重驗共用同一條路（同時只跑一個、寫入中拿到的舊快照會丟掉重抓）。
+               以前這裡直接覆蓋 STATE，送出失敗還沒存進去的列會跟著消失；現在會保留。 */
+            const r = await revalidate({ manual: true });
+            if (r.auth) return;
+            r.ok ? toast('已同步') : toast('同步失敗：' + (r.error && r.error.message || ''), true);
         } catch (e) { toast('同步失敗：' + e.message, true); }
         finally {
             if (btn) { delete btn.dataset.busy; btn.classList.remove('opacity-50', 'pointer-events-none'); }
@@ -3527,50 +4261,309 @@ function hexA(hex, a) {
     /* ==========================================================
        樂觀寫入
        ========================================================== */
-    /* ---------- 離線佇列 ----------
-       收訊不好時記帳不該直接失敗。整包 payload 存進本機，連線恢復時自動補送。
-       安全前提是每一筆都帶著 client_id：補送時後端認得出是同一筆，
-       不會因為「其實第一次就寫成功了」而多出一筆。 */
-    const QKEY = 'offline_queue';
-    const queueRead = () => { try { return JSON.parse(localStorage.getItem(QKEY) || '[]'); } catch (e) { return []; } };
-    const queueWrite = q => { try { localStorage.setItem(QKEY, JSON.stringify(q.slice(-50))); } catch (e) { } };
-    function queuePush(job) { const q = queueRead(); q.push(job); queueWrite(q); paintQueueBadge(); }
+    /* ---------- 離線待送資料（v6.25.0 r2 重寫） ----------
+       收訊不好時記帳不該直接失敗：整包 payload 存進本機，連線恢復、而且確認是同一個人之後再補送。
+       安全前提是每一筆都帶著 client_id（規則帶 op_key）：補送時後端認得出是同一筆，不會多記。
+
+       r2 改了三件事（對應獨立複驗 F03／F04／F05）：
+       ① 每筆一個儲存鍵（oq1:<編號>）。新增＝寫一個新鍵、完成＝刪那一個鍵；
+          沒有「讀出整串、改完寫回」，補送途中新增的資料不可能被舊快照蓋掉。
+          瀏覽器支援 Web Locks 時另用它避免兩個分頁同時補送；不支援時最壞是同一筆送兩次，
+          由後端 client_id／op_key 去重 —— 不會退回會覆寫資料的做法。
+       ② 每筆帶擁有者（帳本＋成員）。只有目前登入、而且這次開 App 後已被後端確認的同一個人才補送；
+          別人的資料只顯示「此裝置另有待處理的離線資料」，不顯示筆數與內容。
+       ③ 後端拒絕不再當成功：保留資料並標示原因，由擁有者重送或捨棄；
+          身分失效時整批保留，重新登入同一個人後繼續。
+       升級前的舊佇列（offline_queue／pending_rule_creates）沒有擁有者資訊，搬到隔離區（oqx1:），
+       不自動補送、也不歸給任何人，見 migrateLegacyQueue。 */
+    const OQ = 'oq1:', OQX = 'oqx1:';
+    const OQ_RETRY_CODES = ['OFFLINE', 'RESULT_UNKNOWN', 'LOCK_TIMEOUT', 'SERVER_ERROR', 'RECOVERY_PENDING', 'NEED_UPDATE'];
+    const OQ_AUTH_CODES = ['NEED_AUTH', 'BAD_CODE'];
+    /** r3：擁有者取自這個分頁的身分（TAB），不是 localStorage 的當下值（其他分頁可能已經換了） */
+    function jobOwnerNow() {
+        if (TAB.owner) return { ...TAB.owner };
+        return { dep: BACKEND.id || BACKEND.url || '', book: AUTH.bookId || '', member: AUTH.memberId || '' };
+    }
+    /** 同一個擁有者：同一位成員，且同一本帳（兩邊都有帳本識別就比帳本識別，否則比部署 ID） */
+    function sameOwner(a, b) {
+        if (!a || !b || !a.member || a.member !== b.member) return false;
+        if (a.book && b.book) return a.book === b.book;
+        return !!a.dep && a.dep === b.dep;
+    }
+    function jobsRead(prefix) {
+        const out = [];
+        try {
+            const keys = [];
+            for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.indexOf(prefix) === 0) keys.push(k); }
+            keys.forEach(k => {
+                try { const j = JSON.parse(localStorage.getItem(k)); if (j && typeof j === 'object' && j.id) out.push(j); } catch (e) { }
+            });
+        } catch (e) { }
+        return out.sort((a, b) => (Number(a.at) || 0) - (Number(b.at) || 0));
+    }
+    function jobWrite(prefix, job) {
+        const k = prefix + job.id, v = JSON.stringify(job);
+        try { localStorage.setItem(k, v); return true; }
+        catch (e) {
+            bootCacheClear();          // 空間不夠：先讓出開機快取（之後重新讀取即可），待送資料不能丟
+            try { localStorage.setItem(k, v); return true; } catch (e2) { return false; }
+        }
+    }
+    const jobPut = job => jobWrite(OQ, job);
+    function jobDel(id, prefix) { try { localStorage.removeItem((prefix || OQ) + id); } catch (e) { } }
+    function jobExists(id, prefix) { try { return localStorage.getItem((prefix || OQ) + id) !== null; } catch (e) { return false; } }
+    function jobsMine() { const me = jobOwnerNow(); return jobsRead(OQ).filter(j => sameOwner(j.owner, me)); }
+    /** r4：這個分頁正在送出的新增（預寫紀錄已存、請求尚未有結果）。補送、還原列、徽章、設定頁都先略過，
+        避免同一筆被這個分頁同時送兩次，或畫面上「同步中」被改成「待同步」。其他分頁看得到它（可能一起補送，後端以 client_id 去重）。 */
+    const _inflightJobs = new Set();
+    function jobsMineIdle() { return jobsMine().filter(j => !_inflightJobs.has(j.id)); }
+    function jobsOthers() { const me = jobOwnerNow(); return jobsRead(OQ).filter(j => !sameOwner(j.owner, me)); }
+    /** 隔離區的舊資料：目前這個人是不是升級當時這台裝置登入的那一位（候選擁有者）。只是候選，仍要本人逐筆確認。 */
+    function legacyMine(x) {
+        const me = jobOwnerNow();
+        return !!(x && x.candidate && x.candidate.member && x.candidate.member === me.member && x.candidate.dep === me.dep);
+    }
+    function txnJob(payload, ruleAfter, owner) {
+        return { v: 1, id: 't_' + payload.txn.client_id, kind: 'txn', owner: owner || jobOwnerNow(), at: Date.now(), state: 'pending', payload, ...(ruleAfter ? { ruleAfter } : {}) };
+    }
+    function ruleJob(owner, rule, opKey, txnId) {
+        return { v: 1, id: 'r_' + opKey, kind: 'rule', owner, at: Date.now(), state: 'pending', rule, op_key: opKey, txn_id: txnId };
+    }
+    /** 寫入失敗的分類：retry 保留待送；auth 身分失效，整批保留；reject 後端明確拒絕，標示原因等擁有者處理 */
+    function classifyJobError(e) {
+        const c = e && e.code;
+        if (c === 'CONTEXT_CHANGED') return 'stop';         // r3：身分在其他分頁改變：停止，資料留給原擁有者
+        if (OQ_AUTH_CODES.includes(c)) return 'auth';
+        if (OQ_RETRY_CODES.includes(c) || /Failed to fetch|NetworkError|Load failed|HTTP/i.test(String(e && e.message || ''))) return 'retry';
+        return 'reject';
+    }
+    function markJobRejected(job, e) {
+        if (!jobExists(job.id)) return;          // 另一個分頁剛處理完：不要把它寫回來
+        jobPut({ ...job, state: 'rejected', reason: String(e && e.message || '後端拒絕'), code: (e && e.code) || '', rejectedAt: Date.now() });
+    }
     function paintQueueBadge() {
-        const n = queueRead().length;
+        const mine = jobsMineIdle().filter(j => j.kind === 'txn');
+        const n = mine.filter(j => j.state !== 'rejected').length, bad = mine.length - n;
+        syncPillRefresh();
         const el = document.getElementById('queueBadge');
         if (!el) return;
-        el.classList.toggle('js-hide', n === 0);
-        if (n) el.innerHTML = `<i class="fa-solid fa-cloud-arrow-up mr-1.5"></i>有 ${n} 筆待同步 ・ <b>點此重送</b>`;
+        el.classList.toggle('js-hide', mine.length === 0);
+        el.dataset.pending = n; el.dataset.rejected = bad;
+        if (mine.length) el.innerHTML = bad
+            ? `<i class="fa-solid fa-triangle-exclamation mr-1.5"></i>有 ${bad} 筆沒有存進帳本${n ? `、${n} 筆待同步` : ''} ・ <b>點此處理</b>`
+            : `<i class="fa-solid fa-cloud-arrow-up mr-1.5"></i>有 ${n} 筆待同步 ・ <b>點此重送</b>`;
     }
-    let _syncing = false;
-    async function syncOfflineQueue(silent) {
-        if (_syncing) return;
-        const q = queueRead();
-        if (!q.length) return flushPendingRules(true);     // v6.23.3：沒有待補送的交易時，仍處理待建立的固定收支
-        _syncing = true;
-        if (!silent) toast(`正在同步 ${q.length} 筆…`);
-        const left = [];
-        let ok = 0;
-        for (const job of q) {
-            try {
-                const r = await api.call('addTransaction', job.payload); ok++;
-                // 首期補送成功、拿到後端 txn_id 才排入「建立固定收支」；拿不到就不建（不能宣稱首期已記）
-                if (job.ruleAfter && r && r.txn && r.txn.txn_id) {
-                    const pq = pendingRulesRead().filter(x => x.op_key !== job.ruleAfter.op_key);
-                    pq.push({ rule: job.ruleAfter.rule, op_key: job.ruleAfter.op_key, txn_id: r.txn.txn_id }); pendingRulesWrite(pq);
-                }
+    function queueBadgeTap() {
+        const el = document.getElementById('queueBadge');
+        if (el && Number(el.dataset.rejected) > 0) return openOfflineSheet();
+        return syncOfflineQueue(false);
+    }
+
+    /** F10：把目前這個人的待送／被拒絕資料還原成明細上的暫存列（以 client_id 去重）。
+        快取與後端回應都不含這些列；不還原的話，離線重開後明細裡看不到剛記的帳，容易重記。 */
+    function restoreQueuedRows() {
+        if (!Array.isArray(STATE.transactions)) return;
+        const mine = jobsMineIdle().filter(j => j.kind === 'txn' && j.payload && j.payload.txn && j.payload.txn.client_id);
+        const ids = new Set(mine.concat(jobsMine().filter(j => _inflightJobs.has(j.id))).map(j => j.id));
+        // 已不在待送資料裡的還原列（另一個分頁送掉、或已捨棄）拿掉
+        STATE.transactions = STATE.transactions.filter(t => !(t._jobId && isTmpRow(t) && !ids.has(t._jobId)));
+        const byCid = new Map();
+        STATE.transactions.forEach(t => { if (t.client_id) byCid.set(String(t.client_id), t); });
+        mine.forEach(j => {
+            const cid = String(j.payload.txn.client_id);
+            const ex = byCid.get(cid);
+            if (ex && !isTmpRow(ex)) return;                 // 後端已經有這一筆（下次補送會確認後移除）
+            const flags = j.state === 'rejected' ? { _failed: j.reason || '後端拒絕', _failCode: j.code || '' } : { _queued: true };
+            if (ex) {
+                delete ex._queued; delete ex._failed; delete ex._pending;
+                Object.assign(ex, flags, { _jobId: j.id, _payload: j.payload });
+                return;
             }
-            catch (e) {
-                // 只有「連不上」才留在佇列裡；資料本身有問題的重送幾次都一樣
-                if (e.code === 'OFFLINE' || /Failed to fetch|NetworkError|Load failed|HTTP/i.test(e.message)) left.push(job);
-                else ok++;   // 後端明確拒絕：從佇列移除，避免永遠卡住後面的
+            const d = new Date(Number(j.at) || Date.now());
+            STATE.transactions.push({
+                txn_id: 'tmp_q' + j.id.replace(/[^\w]/g, '').slice(-16), is_rollup: false, status: '有效',
+                created_at: `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`,
+                parent_txn_id: '', recurring_rule_id: '', receipt_file_id: '', related_id: '',
+                member_id: AUTH.memberId, payer_id: AUTH.memberId,
+                ...j.payload.txn, ...flags, _jobId: j.id, _payload: j.payload, ...(j.ruleAfter ? { _ruleAfter: j.ruleAfter } : {})
+            });
+        });
+    }
+
+    let _syncing = false, _syncAgain = false;
+    async function syncOfflineQueue(silent) {
+        // 補送進行中又被要求補送（例如補送途中又新增一筆）：記下來，這一輪結束後再跑一輪，不會漏掉
+        if (_syncing) { _syncAgain = true; return; }
+        if (!SESSION.verified || !STATE.me) {             // 身分還沒被後端確認（只畫了快取、或離線開機）：不補送
+            if (!silent) toast('還沒連上帳本，連線並確認身分後會自動補送', true);
+            return;
+        }
+        _syncing = true;
+        _lastSyncTry = Date.now();
+        try {
+            let rounds = 0;
+            do {
+                _syncAgain = false;
+                if (navigator.locks && typeof navigator.locks.request === 'function') {
+                    await navigator.locks.request('jiating-offline-sync', { ifAvailable: true }, async lock => { if (lock) await runOfflineSync(silent); });
+                } else await runOfflineSync(silent);
+            } while (_syncAgain && SESSION.verified && ++rounds < 3);
+        } finally { _syncing = false; _syncAgain = false; }
+        scheduleSyncRetry(SESSION.verified && retryableMine().length > 0);     // r5：還有可重試的就排下一次（退避）
+        syncPillRefresh();
+    }
+    async function runOfflineSync(silent) {
+        const owner = jobOwnerNow();
+        const jobs = jobsMineIdle().filter(j => j.kind === 'txn' && j.state === 'pending');
+        if (!jobs.length) { paintQueueBadge(); return flushPendingRules(true); }
+        if (!silent) toast(`正在同步 ${jobs.length} 筆…`);
+        let ok = 0, kept = 0, rejected = 0, ruleStuck = 0, authErr = null;
+        for (const job of jobs) {
+            if (!SESSION.verified || !sameOwner(owner, jobOwnerNow())) break;   // 補送途中換了身分：停下來
+            if (!jobExists(job.id)) continue;                                  // 另一個分頁已經處理
+            try {
+                const r = await api.call('addTransaction', job.payload);
+                if (!(r && r.txn && r.txn.txn_id)) {
+                    markJobRejected(job, { message: '後端沒有回傳可確認的交易，請重新整理後核對', code: 'UNCONFIRMED' }); rejected++; continue;
+                }
+                // 首期補送成功、拿到後端 txn_id 才排入「建立固定收支」。先寫規則、再刪這筆：中途被關掉也不會兩頭落空
+                /* r3（R2-F03）：規則的待送資料存好了才刪這筆；存不進去就保留（含規則設定），下次以同一 client_id 核對後再試 */
+                if (job.ruleAfter && !jobPut(ruleJob(job.owner, job.ruleAfter.rule, job.ruleAfter.op_key, r.txn.txn_id))) { ruleStuck++; continue; }
+                jobDel(job.id); ok++;
+                const i = STATE.transactions.findIndex(t => t._jobId === job.id);
+                if (i >= 0) STATE.transactions[i] = { ...r.txn };
+            } catch (e) {
+                const c = classifyJobError(e);
+                if (c === 'retry') { kept++; continue; }
+                if (c === 'auth') { authErr = e; break; }
+                if (c === 'stop') { kept++; break; }       // r3：身分在其他分頁改變，這筆與之後的都留給原擁有者
+                markJobRejected(job, e); rejected++;
             }
         }
-        queueWrite(left);
-        paintQueueBadge();
-        _syncing = false;
-        if (ok) { await refreshData(); toast(left.length ? `已同步 ${ok} 筆，還有 ${left.length} 筆待重送` : `已同步 ${ok} 筆離線紀錄`); }
+        restoreQueuedRows(); paintQueueBadge(); renderDataViews();
+        if (authErr) { handleAuthLost(authErr); return; }        // 待送資料全部保留，重新登入同一個人後繼續
+        if (ok) await refreshData();
+        if (ok || rejected || kept || ruleStuck) {
+            const parts = [];
+            if (ok) parts.push(`已同步 ${ok} 筆離線紀錄`);
+            if (kept) parts.push(`${kept} 筆等連線穩定後再送`);
+            if (rejected) parts.push(`${rejected} 筆被後端拒絕，請在明細或設定裡處理`);
+            if (ruleStuck) parts.push(`${ruleStuck} 筆首期已記帳，但裝置儲存空間不足、固定收支待釋放空間後建立`);
+            if (!silent || ok || rejected || ruleStuck) toast(parts.join('，'), rejected > 0 || ruleStuck > 0);
+        }
         await flushPendingRules(true);
+    }
+
+    /** 升級前的舊佇列：沒有帳本／成員資訊，不能歸給「目前登入的人」。
+        全部搬進隔離區（oqx1:），只記下升級當時這台裝置登入的身分當「候選擁有者」；
+        候選擁有者登入並經後端確認後逐筆核對「這是我記的」才補送，其他人只看得到一句提示。
+        以 client_id／op_key 當鍵，重複執行不會產生重複資料；全部寫成功才刪舊鍵，讀不懂的舊資料原樣保留。 */
+    function migrateLegacyQueue() {
+        let q1 = null, q2 = null;
+        try { q1 = localStorage.getItem('offline_queue'); q2 = localStorage.getItem('pending_rule_creates'); } catch (e) { return; }
+        if (q1 === null && q2 === null) return;
+        const parse = raw => { if (raw === null) return []; try { const a = JSON.parse(raw); return Array.isArray(a) ? a : null; } catch (e) { return null; } };
+        const a1 = parse(q1), a2 = parse(q2);
+        if (a1 === null || a2 === null) { BOOT_DIAG.legacyQueue = 'unreadable'; return; }
+        const cand = AUTH.memberId ? { dep: BACKEND.id || BACKEND.url || '', member: AUTH.memberId } : null;
+        const items = [];
+        a1.forEach((j, n) => {
+            const cid = j && j.payload && j.payload.txn && j.payload.txn.client_id;
+            if (!cid) return;                                    // 沒有 client_id 的資料無法安全補送，也不會是本程式寫的
+            items.push({ v: 1, id: 'L_t_' + cid, kind: 'txn', legacy: true, candidate: cand, at: Number(j.at) || 0, payload: j.payload, ...(j.ruleAfter ? { ruleAfter: j.ruleAfter } : {}) });
+        });
+        a2.forEach(j => {
+            if (!j || !j.op_key) return;
+            items.push({ v: 1, id: 'L_r_' + j.op_key, kind: 'rule', legacy: true, candidate: cand, at: 0, rule: j.rule, op_key: j.op_key, txn_id: j.txn_id });
+        });
+        let ok = true;
+        items.forEach(x => { if (!jobExists(x.id, OQX) && !jobWrite(OQX, x)) ok = false; });
+        if (!ok) { BOOT_DIAG.legacyQueue = 'no_space'; return; }      // 空間不足：舊鍵留著，下次開 App 再搬
+        try { localStorage.removeItem('offline_queue'); localStorage.removeItem('pending_rule_creates'); } catch (e) { }
+        BOOT_DIAG.legacyQueue = 'moved:' + items.length;
+    }
+    /** 舊資料：本人確認「這是我記的」→ 轉成自己的待送資料並補送 */
+    async function legacyAccept(id) {
+        const x = jobsRead(OQX).find(j => j.id === id);
+        if (!x || !SESSION.verified || !legacyMine(x)) return toast('連線並確認身分後才能處理', true);
+        if (!confirm('確定這一筆是你記的，要補送到目前的帳本嗎？')) return;
+        const owner = jobOwnerNow();
+        const job = x.kind === 'rule' ? ruleJob(owner, x.rule, x.op_key, x.txn_id) : txnJob(x.payload, x.ruleAfter, owner);
+        if (!jobPut(job)) return toast('裝置儲存空間不足，請稍後再試', true);
+        jobDel(x.id, OQX);
+        restoreQueuedRows(); renderDataViews(); renderSettings(); paintQueueBadge();
+        await syncOfflineQueue(false);
+        refreshOfflineSheet();
+    }
+    /** 舊資料刪除：候選擁有者（確認身分後）可逐筆刪；完全沒有候選擁有者的資料，任何人都只能整批刪、看不到內容 */
+    function legacyDiscard(id) {
+        const all = jobsRead(OQX);
+        const targets = id ? all.filter(j => j.id === id && SESSION.verified && legacyMine(j)) : all.filter(j => !j.candidate);
+        if (!targets.length) return;
+        if (!confirm(id ? '要刪除這一筆嗎？刪除後無法復原。' : '要刪除這些無法確認是誰記的舊資料嗎？刪除後無法復原。')) return;
+        targets.forEach(j => jobDel(j.id, OQX));
+        buzz(); renderSettings(); refreshOfflineSheet();
+    }
+
+    /* ---------- 離線資料面板（設定頁與明細上方的提示都開這裡） ----------
+       只列「目前這個人」的資料；別人的只說有、不說幾筆與內容（避免新登入者看到他人的帳務）。 */
+    function offlineSummary() {
+        const mine = jobsMineIdle(), others = jobsOthers(), legacy = jobsRead(OQX);
+        const legacyVisible = SESSION.verified ? legacy.filter(legacyMine) : [];
+        const legacyHidden = legacy.filter(x => !legacyVisible.includes(x));
+        return { mine, others, legacyVisible, legacyNoOwner: legacyHidden.filter(x => !x.candidate), hiddenExists: others.length > 0 || legacyHidden.some(x => !!x.candidate) };
+    }
+    function offlineItemText(j) {
+        if (j.kind === 'rule') return `固定收支「${(j.rule && j.rule.name) || '未命名'}」`;
+        const t = (j.payload && j.payload.txn) || {};
+        return `${t.date || ''} ${t.entry_type || ''} ${t.category || t.tag || ''} ${fmt(Number(t.amount) || 0)}${t.note ? '・' + t.note : ''}`;
+    }
+    function offlineSectionHtml() {
+        const s = offlineSummary();
+        const any = s.mine.length || s.legacyVisible.length || s.legacyNoOwner.length || s.hiddenExists;
+        if (!any) return '';
+        const btn = (label, fn, cls) => `<button type="button" onclick="${fn}" class="tap44 px-3 text-[10px] font-bold ${cls || 'text-pastel-accent'} tactile">${label}</button>`;
+        const row = (j, actions, note) => `<div class="p-3 rounded-tile bg-pastel-bg space-y-1" data-offline-item="${esc(j.id)}">
+                <div class="text-xs font-bold text-stone-700 break-words">${esc(offlineItemText(j))}</div>
+                ${note ? `<div class="text-[10px] ${j.state === 'rejected' ? 'text-pastel-red' : 'text-pastel-muted'} leading-relaxed break-words">${esc(note)}</div>` : ''}
+                <div class="flex justify-end">${actions}</div></div>`;
+        return `<div class="space-y-3" data-offline-panel>
+            ${s.mine.map(j => row(j,
+                (j.state === 'rejected' ? btn('重送', `offlineRetry('${esc(j.id)}')`) : '') + btn('捨棄', `offlineDiscard('${esc(j.id)}')`, 'text-pastel-muted'),
+                j.state === 'rejected' ? '沒有存進帳本：' + (j.reason || '後端拒絕') : '待同步（連線並確認身分後自動補送）')).join('')}
+            ${s.legacyVisible.length ? `<div class="text-[10px] font-bold text-stone-700 pt-1" data-legacy-review>升級前留下的離線資料：請確認是不是你記的</div>
+                ${s.legacyVisible.map(j => row(j, btn('是我記的，補送', `legacyAccept('${esc(j.id)}')`) + btn('刪除', `legacyDiscard('${esc(j.id)}')`, 'text-pastel-muted'),
+                    '舊版沒有記錄這筆是誰、記在哪本帳；請核對內容後再決定。')).join('')}` : ''}
+            ${s.hiddenExists ? `<p class="text-xs text-stone-600 leading-relaxed" data-offline-hidden>此裝置另有待處理的離線資料。</p>
+                <p class="text-[10px] text-pastel-muted leading-relaxed">只有記下這些資料的人，在這台裝置重新登入並連線確認身分後，才看得到內容並補送。</p>` : ''}
+            ${s.legacyNoOwner.length ? `<div class="space-y-1" data-legacy-noowner>
+                <p class="text-xs text-stone-600 leading-relaxed">此裝置有升級前留下、無法確認是誰記的離線資料。</p>
+                <div class="flex justify-end">${btn('刪除這些資料', 'legacyDiscard()', 'text-pastel-red')}</div></div>` : ''}
+        </div>`;
+    }
+    function openOfflineSheet() {
+        buzz();
+        openSheet(`<h3 class="text-lg font-bold text-stone-800 mb-3">離線待送資料</h3><div id="offlineSheetBody">${offlineSectionHtml() || '<p class="text-xs text-pastel-muted">沒有待處理的資料。</p>'}</div>`);
+    }
+    function refreshOfflineSheet() {
+        const b = document.getElementById('offlineSheetBody');
+        if (b) b.innerHTML = offlineSectionHtml() || '<p class="text-xs text-pastel-muted">沒有待處理的資料。</p>';
+    }
+    async function offlineRetry(id) {
+        const j = jobsMine().find(x => x.id === id);
+        if (!j) return;
+        if (!SESSION.verified) return toast('連線並確認身分後才能重送', true);
+        jobPut({ ...j, state: 'pending', reason: '', code: '' });
+        restoreQueuedRows(); renderDataViews();
+        if (j.kind === 'rule') await flushPendingRules(false); else await syncOfflineQueue(false);
+        renderSettings(); refreshOfflineSheet();
+    }
+    function offlineDiscard(id) {
+        const j = jobsMine().find(x => x.id === id);
+        if (!j) return;
+        if (!confirm('要捨棄這筆沒有存進帳本的資料嗎？捨棄後無法復原。')) return;
+        jobDel(id);
+        restoreQueuedRows(); paintQueueBadge(); renderDataViews(); renderSettings(); refreshOfflineSheet(); buzz();
     }
     /* ---------- 樂觀寫入 ----------
        失敗時「不要把那一列刪掉」。表單早在送出前就清空了，
@@ -3590,17 +4583,43 @@ function hexA(hex, a) {
             member_id: STATE.me.member_id, payer_id: STATE.me.member_id, related_id: '',
             _pending: true, ...payload.txn
         };
+        /* r3（R2-F03）：帶「建立固定收支」的首期，送出前先把「首期＋規則」存成待送資料（預寫紀錄）。
+           存不進去就不送出：寧可這筆留在畫面上等使用者釋放空間，也不要首期記了、規則卻沒有任何紀錄。
+           首期成功後，規則的待送資料存好了才刪這筆預寫紀錄（createRuleAfterFirst）。
+           r4（R3-F01）：普通新增也一樣先存預寫紀錄（擁有者＝這個分頁的身分），送出後確認成功才刪。
+           這樣不論之後是網路失敗、其他分頁切換帳本觸發重新載入、或使用者直接關掉 App，都還有「原擁有者的待送資料」，
+           回到原帳本後以同一 client_id 補送，後端回同一筆、不重複記帳。
+           r5（R4-F02）：普通新增與固定收支同一個前提——預寫紀錄存不進去（已先讓出開機快取再試）就不送出。
+           這筆留在畫面上標示「尚未保存」，可釋放空間後按「重新送出」、或捨棄；自動重新載入與關閉頁面都會先擋下（unsavedRows）。
+           r4 曾讓普通新增「存不進去仍照常送出」，遇到網路失敗＋其他分頁切換時，重新載入會把唯一的內容銷毀。 */
+        const waJob = txnJob(payload, ruleAfter);
+        const persisted = jobPut(waJob);
+        if (!persisted) {
+            local._failed = ruleAfter
+                ? '尚未保存：裝置儲存空間不足，這筆與固定收支設定都還沒送出；請釋放空間後按「重新送出」'
+                : '尚未保存：裝置儲存空間不足，這筆還沒送出；請釋放空間（或移除單據）後按「重新送出」';
+            local._unsaved = true; local._payload = payload; if (ruleAfter) local._ruleAfter = ruleAfter; delete local._pending;
+            STATE.transactions.push(local);
+            renderDataViews();
+            toast('裝置儲存空間不足：這筆還沒送出，也還沒存在這台裝置，請釋放空間後重送', true);
+            return { ok: false, failed: true };
+        }
+        if (persisted) _inflightJobs.add(waJob.id);
         STATE.transactions.push(local);
         renderDataViews();
         toast(okMsg || '已記錄');
         try {
-            const r = await api.call('addTransaction', payload);
+            let r;
+            try { r = await api.call('addTransaction', payload); } finally { _inflightJobs.delete(waJob.id); }
             const i = STATE.transactions.findIndex(t => t.txn_id === local.txn_id);
             if (ruleAfter && !(r.txn && r.txn.txn_id)) {      // 後端沒有回傳可確認的交易：不能宣稱首期已記
-                if (i >= 0) { STATE.transactions[i]._failed = '寫入結果無法確認'; STATE.transactions[i]._payload = payload; STATE.transactions[i]._ruleAfter = ruleAfter; delete STATE.transactions[i]._pending; }
+                markJobRejected(waJob, { message: '寫入結果無法確認，請重新送出核對（不會重複記帳）', code: 'UNCONFIRMED' });
+                if (i >= 0) { STATE.transactions[i]._failed = '寫入結果無法確認'; STATE.transactions[i]._payload = payload; STATE.transactions[i]._ruleAfter = ruleAfter; STATE.transactions[i]._jobId = waJob.id; delete STATE.transactions[i]._pending; }
                 renderDataViews();
                 return { ok: false, failed: true };
             }
+            // r4：普通新增確認寫入（拿到後端 txn_id）才刪預寫紀錄；沒拿到就留著，下次補送以 client_id 核對
+            if (!ruleAfter && persisted && r && r.txn && r.txn.txn_id) jobDel(waJob.id);
             if (i >= 0 && r.txn) {
                 // 重送拿回的若是本機已經有的那筆，移除暫存列，避免畫面上變兩筆
                 if (STATE.transactions.some((t, k) => k !== i && t.txn_id === r.txn.txn_id)) STATE.transactions.splice(i, 1);
@@ -3615,19 +4634,32 @@ function hexA(hex, a) {
             return { ok: true, txn: r.txn || null };
         } catch (e) {
             const i = STATE.transactions.findIndex(t => t.txn_id === local.txn_id);
-            const offline = e.code === 'OFFLINE' || /Failed to fetch|NetworkError|Load failed/i.test(e.message);
-            if (offline) {
-                // 連不上：進佇列，那一列留著標成待同步，連線恢復自動補送
-                queuePush(ruleAfter ? { payload, at: Date.now(), ruleAfter } : { payload, at: Date.now() });
-                if (i >= 0) { STATE.transactions[i]._queued = true; delete STATE.transactions[i]._pending; }
-                renderDataViews();
-                toast(ruleAfter ? '目前連不上，已暫存；同步成功後才建立固定收支' : '目前連不上，已暫存在本機，連線後自動補送');
+            // r3：CONTEXT_CHANGED（其他分頁換了帳本或身分，這筆沒有送出或結果未知）也存成這個分頁身分的待送資料
+            const offline = e.code === 'OFFLINE' || e.code === 'CONTEXT_CHANGED' || /Failed to fetch|NetworkError|Load failed/i.test(e.message);
+            /* r2：身分失效（token 被撤銷、家庭代碼更換）也先暫存，不讓這筆跟著登出消失；
+               重新登入同一個人、經後端確認後才補送。 */
+            const authLost = OQ_AUTH_CODES.includes(e.code);
+            if (offline || authLost) {
+                // 連不上：存成離線待送資料（帶擁有者），那一列留著標成待同步，連線並確認身分後自動補送
+                // r4：預寫紀錄已存好就沿用（擁有者是送出當下這個分頁的身分）；沒存成才再試一次
+                const job = persisted && jobExists(waJob.id) ? waJob : txnJob(payload, ruleAfter);
+                if (job !== waJob && !jobPut(job)) {
+                    if (i >= 0) { STATE.transactions[i]._failed = '裝置儲存空間不足，無法暫存'; STATE.transactions[i]._payload = payload; delete STATE.transactions[i]._pending; }
+                    renderDataViews();
+                    toast('裝置儲存空間不足，這筆沒有暫存成功；請連線後按一下重送', true);
+                    return { ok: false, failed: true };
+                }
+                if (i >= 0) { STATE.transactions[i]._queued = true; STATE.transactions[i]._jobId = job.id; STATE.transactions[i]._payload = payload; delete STATE.transactions[i]._pending; }
+                paintQueueBadge(); renderDataViews();
+                if (authLost) { handleAuthLost(e); return { ok: false, queued: true }; }
+                if (e.code !== 'CONTEXT_CHANGED') { toast(ruleAfter ? '目前連不上，已暫存；同步成功後才建立固定收支' : '目前連不上，已暫存在本機，連線後自動補送'); ensureSyncRetry(); }
                 return { ok: false, queued: true };
             } else if (i >= 0) {
                 // 後端拒絕：留在畫面上並標成失敗，點一下可以重送或刪掉
                 STATE.transactions[i]._failed = e.message || '寫入失敗';
                 STATE.transactions[i]._payload = payload;
                 if (ruleAfter) STATE.transactions[i]._ruleAfter = ruleAfter;
+                if (persisted && jobExists(waJob.id)) { markJobRejected(waJob, e); STATE.transactions[i]._jobId = waJob.id; }   // r4：被拒絕的新增保留在待送資料（含原因），可重送或捨棄
                 delete STATE.transactions[i]._pending;
                 renderDataViews();
                 toast('儲存失敗：' + e.message, true);
@@ -3636,54 +4668,77 @@ function hexA(hex, a) {
         }
     }
     /* ---------- v6.23.3：首期記帳成功後才建立固定收支，並由後端綁定首筆 ----------
-       待建立的規則存在本機（PRKEY），帶著固定的 op_key：回應遺失或 App 被關掉，下次重送仍是同一個建立操作，
-       後端回同一條規則、同一個首筆連結，不會多建一條。後端明確拒絕（例如首筆已被作廢）就移除並提示，不猜、不改綁。 */
-    const PRKEY = 'pending_rule_creates';
-    const pendingRulesRead = () => { try { return JSON.parse(localStorage.getItem(PRKEY) || '[]'); } catch (e) { return []; } };
-    const pendingRulesWrite = q => { try { localStorage.setItem(PRKEY, JSON.stringify(q.slice(-20))); } catch (e) { } };
+       待建立的規則存成離線待送資料（kind: rule，帶擁有者），帶著固定的 op_key：回應遺失或 App 被關掉，
+       下次重送仍是同一個建立操作，後端回同一條規則、同一個首筆連結，不會多建一條。
+       r2：後端明確拒絕（例如首筆已被作廢）不再直接刪掉，保留並標示原因，由擁有者在設定裡重送或捨棄。 */
     function newRuleAfter(rec) { return { rule: rec, op_key: newOpKey('rulefirst') }; }
-    async function createRuleAfterFirst(ruleAfter, txnId) {
-        const job = { rule: ruleAfter.rule, op_key: ruleAfter.op_key, txn_id: txnId };
-        const q = pendingRulesRead().filter(x => x.op_key !== job.op_key); q.push(job); pendingRulesWrite(q);
+    /** 首期已確認寫入（txnId）→ 排入建立規則。clientId：首期的 client_id，用來找到並刪掉預寫紀錄。
+        r3：規則的待送資料存不進去時，保留首期的預寫紀錄（含規則設定）：之後補送會以同一 client_id 核對首期
+        （後端回同一筆，不會重複記帳），再重試建立規則 —— 任何時刻都有可恢復的持久紀錄。 */
+    async function createRuleAfterFirst(ruleAfter, txnId, clientId) {
+        if (!jobPut(ruleJob(jobOwnerNow(), ruleAfter.rule, ruleAfter.op_key, txnId))) {
+            toast('首期已記帳；裝置儲存空間不足，固定收支稍後建立（請釋放空間，設定頁「離線待送資料」可看到）', true);
+            paintQueueBadge(); renderSettings();
+            return null;
+        }
+        if (clientId) jobDel('t_' + clientId);
         return flushPendingRules(false);
     }
     let _ruleFlushing = false;
     async function flushPendingRules(silent) {
-        if (_ruleFlushing) return null;
-        const q = pendingRulesRead();
-        if (!q.length) return null;
+        if (_ruleFlushing || !SESSION.verified) return null;
+        const owner = jobOwnerNow();
+        const jobs = jobsMine().filter(j => j.kind === 'rule' && j.state === 'pending');
+        if (!jobs.length) return null;
         _ruleFlushing = true;
-        const left = []; let last = null;
-        for (const job of q) {
-            try {
-                const r = await api.call('saveRule', { rule: job.rule, first_run_done: true, first_txn_id: job.txn_id, op_key: job.op_key });
-                if (r.rule) {
-                    const k = STATE.rules.findIndex(x => x.rule_id === r.rule.rule_id);
-                    if (k >= 0) STATE.rules[k] = r.rule; else STATE.rules.push(r.rule);
-                    const t = STATE.transactions.find(x => x.txn_id === job.txn_id);
-                    if (t && r.first_link && r.first_link.linked) t.recurring_rule_id = r.rule.rule_id;
+        let last = null, kept = 0;
+        try {
+            for (const job of jobs) {
+                if (!SESSION.verified || !sameOwner(owner, jobOwnerNow())) break;
+                if (!jobExists(job.id)) continue;
+                try {
+                    const r = await api.call('saveRule', { rule: job.rule, first_run_done: true, first_txn_id: job.txn_id, op_key: job.op_key });
+                    jobDel(job.id);
+                    if (r && r.rule) {
+                        const k = STATE.rules.findIndex(x => x.rule_id === r.rule.rule_id);
+                        if (k >= 0) STATE.rules[k] = r.rule; else STATE.rules.push(r.rule);
+                        const t = STATE.transactions.find(x => x.txn_id === job.txn_id);
+                        if (t && r.first_link && r.first_link.linked) t.recurring_rule_id = r.rule.rule_id;
+                    }
+                    last = r;
+                    if (!silent) toast(r && r.first_link && r.first_link.linked ? '固定收支已建立，本期已記帳' : '固定收支已建立');
+                } catch (e) {
+                    // 連不上或結果不明：保留（同一個 op_key 重送是安全的，後端會回同一條規則）
+                    const c = classifyJobError(e);
+                    if (c === 'retry') { kept++; continue; }
+                    if (c === 'auth' || c === 'stop') break;  // 身分失效／其他分頁換了身分：規則保留
+                    markJobRejected(job, e);
+                    toast(e.code === 'FIRST_TXN_INVALID' ? e.message : '固定收支建立失敗：' + e.message, true);
                 }
-                last = r;
-                if (!silent) toast(r.first_link && r.first_link.linked ? '固定收支已建立，本期已記帳' : '固定收支已建立');
-            } catch (e) {
-                // 連不上或結果不明：保留（同一個 op_key 重送是安全的，後端會回同一條規則）
-                const offline = e.code === 'OFFLINE' || e.code === 'RESULT_UNKNOWN' || e.code === 'LOCK_TIMEOUT' || /Failed to fetch|NetworkError|Load failed|HTTP/i.test(e.message);
-                if (offline) left.push(job);
-                else toast(e.code === 'FIRST_TXN_INVALID' ? e.message : '固定收支建立失敗：' + e.message, true);
             }
-        }
-        pendingRulesWrite(left);
-        _ruleFlushing = false;
+        } finally { _ruleFlushing = false; }
         renderSettings(); renderDataViews();
-        if (left.length && !silent) toast('記帳已完成；固定收支待連線後自動建立');
+        if (kept && !silent) toast('記帳已完成；固定收支待連線後自動建立');
         return last;
     }
-    /** 重送一筆失敗的紀錄：帶著同一個 client_id，不會變成兩筆 */
+    /** 重送一筆失敗的紀錄：帶著同一個 client_id，不會變成兩筆。
+        離線待送資料還原出來的列（_jobId）交給補送流程處理，確保同一套擁有者與結果分類。 */
     async function retryTxn(localId) {
         const i = STATE.transactions.findIndex(t => t.txn_id === localId);
         if (i < 0) return;
         const row = STATE.transactions[i];
+        if (row._jobId) return offlineRetry(row._jobId);
         const payload = row._payload || { txn: { ...row }, receipt: null };
+        /* r3：帶固定收支的首期（先前因空間不足沒存成預寫紀錄）：重送前先存預寫紀錄，再交給補送流程（同一套交接規則）
+           r5（R4-F02）：所有帶 client_id 的新增都一樣。擁有者取自這個分頁的身分：即使其他分頁已切換帳本，
+           也是存成原帳本的待送資料，不會送去別的帳本；身分還沒確認時只保存、等確認後再補送。 */
+        if (payload.txn && payload.txn.client_id) {
+            const wa = txnJob(payload, row._ruleAfter);
+            if (!jobPut(wa)) return toast('裝置儲存空間仍不足，請先釋放空間再重送', true);
+            row._jobId = wa.id; delete row._failed; delete row._unsaved; row._queued = true;
+            renderDataViews();
+            return offlineRetry(wa.id);
+        }
         buzz();
         delete row._failed; row._pending = true;
         renderDataViews();
@@ -3700,6 +4755,8 @@ function hexA(hex, a) {
         }
     }
     function discardTxn(localId) {
+        const row = STATE.transactions.find(t => t.txn_id === localId);
+        if (row && row._jobId && jobExists(row._jobId)) return offlineDiscard(row._jobId);
         if (!confirm('要捨棄這筆沒有存成功的紀錄嗎？')) return;
         STATE.transactions = STATE.transactions.filter(t => t.txn_id !== localId);
         renderDataViews(); buzz();
@@ -3980,7 +5037,7 @@ function hexA(hex, a) {
         c.innerHTML = `
             <div class="flex justify-between items-center">
                 <h2 class="text-lg font-bold text-stone-800">${currentMode === 'personal' ? '我的明細' : '家庭公帳明細'}</h2>
-                <button id="btnSyncTop" onclick="refreshData()" aria-label="同步" class="tap44 w-10 h-10 -mr-1 rounded-full flex items-center justify-center text-stone-400 text-lg tactile active:bg-pastel-bg"><i class="fa-solid fa-rotate"></i></button>
+                <button id="btnSyncTop" onclick="manualSync()" aria-label="同步" class="tap44 w-10 h-10 -mr-1 rounded-full flex items-center justify-center text-stone-400 text-lg tactile active:bg-pastel-bg"><i class="fa-solid fa-rotate"></i></button>
             </div>
             ${toolbarRow()}
             ${summaryStrip()}
@@ -4016,111 +5073,111 @@ function hexA(hex, a) {
         if (txnViewMode === 'calendar' && filters.allTime) filters.allTime = false;
         renderTransactions();
     }
-    /** 月曆格子很窄：一萬以下照常顯示（3,250），一萬以上縮寫成「3萬」「1.2萬」；完整金額在點開的當日明細與 aria-label */
-    const calNum = v => {
-        const n = Math.round(Math.abs(Number(v) || 0));
-        if (n < 10000) return n.toLocaleString('en-US');
-        const w = n / 10000;
-        return (w < 10 ? (Math.round(w * 10) / 10) : Math.round(w)) + '萬';
-    };
+    /* r10：月曆依「圓形印記＋右上角筆數角標」重新設計（使用者 2026-11-02 決定的規格）：
+       格子內不顯示金額；有紀錄＝實心圓、角標是當天筆數；當天支出超過每日預算均額＝角標轉珊瑚紅；沒有紀錄＝只留淡色日期。
+       金額與明細在點開的當日面板。資料仍與清單共用同一份篩選結果（filteredTxns）與收支口徑（plTotals）。 */
     const calFull = v => Math.round(Math.abs(Number(v) || 0)).toLocaleString('en-US');
+    /** 每日預算均額：本月整體預算 ÷ 當月天數；沒有設定預算 → 0（不判斷超額） */
+    function calDailyQuota(ym) {
+        const budget = budgetFor(currentMode, '');
+        return budget > 0 ? budget / daysInYM(ym) : 0;
+    }
     function renderCalendarGrid(allRows) {
         const ym = viewYM;
         const [y, m] = ym.split('-').map(Number);
         const startOffset = (new Date(Date.UTC(y, m - 1, 1)).getUTCDay() + 6) % 7;   // 週一為第一欄
         const totalDays = daysInYM(ym);
-        const budget = budgetFor(currentMode, '');
-        const dailyQuota = budget > 0 ? budget / totalDays : 0;
+        const dailyQuota = calDailyQuota(ym);
         const today = todayISO();
         const byDate = {};
         allRows.forEach(t => { const d = String(t.date).slice(0, 10); (byDate[d] = byDate[d] || []).push(t); });
-        const head = ['一', '二', '三', '四', '五', '六', '日']
-            .map(w => `<div class="text-center text-[10px] font-bold text-pastel-muted py-1">${w}</div>`).join('');
+        const head = ['一', '二', '三', '四', '五', '六', '日'].map(w => `<div>${w}</div>`).join('');
         let cells = '';
         for (let i = 0; i < startOffset; i++) cells += `<div aria-hidden="true"></div>`;
         for (let d = 1; d <= totalDays; d++) {
             const iso = `${ym}-${pad2(d)}`;
             const dayRows = byDate[iso] || [];
+            const hasData = dayRows.length > 0;
             const tot = plTotals(dayRows, currentMode);
             const isToday = iso === today;
             const over = dailyQuota > 0 && tot.expense > dailyQuota;
-            /* 同步狀態：送出失敗的列要看得出來（點開當天可直接重新送出或捨棄）；待同步的列標雲朵 */
+            /* 同步狀態：沒有存進去的列要看得出來（點開當天可直接重新送出或捨棄）；待同步的列標雲朵。
+               這兩個記號只在發生時出現，是資料安全提示，不屬於月曆的配色。 */
             const failedN = dayRows.filter(t => t._failed).length;
             const syncN = dayRows.filter(t => !t._failed && (t._queued || t._pending)).length;
-            const expLine = tot.expense > 0
-                ? `<span class="block text-[10px] leading-tight font-tabular ${over ? 'text-pastel-red font-bold' : 'text-stone-700'} w-full text-center whitespace-nowrap" data-cal-exp>${calNum(tot.expense)}</span>` : '';
-            const incLine = tot.income > 0
-                ? `<span class="block text-[10px] leading-tight font-tabular text-pastel-green w-full text-center whitespace-nowrap" data-cal-inc>+${calNum(tot.income)}</span>` : '';
-            const body = (expLine || incLine)
-                ? `<span class="w-full flex flex-col items-center">${expLine}${incLine}</span>`
-                : dayRows.length
-                    ? `<span class="w-1.5 h-1.5 rounded-full bg-pastel-blue mb-1" title="只有資金移動"></span>`
-                    : `<span class="text-[10px] text-stone-300">·</span>`;
             const flag = failedN
-                ? `<i class="fa-solid fa-triangle-exclamation text-[10px] text-pastel-red" data-cal-failed></i>`
-                : syncN ? `<i class="fa-solid fa-cloud-arrow-up text-[10px] text-pastel-accent" data-cal-sync></i>` : '';
-            cells += `<button type="button" data-cal-day="${iso}" onclick="openCalendarDay('${iso}')"
-                aria-label="${m} 月 ${d} 日${tot.expense > 0 ? `，支出 ${calFull(tot.expense)} 元` : ''}${tot.income > 0 ? `，收入 ${calFull(tot.income)} 元` : ''}${over ? '，超過每日額度' : ''}${failedN ? `，${failedN} 筆沒有存進去` : ''}${syncN ? `，${syncN} 筆待同步` : ''}"
-                class="h-14 min-w-0 rounded-lg border px-0.5 py-1 flex flex-col items-center justify-between tactile
-                       ${isToday ? 'border-pastel-accent bg-pastel-accentLight' : 'border-pastel-border/60 bg-white'}">
-                <span class="flex items-center gap-0.5">
-                    <span class="text-xs font-bold ${isToday ? 'text-pastel-accent' : 'text-stone-700'}">${d}</span>
-                    ${over ? `<span class="w-1.5 h-1.5 rounded-full bg-pastel-red" data-cal-over></span>` : ''}${flag}
-                </span>${body}</button>`;
+                ? `<i class="cal-flag fa-solid fa-triangle-exclamation text-pastel-red" data-cal-failed></i>`
+                : syncN ? `<i class="cal-flag fa-solid fa-cloud-arrow-up text-pastel-accent" data-cal-sync></i>` : '';
+            cells += `<div class="cal-cell">
+                <button type="button" data-cal-day="${iso}" onclick="openCalendarDay('${iso}')"
+                    aria-label="${m} 月 ${d} 日${isToday ? '（今天）' : ''}${hasData ? `，${dayRows.length} 筆` : '，沒有紀錄'}${tot.expense > 0 ? `，支出 ${calFull(tot.expense)} 元` : ''}${tot.income > 0 ? `，收入 ${calFull(tot.income)} 元` : ''}${over ? '，超過每日預算均額' : ''}${failedN ? `，${failedN} 筆沒有存進去` : ''}${syncN ? `，${syncN} 筆待同步` : ''}"
+                    class="cal-dot font-tabular${hasData ? ' has' : ''}${isToday ? ' today' : ''}">${d}</button>
+                ${hasData ? `<span class="cal-badge font-tabular${over ? ' over' : ''}" data-cal-count="${dayRows.length}"${over ? ' data-cal-over' : ''} aria-hidden="true">${dayRows.length > 99 ? '99' : dayRows.length}</span>` : ''}${flag}
+            </div>`;
         }
-        return `<div class="bg-white border border-pastel-border/60 rounded-card p-3 shadow-card mb-3" data-calendar="${ym}">
-            <div class="grid grid-cols-7 gap-1 mb-1">${head}</div>
-            <div class="grid grid-cols-7 gap-1">${cells}</div>
-            <div class="flex flex-wrap items-center justify-between gap-1 text-[10px] text-pastel-muted mt-3 pt-2 border-t border-pastel-border/60">
-                <span>格子內為當日支出，綠色為收入；<i class="fa-solid fa-triangle-exclamation text-pastel-red"></i> 表示有紀錄沒有存進去</span>
-                ${dailyQuota > 0 ? `<span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-pastel-red"></span>單日超過 ${fmt(dailyQuota)}</span>` : ''}
+        return `<div class="bg-white border border-pastel-border/60 rounded-card px-3 pt-4 pb-3 shadow-card mb-3" data-calendar="${ym}">
+            <div class="grid grid-cols-7 mb-2 text-center text-xs font-bold text-stone-400">${head}</div>
+            <div class="grid grid-cols-7 gap-y-2">${cells}</div>
+            <div class="flex flex-wrap items-center justify-center gap-x-5 gap-y-1 text-[10px] font-medium text-pastel-muted mt-4 pt-3 border-t border-pastel-border/60" data-cal-legend>
+                <span class="flex items-center gap-1.5"><span class="cal-key count"></span><span>記帳筆數</span></span>
+                <span class="flex items-center gap-1.5"><span class="cal-key over"></span><span class="text-pastel-red font-bold">單日超額（${dailyQuota > 0 ? fmt(dailyQuota) : '預算均額'}）</span></span>
             </div></div>`;
     }
-    /** 當天明細：列出後點一筆看詳情（詳情頁才有編輯、作廢、再記一次，不在這裡做滑動手勢） */
-    function openCalendarDay(iso) {
-        buzz(6);
+    /** 當天明細：頂部是日期、當日支出與狀態，列表與清單頁相同（分類圖示、帳戶、金額、左滑作廢／右滑編輯）。
+        資料變動（作廢、復原、重新送出、補送完成）時，renderTxnList 會就地重畫這個面板（refreshCalendarDay）。 */
+    function calendarDayHtml(iso) {
         const dayRows = filteredTxns().filter(t => String(t.date).slice(0, 10) === iso);
         const tot = plTotals(dayRows, currentMode);
         const [, mm, dd] = iso.split('-').map(Number);
+        const wk = ['日', '一', '二', '三', '四', '五', '六'][new Date(iso + 'T00:00:00').getDay()];
+        const quota = calDailyQuota(iso.slice(0, 7));
+        const over = quota > 0 && tot.expense > quota;
+        const pill = over ? ['超額消費', 'bg-pastel-redLight text-pastel-red']
+            : tot.expense > 0 ? ['正常花費', 'bg-pastel-bg text-stone-600'] : ['無消費', 'bg-pastel-bg text-pastel-muted'];
         const failedN = dayRows.filter(t => t._failed).length;
-        const list = dayRows.length ? `<div class="space-y-2 mt-3">${failedN ? `<div class="px-3 py-2 rounded-tile bg-pastel-redLight text-[10px] font-bold text-pastel-red" data-cal-failed-note>
-                <i class="fa-solid fa-triangle-exclamation mr-1"></i>這天有 ${failedN} 筆沒有存進去，請重新送出或捨棄</div>` : ''}${dayRows.map(t => {
-            const fm = fundMovementInfo(t), kind = plKind(t, currentMode);
-            const title = fm ? fm.label : (t.note || t.category || t.entry_type);
-            const amt = displayAmount(t);
-            const sign = kind === 'expense' ? '-' : kind === 'income' ? '+' : '';
-            const col = kind === 'expense' ? 'text-stone-800' : kind === 'income' ? 'text-pastel-green' : 'text-pastel-blue';
-            const state = t._failed ? `<span class="text-pastel-red font-bold"><i class="fa-solid fa-triangle-exclamation mr-1"></i>沒有存進去</span>`
-                : (t._queued ? `<span class="text-pastel-accent font-bold"><i class="fa-solid fa-cloud-arrow-up mr-1"></i>待同步</span>`
-                : (t._pending ? `<span class="text-pastel-muted font-bold"><i class="fa-solid fa-spinner fa-spin mr-1"></i>同步中</span>` : ''));
-            const row = `<button type="button" data-id="${esc(t.txn_id)}" onclick="openTxnSheet(this.dataset.id)"
-                class="w-full flex items-center justify-between gap-2 p-3 ${t._failed ? 'rounded-t-tile' : 'rounded-tile'} bg-pastel-bg text-left tactile">
-                <span class="min-w-0"><span class="block text-sm font-bold text-stone-800 truncate">${esc(title)}</span>
-                    <span class="block text-[10px] text-pastel-muted truncate">${state ? state + ' · ' : ''}${esc(fm ? (fm.sub || '') : (t.category || t.entry_type))}</span></span>
-                <span class="font-tabular text-sm flex-shrink-0 ${col}">${sign}${fmt(amt)}</span></button>`;
-            if (!t._failed) return row;
-            return `<div data-cal-failed-row="${esc(t.txn_id)}">${row}<div class="flex gap-2 px-3 pb-3 pt-1 bg-pastel-bg rounded-b-tile">
-                <button type="button" data-i="${esc(t.txn_id)}" onclick="calRetryTxn(this.dataset.i)" class="flex-1 py-2.5 rounded-lg bg-pastel-red text-white text-xs font-bold tactile" data-cal-retry>重新送出</button>
-                <button type="button" data-i="${esc(t.txn_id)}" onclick="calDiscardTxn(this.dataset.i, '${iso}')" class="px-4 py-2.5 rounded-lg bg-white border border-pastel-red/30 text-pastel-red text-xs font-bold tactile" data-cal-discard>捨棄</button>
-            </div></div>`;
-        }).join('')}</div>`
-            : `<div class="py-8 text-center text-xs text-pastel-muted">這天還沒有紀錄</div>`;
-        openSheet(`
+        const list = dayRows.length
+            ? `${failedN ? `<div class="px-3 py-2 mt-3 rounded-tile bg-pastel-redLight text-[10px] font-bold text-pastel-red" data-cal-failed-note>
+                <i class="fa-solid fa-triangle-exclamation mr-1"></i>這天有 ${failedN} 筆沒有存進去，請重新送出或捨棄</div>` : ''}
+               <div class="bg-white border border-pastel-border/60 rounded-card shadow-sm overflow-hidden mt-3" data-cal-list>
+                ${dayRows.map((t, i, arr) => txnRow(t, i === arr.length - 1)).join('')}</div>`
+            : `<div class="py-10 text-center text-xs text-pastel-muted" data-cal-empty>${iso === todayISO() ? '今天' : '這天'}錢包很乖，沒有任何花費紀錄 🍃</div>`;
+        return `<div data-cal-sheet="${iso}">
             <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
-                    <h3 class="text-lg font-bold text-stone-800">${mm} 月 ${dd} 日</h3>
-                    <div class="flex flex-wrap gap-x-1.5 text-xs text-pastel-muted mt-0.5">${dayTotalsHtml(tot)}</div></div>
-                <button type="button" onclick="addOnDate('${iso}')" class="flex-shrink-0 px-4 py-2.5 rounded-full bg-pastel-accent text-white text-xs font-bold tactile">
+                    <h3 class="text-lg font-bold text-stone-800">${mm} 月 ${dd} 日 星期${wk}</h3>
+                    <div class="flex flex-wrap items-center gap-2 mt-1">
+                        <span class="font-tabular text-sm font-bold text-stone-800" data-cal-day-exp>${tot.expense > 0 ? '-' : ''}${fmt(tot.expense)}</span>
+                        <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${pill[1]}" data-cal-day-state>${pill[0]}</span>
+                        ${tot.income > 0 ? `<span class="font-tabular text-xs text-pastel-green" data-cal-day-inc>收入 +${fmt(tot.income)}</span>` : ''}</div></div>
+                <button type="button" onclick="addOnDate('${iso}')" class="flex-shrink-0 px-4 py-2.5 rounded-full bg-pastel-accent text-white text-xs font-bold tactile" data-cal-add>
                     <i class="fa-solid fa-plus mr-1"></i>記這天</button>
             </div>
-            <div class="max-h-[56vh] overflow-y-auto hide-scrollbar">${list}</div>`);
+            <div class="max-h-[56vh] overflow-y-auto hide-scrollbar">${list}</div></div>`;
     }
-    /** 月曆當日明細裡的失敗列：沿用清單的重新送出／捨棄（同一個函式），先關掉面板讓結果回到畫面上 */
-    function calRetryTxn(id) { closeSheet(); retryTxn(id); }
-    function calDiscardTxn(id, iso) {
-        const before = STATE.transactions.length;
-        discardTxn(id);
-        if (STATE.transactions.length !== before) openCalendarDay(iso);   // 捨棄成功：重新整理當天明細
+    let _calDayHtml = '';                // 目前面板內容（用來判斷資料是否真的變了）
+    let _calRefreshTimer = null;         // r11：等手勢結束後再更新的計時器（最多一個）
+    function openCalendarDay(iso) {
+        buzz(6);
+        _calDayHtml = calendarDayHtml(iso);
+        openSheet(_calDayHtml);
+        bindSwipe();
+    }
+    /** 當日面板開著、資料變了：就地重畫（保留捲動位置），不關閉面板。
+        內容沒變就不動（背景同步常會重畫畫面，不能因此打斷正在滑動的手勢）；正在滑動時等手勢結束再更新。 */
+    function refreshCalendarDay() {
+        const m = document.getElementById('sheetModal'), c = document.getElementById('sheetContent');
+        if (!m || !c || m.classList.contains('js-hide') || m.classList.contains('opacity-0')) return;
+        const box = c.querySelector('[data-cal-sheet]');
+        if (!box) return;
+        const html = calendarDayHtml(box.dataset.calSheet);
+        if (html === _calDayHtml) return;
+        // 正在滑動：等手勢結束再更新（只排一個計時器；面板關閉後下一次執行就停止）
+        if (c.querySelector('.swipe-inner.dragging')) { if (!_calRefreshTimer) _calRefreshTimer = setTimeout(() => { _calRefreshTimer = null; refreshCalendarDay(); }, 300); return; }
+        _calDayHtml = html;
+        const top = c.scrollTop;
+        c.innerHTML = `<div class="w-12 h-2.5 bg-stone-200 rounded-full mx-auto mb-5"></div>` + html;
+        c.scrollTop = top;
+        bindSwipe();
     }
     /** 從月曆補記某一天：一律從乾淨的表單開始，避免沿用上一筆沒存的金額或分攤 */
     function addOnDate(iso) {
@@ -4136,9 +5193,10 @@ function hexA(hex, a) {
         const box = document.getElementById('txnList'); if (!box) return;
         const all = filteredTxns();
         if (txnViewMode === 'calendar' && !filters.allTime) {
-            box.innerHTML = `<button id="queueBadge" onclick="syncOfflineQueue()" class="js-hide w-full mb-3 py-2.5 rounded-tile bg-pastel-accentLight text-pastel-accent text-[10px] font-bold tactile"></button>`
+            box.innerHTML = `<button id="queueBadge" onclick="queueBadgeTap()" class="js-hide w-full mb-3 py-2.5 rounded-tile bg-pastel-accentLight text-pastel-accent text-[10px] font-bold tactile"></button>`
                 + renderCalendarGrid(all);
             paintQueueBadge();
+            refreshCalendarDay();
             return;
         }
         const rows = all.slice(0, _txnShown);
@@ -4153,7 +5211,7 @@ function hexA(hex, a) {
         if (!rows.length) list = activeFilterCount() || filters.q
             ? emptyState('av37', '找不到符合的紀錄', '換個關鍵字或把篩選條件放寬一點', { label: '清除篩選', fn: 'clearAllFilters()' })
             : emptyState('av46', `${viewYM.slice(5, 7)} 月還是一片空白`, '記下第一筆，這個月的故事就開始了', { label: '記一筆', fn: "switchTab('add')" });
-        box.innerHTML = `<button id="queueBadge" onclick="syncOfflineQueue()" class="js-hide w-full mb-3 py-2.5 rounded-tile bg-pastel-accentLight text-pastel-accent text-[10px] font-bold tactile"></button>${swipeHint()}${list}` + (more > 0 ? `
+        box.innerHTML = `<button id="queueBadge" onclick="queueBadgeTap()" class="js-hide w-full mb-3 py-2.5 rounded-tile bg-pastel-accentLight text-pastel-accent text-[10px] font-bold tactile"></button>${swipeHint()}${list}` + (more > 0 ? `
             <button onclick="showMoreTxns()" class="w-full mt-4 py-3 rounded-tile bg-white border border-pastel-border text-xs font-bold text-stone-600 tactile">
                 還有 ${more} 筆 ・ 載入更多</button>` : '');
         bindSwipe();
@@ -4466,6 +5524,7 @@ function hexA(hex, a) {
             const bg = wrap.querySelector('.swipe-bg');
             const eEdit = wrap.querySelector('.sw-edit'), eVoid = wrap.querySelector('.sw-void');
             const eCopy = wrap.querySelector('.sw-copy');
+            const inSheet = !!wrap.closest('#sheetContent');     // r10：月曆當日面板內的列
             /* 右滑露出兩顆按鈕（編輯／再記一次），所以展開距離要比左滑寬。
                FIRE / FIRE_R 是「手指實際滑動距離」的門檻，不是位移量。
                左滑（作廢）刻意設得比右滑遠 —— 破壞性的動作應該難一點。 */
@@ -4489,9 +5548,13 @@ function hexA(hex, a) {
                 if (!to) bg.style.opacity = 0; else paint();
             };
             wrap._close = () => { if (rest) settle(0); };
+            wrap._gs = () => ({ rawMag, dx, armed, moved, lock, active, rest });   // r12：目前手勢狀態的唯讀快照（診斷與測試用）
 
+            /* r12（R11-F01）：每一次手勢都是獨立的。開始時重設「本次」的距離與狀態；
+               r11 以前 rawMag 會跨手勢殘留：長滑超過作廢門檻後被取消，下一次單純輕點的放手就被當成「重滑到底」而作廢。 */
             const start = (x, y) => {
                 x0 = x - rest; y0 = y; lock = null; active = true; moved = false; armed = false;
+                dx = rest; rawMag = 0;
                 inner.classList.add('dragging');
             };
             const move = (x, y, e) => {
@@ -4502,7 +5565,8 @@ function hexA(hex, a) {
                     // 原本 8px / 1.2 倍太鬆，上下捲動時手指自然的斜向軌跡就會誤觸。
                     if (Math.abs(ddx - rest) < 12 && Math.abs(ddy) < 12) return;
                     lock = Math.abs(ddx - rest) > Math.abs(ddy) * 1.8 ? 'h' : 'v';
-                    if (lock === 'v') { active = false; return; }
+                    // r11（R10-F01）：判定為上下捲動 → 這次不是滑動手勢，立刻結束拖曳狀態（不等 touchend；瀏覽器接手捲動時常只送 touchcancel）
+                    if (lock === 'v') { active = false; inner.classList.remove('dragging'); return; }
                     closeAllSwipes(wrap);
                 }
                 if (lock !== 'h') return;
@@ -4523,13 +5587,16 @@ function hexA(hex, a) {
                 paint();
             };
             const end = () => {
-                if (!active) { inner.classList.remove('dragging'); return; }
-                active = false; inner.classList.remove('dragging');
+                inner.classList.remove('dragging');
+                if (!active) { rawMag = 0; armed = false; return; }
+                active = false;
+                // 這次沒有橫向滑動（輕點、或只是按住）：維持原本的停靠位置，不執行任何動作；點擊由 click 處理
+                if (!moved) { rawMag = 0; armed = false; settle(rest); return; }
                 const mag = Math.abs(dx);
                 const fire = dx > 0 ? FIRE_R : FIRE, open = dx > 0 ? OPEN_R : OPEN;
                 if (rawMag >= fire) {                    // 重滑到底：直接執行
                     if (dx < 0) { inner.style.transform = 'translateX(-110%)'; bg.style.opacity = 1; setTimeout(() => voidTxn(id), 190); }
-                    else { settle(0); editTxn(id); }
+                    else { settle(0); if (inSheet) closeSheet(); editTxn(id); }
                 } else if (mag >= open * 0.55) {         // 輕滑：停在展開狀態，可反悔
                     settle(dx < 0 ? -OPEN : OPEN_R); buzz(6);
                 } else settle(0);                        // 滑回來：取消
@@ -4538,7 +5605,10 @@ function hexA(hex, a) {
             wrap.addEventListener('touchstart', e => start(e.touches[0].clientX, e.touches[0].clientY), { passive: true });
             wrap.addEventListener('touchmove', e => move(e.touches[0].clientX, e.touches[0].clientY, e), { passive: false });
             wrap.addEventListener('touchend', end);
-            wrap.addEventListener('touchcancel', () => { active = false; settle(rest); });
+            /* r11（R10-F01）：觸控被取消（系統手勢、來電、瀏覽器接手捲動…）＝手勢結束、不執行任何動作。
+               r10 以前只停止追蹤、沒有清掉 dragging，月曆當日面板會一直以為「正在滑動」而不更新。 */
+            const cancel = () => { active = false; armed = false; moved = false; lock = null; rawMag = 0; inner.classList.remove('dragging'); settle(rest); };
+            wrap.addEventListener('touchcancel', cancel);
             wrap.addEventListener('mousedown', e => {
                 start(e.clientX, e.clientY);
                 const mm = ev => move(ev.clientX, ev.clientY, ev);
@@ -4553,6 +5623,7 @@ function hexA(hex, a) {
                 const copy = rest > 0 && ev.target.closest('.sw-copy');
                 const act = rest < 0 ? voidTxn : (copy ? copyTxn : editTxn);
                 settle(0);
+                if (inSheet && act !== voidTxn) closeSheet();    // r10：從月曆當日面板編輯／再記一次 → 先關面板再進記帳頁；作廢留在面板（就地更新）
                 setTimeout(() => act(id), 140);
             });
             inner.addEventListener('click', () => {
@@ -6117,7 +7188,9 @@ function hexA(hex, a) {
             freq: document.getElementById('recFreq').value,
             auto_mode: document.getElementById('recMode').value,
             start_date: txn.date, end_date: document.getElementById('recEnd').value || '',
-            scope: currentMode === 'family' ? 'family' : 'personal'
+            scope: currentMode === 'family' ? 'family' : 'personal',
+            // r8（R7-F01）：後續各期沿用首筆的付款來源（後端也以首筆為準再核對一次）
+            fund: txn.payer_id === 'family_pool' ? 'family_pool' : 'member'
         } : null;
 
         if (editingTxnId) return commitTxnEdit(txn, receipt);
@@ -6131,7 +7204,7 @@ function hexA(hex, a) {
         const ruleAfter = rec ? newRuleAfter(rec) : null;
         const res = await optimisticAdd(txn, receipt, undefined, ruleAfter);
         document.getElementById('appMain').scrollTop = 0;
-        if (ruleAfter && res && res.ok && res.txn && res.txn.txn_id) await createRuleAfterFirst(ruleAfter, res.txn.txn_id);
+        if (ruleAfter && res && res.ok && res.txn && res.txn.txn_id) await createRuleAfterFirst(ruleAfter, res.txn.txn_id, res.txn.client_id);
     }
 
     /* ==========================================================
@@ -6417,7 +7490,16 @@ const BANKS = [
                 <span class="text-xs font-bold text-stone-700">還沒還我</span>
                 <span class="font-bold font-tabular text-pastel-green">${fmt(owe)}</span></div>` : ''}
             ${payeeBlock(m)}
-            ${isMe ? `<button onclick="closeSheet();openProfileModal()" class="w-full mt-4 py-3 bg-pastel-bg border border-pastel-border text-stone-700 font-bold rounded-tile text-sm tactile">編輯我的收款資訊</button>` : ''}`);
+            ${isMe ? `<button onclick="closeSheet();openProfileModal()" class="w-full mt-4 py-3 bg-pastel-bg border border-pastel-border text-stone-700 font-bold rounded-tile text-sm tactile">編輯我的收款資訊</button>` : ''}
+            ${canManageLogin(m) ? `<div class="mt-4 pt-4 border-t border-dashed border-pastel-border space-y-2" data-member-login="${esc(m.member_id)}">
+                <div class="flex justify-between gap-3 text-xs"><span class="text-pastel-muted flex-shrink-0">手機登入</span>
+                    <span id="memberLoginStatus" class="font-bold text-stone-700 text-right min-w-0">讀取中…</span></div>
+                ${m.role === 'admin'
+                    ? `<p class="text-[10px] text-pastel-muted leading-relaxed" data-head-code-note>戶長的登入碼只能從 Google 試算表選單「🏠 家庭記帳 → 登入與安全 → 產生戶長登入碼」產生（限已登記的帳號、10 分鐘內有效）。</p>`
+                    : `<button onclick="issueLoginCodeFor('${esc(m.member_id)}')" data-issue-code class="w-full py-3 bg-pastel-blueLight text-pastel-blue font-bold rounded-tile text-sm tactile"><i class="fa-solid fa-key mr-1.5"></i>產生登入碼</button>`}
+                <button onclick="revokeLoginFor('${esc(m.member_id)}')" data-revoke-login class="w-full py-3 bg-white border border-pastel-border text-stone-600 font-bold rounded-tile text-sm tactile"><i class="fa-solid fa-right-from-bracket mr-1.5"></i>讓目前裝置登出</button>
+            </div>` : ''}`);
+        if (canManageLogin(m)) loadLoginStatus(m.member_id);
     }
 
     async function copyText(txt, msg) {
@@ -6622,9 +7704,11 @@ const BANKS = [
         if (!group) return `<div class="text-xs text-pastel-muted py-2">尚未加入群組。</div>`;
         const fam = group.members;
         const isAdmin = STATE.me?.role === 'admin';
+        /* v6.25.0 r2：通用邀請入口暫時隱藏（方案 A）。新邀請流程（收到邀請才建立自己的成員）於下一版實作；
+           在那之前，家人登入一律由戶長在成員卡片「產生登入碼」。 */
         const help = isAdmin
-            ? `新增成員請在 Google Sheets 的 <b>Members</b> 分頁加一列（member_id 自取、不重複即可），回到 App 按同步即生效。家人要在自己手機上使用，用「連線與帳本」裡的「複製安裝碼」傳給他。`
-            : `新增成員需由戶長在 Google Sheets 處理。家人要在自己手機上使用，可用「連線與帳本」裡的「複製安裝碼」傳給他。`;
+            ? `新增成員請在 Google Sheets 的 <b>Members</b> 分頁加一列（member_id 自取、不重複即可），回到 App 按同步即生效。家人要在自己手機上登入：點他的頭像，按「產生登入碼」交給他。`
+            : `新增成員與產生登入碼由戶長處理。換手機或重裝 App 時，請戶長點你的頭像產生登入碼。`;
         return `<div data-group-id="${esc(group.id)}" class="space-y-3">
             <div class="flex justify-between items-center text-xs text-pastel-muted">
                 <span class="font-bold text-stone-700 truncate">${esc(group.name)}</span><span>${fam.length} 人</span></div>
@@ -6651,6 +7735,71 @@ const BANKS = [
             </div>` : `<div class="text-xs text-pastel-muted py-2">群組裡還沒有成員。</div>`}
             <p class="text-xs text-pastel-muted leading-relaxed pt-1">${help}</p>
         </div>`;
+    }
+
+    /* ==========================================================
+       v6.25.0 r2 戶長：成員登入管理
+       ・產生登入碼：指定這位成員、24 小時內有效、只能用一次；兌換後他原本的登入會被取代。
+       ・讓目前裝置登出：手機遺失時使用，立即讓他現在的登入失效（尚未兌換的登入碼一併作廢）。
+       這是修補期的首次登入／恢復措施；長期改為「帳號＋群組成員資格」，換裝置不必每次找戶長。
+       ========================================================== */
+    /** 戶長才看得到登入管理；家庭公帳等系統列、停用成員不能登入 */
+    function canManageLogin(m) {
+        return isGroupAdminMe() && !!m && m.member_id !== 'family_pool' && !(m.is_system === true || String(m.is_system).toUpperCase() === 'TRUE') && m.status !== '停用';
+    }
+    async function loadLoginStatus(memberId) {
+        const box = document.getElementById('memberLoginStatus');
+        if (!box) return;
+        try {
+            const d = await api.call('loginStatus');
+            const x = (d.members || []).find(m => m.member_id === memberId);
+            const b2 = document.getElementById('memberLoginStatus'); if (!b2) return;
+            if (!x) { b2.innerText = ''; return; }
+            b2.dataset.hasToken = x.hasToken ? '1' : '0';
+            /* r4（R3-F04）：「最近一次回報的版本」只是這位成員某台裝置最近一次連線時帶的版本，不是裝置盤點；
+               有「未回報版本的使用」（舊版 App 不帶版本）時另外提示 */
+            const oldUse = x.noVersionOn && (!x.clientVersionOn || x.noVersionOn >= x.clientVersionOn);
+            b2.innerHTML = `${x.hasToken ? '已登入' + (x.tokenSeenOn ? `・最近使用 ${esc(x.tokenSeenOn)}` : '') : '目前沒有登入'}`
+                + (x.clientVersion ? `<br>最近一次回報的版本：${esc(x.clientVersion)}${x.clientVersionOn ? `（${esc(x.clientVersionOn)}）` : ''}` : '')
+                + (oldUse ? `<br><span class="text-pastel-red">${esc(x.noVersionOn)} 有未回報版本的使用（可能是舊版 App 或舊分頁）</span>` : '')
+                + (x.pendingCode ? `<br>有一組登入碼尚未使用，${esc(fmtSyncTime(x.pendingCode.expiresAt))} 到期` : '');
+        } catch (e) {
+            const b2 = document.getElementById('memberLoginStatus');
+            if (b2) b2.innerText = /未知的 action/.test(e.message || '') ? '後端需要更新才能查看' : '暫時無法讀取';
+        }
+    }
+    async function issueLoginCodeFor(memberId) {
+        const m = memberOf(memberId); if (!m) return;
+        const isMe = memberId === STATE.me?.member_id;
+        if (!confirm(`為「${m.nickname}」產生登入碼？\n\n・24 小時內有效，只能用一次。\n・${isMe ? '你用登入碼登入後，原本的登入（包括這台裝置）會失效。' : '他用登入碼登入後，原本在其他裝置的登入會失效。'}\n・之前產生、還沒用掉的登入碼會作廢。`)) return;
+        buzz(12);
+        try {
+            const d = await api.call('issueLoginCode', { targetMemberId: memberId });
+            const shown = d.code.slice(0, 5) + '-' + d.code.slice(5);
+            openSheet(`
+                <h3 class="text-lg font-bold text-stone-800 mb-1">${esc(m.nickname)} 的登入碼</h3>
+                <p class="text-xs text-pastel-muted mb-4">請當面或私訊交給${isMe ? '自己的新裝置' : '他'}，不要貼在群組。</p>
+                <div class="selectable text-center text-2xl font-bold font-tabular tracking-widest text-stone-800 bg-pastel-bg rounded-tile py-4" data-login-code>${esc(shown)}</div>
+                <div class="text-xs text-pastel-muted text-center mt-2">${esc(fmtSyncTime(d.expiresAt))} 前有效・只能使用一次</div>
+                <button type="button" onclick="copyText('${esc(d.code)}', '已複製登入碼')" class="w-full mt-4 py-3 rounded-tile bg-pastel-accent text-white font-bold text-sm tactile"><i class="fa-solid fa-copy mr-1.5"></i>複製登入碼</button>
+                <div class="mt-4 space-y-1.5 text-[10px] text-pastel-muted leading-relaxed">
+                    <p>對方打開 App（還沒設定過的話，先在「連線與帳本」按「複製邀請連結」傳給他），在登入畫面輸入這組登入碼。</p>
+                    <p>這個畫面關掉後就看不到這組碼了；需要的話再產生一組（舊的會作廢）。</p>
+                </div>`);
+        } catch (e) { toast(/未知的 action/.test(e.message || '') ? '後端需要更新到 6.25.0 才能產生登入碼' : e.message, true); }
+    }
+    async function revokeLoginFor(memberId) {
+        const m = memberOf(memberId); if (!m) return;
+        const isMe = memberId === STATE.me?.member_id;
+        if (!confirm(isMe ? '讓你自己目前的登入失效？\n\n這台裝置會立刻登出，之後需要從試算表選單產生戶長登入碼才能再登入。'
+            : `讓「${m.nickname}」目前的登入失效？\n\n他的裝置會在下次連線時登出（例如手機遺失時使用）。之後要再登入，需要你產生新的登入碼。`)) return;
+        buzz(12);
+        try {
+            await api.call('revokeMemberLogin', { targetMemberId: memberId });
+            closeSheet();
+            if (isMe) return handleAuthLost({ code: 'NEED_AUTH' });
+            toast(`已讓「${m.nickname}」登出`);
+        } catch (e) { toast(e.message, true); }
     }
 
     /* ==========================================================
@@ -6907,7 +8056,9 @@ const BANKS = [
                     <div class="min-w-0">
                         <div class="font-bold text-stone-800 text-sm truncate">${esc(r.name)}${r.status === '停用' ? ' <span class="text-[10px] bg-stone-200 text-stone-500 px-1.5 py-0.5 rounded">已停用</span>' : ''}</div>
                         <div class="text-[10px] text-pastel-muted mt-0.5 leading-snug">
-                            ${esc(r.freq)} · ${esc(r.auto_mode)} · 下次 ${esc(r.next_run || '—')}${occ != null ? ` · 本月 ${occ} 次` : ''}</div>
+                            ${esc(r.freq)} · ${esc(r.auto_mode)} · 下次 ${esc(r.next_run || '—')}${occ != null ? ` · 本月 ${occ} 次` : ''}${r.fund === 'family_pool' ? ' · 家庭公帳支付' : ''}</div>
+                        ${r.fund_basis === 'unknown' ? `<div class="text-[10px] text-pastel-red mt-0.5 leading-snug break-words" data-fund-unknown="${esc(r.rule_id)}">${r.fund_conflict ? '付款來源與規則設定不相容（例如不是家庭公帳性質卻由公帳支付）：確認前不會自動記帳。請按編輯，重新確認誰出的錢' : '付款來源待確認：確認前不會自動記帳。請按編輯，選擇由家庭公帳或自己出錢'}</div>` : ''}
+                        ${isGroupAdminMe() && r.scope === 'family' && r.fund_basis === 'explicit' ? `<button type="button" class="tap44 text-[10px] text-pastel-accent font-bold" data-fund-check="${esc(r.rule_id)}" onclick="openFundFixSheet(this.dataset.fundCheck)">檢查以前的紀錄</button>` : ''}
                         ${bad ? `<div class="text-[10px] text-pastel-red mt-0.5 leading-snug break-words" data-unreliable-row="${esc(r.rule_id)}" data-reason="${esc(bad.why)}">${esc(ruleReasonShort(bad.why))}</div>` : ''}</div></div>
                 <div class="text-right flex-shrink-0">
                     <div class="font-tabular text-sm ${r.entry_type === '收入' ? 'text-pastel-green' : 'text-stone-800'}">${fmt(r.amount)}</div>
@@ -6940,7 +8091,10 @@ const BANKS = [
                 ${list.length ? list.map(r => ruleRow(r, proj.occ[r.rule_id], unrel.find(u => u.rule_id === r.rule_id))).join('') : `<div class="text-xs text-pastel-muted py-1">尚未設定。例如 Netflix、房租、每月薪水，設定後系統會自動記帳。</div>`}
             </div>`;
         };
-        const fixedBody = fixedArea('個人固定收支', 'personal', rules.filter(r => r.scope !== 'family'), proj.personal)
+        const fundUnknown = rules.filter(r => r.fund_basis === 'unknown' && r.status === '啟用');
+        const fixedBody = (fundUnknown.length ? `<div class="p-3 rounded-tile bg-pastel-redLight text-xs text-stone-700 leading-relaxed" data-fund-banner>
+                有 <b>${fundUnknown.length}</b> 條固定收支的<b>付款來源待確認</b>（家庭公帳支付，還是自己出錢）。確認前不會自動記帳，到期的期別會在確認後補記。</div>` : '')
+            + fixedArea('個人固定收支', 'personal', rules.filter(r => r.scope !== 'family'), proj.personal)
             + `<div class="border-t border-dashed border-pastel-border"></div>`
             + fixedArea('群組固定收支', 'family', rules.filter(r => r.scope === 'family'), proj.group);
         const cancelSortBtn = `<button type="button" onclick="cancelSortMode()" data-sort-cancel
@@ -6971,6 +8125,13 @@ const BANKS = [
                     <span class="font-bold text-stone-700">家庭公帳預算</span>
                     <span class="font-bold font-tabular text-pastel-accent">${budgetFor('family', '') ? fmt(budgetFor('family', '')) : '未設定'} <i class="fa-solid fa-chevron-right text-[10px] ml-1 text-pastel-muted"></i></span></button>
             </div>
+
+            ${(() => {
+                const ob = offlineSectionHtml();
+                if (!ob) return '';
+                const os = offlineSummary(), mine = os.mine.length + os.legacyVisible.length;
+                return section('offline', 'fa-solid fa-cloud-arrow-up text-pastel-accent', '離線待送資料', mine ? `${mine} 筆待你處理` : '此裝置另有待處理的資料', '', ob);
+            })()}
 
             ${section('groups', 'fa-solid fa-users text-pastel-blue', '群組與成員',
                 groups.length ? `${esc(groups[0].name)} · ${gCount} 人` : '尚未加入群組', '',
@@ -7003,17 +8164,18 @@ const BANKS = [
                     <div class="mb-1">後端網址</div>
                     <div class="selectable font-mono text-[10px] bg-pastel-bg rounded-lg p-2 break-all">${esc(BACKEND.url || '（未設定）')}</div>
                 </div>
+                ${bootSpeedHtml()}
                 <button id="btnCheck" onclick="actConnCheck()" class="w-full py-3 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border tactile active:bg-pastel-accentLight"><i class="fa-solid fa-stethoscope mr-1.5"></i>連線健檢</button>
                 <div id="connCheckBox" class="hidden space-y-2"></div>
-                <button onclick="shareInstall()" class="w-full py-3 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border tactile active:bg-pastel-accentLight"><i class="fa-solid fa-share-nodes mr-1.5"></i>複製安裝碼（給家人加入）</button>
+                <button onclick="shareInstall()" class="w-full py-3 bg-pastel-bg text-stone-700 font-bold rounded-tile text-xs border border-pastel-border tactile active:bg-pastel-accentLight"><i class="fa-solid fa-share-nodes mr-1.5"></i>複製安裝連結（登入另需登入碼）</button>
                 <button onclick="changeBackend()" class="w-full py-3 bg-white text-pastel-muted font-bold rounded-tile text-xs border border-pastel-border tactile">更換後端（連到別的帳本）</button>
-                <p class="text-[10px] text-pastel-muted leading-relaxed">安裝碼包含家庭代碼，拿到的人就能看到這本帳的全部紀錄，只給家人。</p>
+                <p class="text-[10px] text-pastel-muted leading-relaxed">安裝碼只用來連到這本帳；還需要戶長產生的登入碼才能登入。家庭代碼仍請只給家人。</p>
 
                 </div>`)}
 
             ${section('about', 'fa-solid fa-circle-info text-pastel-muted', '關於', esc(CONFIG.VERSION), '',
                 `<div class="space-y-3">
-                <div class="flex justify-between text-xs text-pastel-muted"><span>版本</span><span class="font-mono">${esc(CONFIG.VERSION)}</span></div>
+                <div class="flex justify-between text-xs text-pastel-muted"><span>版本</span><span class="font-mono" data-build>${esc(CONFIG.BUILD)}</span></div>
                 <div class="flex justify-between text-xs text-pastel-muted"><span>家庭</span><span>${esc(STATE.familyName)}</span></div>
                 <div class="text-xs text-pastel-muted">
                     <div class="flex justify-between items-center mb-1"><span>版面診斷</span>
@@ -7050,7 +8212,7 @@ const BANKS = [
                     <input id="rName" value="${esc(r?.name || '')}" placeholder="例如：Netflix 訂閱、房租" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm"></div>
                 <div class="grid grid-cols-2 gap-3">
                     <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">類型</label>
-                        <select id="rType" onchange="ruleTypeChanged()" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
+                        <select id="rType" onchange="ruleTypeChanged(); ruleFundUi()" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
                             <option ${isExp ? 'selected' : ''}>支出</option><option ${!isExp ? 'selected' : ''}>收入</option></select></div>
                     <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">金額</label>
                         <input id="rAmount" type="number" inputmode="decimal" value="${esc(r?.amount || '')}" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm"></div></div>
@@ -7074,16 +8236,48 @@ const BANKS = [
                         <input id="rEnd" type="date" value="${esc(r?.end_date || '')}" class="w-full py-3 px-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm"></div></div>
                 <div class="grid grid-cols-2 gap-3">
                     <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">費用歸屬</label>
-                        <select id="rNature" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
+                        <select id="rNature" onchange="ruleFundUi()" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
                             ${['純個人', '家庭公帳', '家庭代墊'].map(n => `<option ${r && r.nature === n ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
                     <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">誰看得到</label>
-                        <select id="rScope" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
+                        <select id="rScope" onchange="ruleFundUi()" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
                             <option value="personal" ${!preFamily ? 'selected' : ''}>只有我</option>
                             <option value="family" ${preFamily ? 'selected' : ''}>全家可見</option></select></div>
                 </div>
+                <div class="field hidden" id="rFundWrap" data-rule-fund>
+                    <label id="rFundLabel" class="block text-xs font-bold text-stone-600 mb-1.5">誰出的錢</label>
+                    <select id="rFund" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
+                        <option value="" ${ruleFundDefault(r) === '' ? 'selected' : ''} disabled>請選擇</option>
+                        <option value="family_pool" ${ruleFundDefault(r) === 'family_pool' ? 'selected' : ''}>家庭公帳</option>
+                        <option value="member" ${ruleFundDefault(r) === 'member' ? 'selected' : ''}>我自己的錢（例如請客）</option></select>
+                    <p id="rFundHint" class="text-[10px] text-pastel-muted leading-relaxed mt-1.5"></p></div>
                 ${r ? `<label class="flex items-center gap-2 text-sm text-stone-700"><input type="checkbox" id="rPaused" ${r.status === '停用' ? 'checked' : ''} class="w-4 h-4"> 暫停此規則</label>` : ''}
                 <button onclick="saveRule('${esc(ruleId || '')}')" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm">${r ? '儲存變更' : '建立規則'}</button>
             </div>`);
+        ruleFundUi();
+    }
+    /* ---------- v6.25.0 r8（R7-F01）：固定收支的付款來源 ----------
+       「費用歸屬」說這筆算誰的花費，「誰看得到」說誰能看到這條規則，「誰出的錢」才決定錢從哪裡扣：
+       家庭公帳支付 → 公帳餘額扣款、不進任何人的個人支出與現金；我自己的錢（請客）→ 進我的個人支出與現金。
+       只有「支出／收入＋家庭公帳＋全家可見」時才需要選；其他情況一律是本人的錢。 */
+    function ruleFundDefault(r) {
+        if (!r) return 'family_pool';                       // 新規則：與手動記帳相同，家庭公帳預設由公帳支付
+        if (r.fund_basis === 'unknown') return '';           // 舊規則、付款來源待確認：不預選，一定要選
+        return r.fund === 'family_pool' ? 'family_pool' : 'member';
+    }
+    function ruleFundApplies() {
+        const ty = document.getElementById('rType')?.value, na = document.getElementById('rNature')?.value, sc = document.getElementById('rScope')?.value;
+        return (ty === '支出' || ty === '收入') && na === '家庭公帳' && sc === 'family';
+    }
+    function ruleFundUi() {
+        const wrap = document.getElementById('rFundWrap');
+        if (!wrap) return;
+        const on = ruleFundApplies(), inc = document.getElementById('rType')?.value === '收入';
+        wrap.classList.toggle('hidden', !on);
+        const lab = document.getElementById('rFundLabel'), hint = document.getElementById('rFundHint');
+        if (lab) lab.innerText = inc ? '收入存到哪裡' : '誰出的錢';
+        if (hint) hint.innerText = inc
+            ? '家庭公帳：存進公帳，不算任何人的個人收入。我自己：算我的個人收入。'
+            : '家庭公帳：從公帳扣款，不算任何人的個人支出。我自己的錢：算我的個人支出（例如我請全家吃飯）。';
     }
     function ruleTypeChanged() {
         const isExp = document.getElementById('rType').value === '支出';
@@ -7102,10 +8296,14 @@ const BANKS = [
             end_date: document.getElementById('rEnd').value || '',
             nature: document.getElementById('rNature').value, note: document.getElementById('rName').value.trim(),
             scope: document.getElementById('rScope')?.value || 'personal',
-            status: document.getElementById('rPaused')?.checked ? '停用' : '啟用'
+            status: document.getElementById('rPaused')?.checked ? '停用' : '啟用',
+            // r8（R7-F01）：付款來源（後端驗證；只有支出／收入＋家庭公帳＋全家可見才可能是家庭公帳）
+            fund: ruleFundApplies() ? (document.getElementById('rFund')?.value || '') : 'member'
         };
         if (!rule.name) return toast('請輸入名稱', true);
         if (!rule.amount || rule.amount <= 0) return toast('請輸入正確金額', true);
+        if (!rule.fund) return toast(rule.entry_type === '收入' ? '請選擇這筆收入存到哪裡' : '請選擇由誰出錢（家庭公帳或我自己）', true);
+        const before = ruleId ? STATE.rules.find(x => x.rule_id === ruleId) : null;
         closeSheet();
         try {
             const r = await api.call('saveRule', { rule });
@@ -7114,7 +8312,62 @@ const BANKS = [
             if (i >= 0) STATE.rules[i] = saved; else STATE.rules.push(saved);
             renderSettings();
             toast(scheduleToastText(sc));
+            /* r8：戶長確認或改了既有規則的付款來源 → 檢查以前已記下的紀錄是否需要更正（只有預覽，套用要再確認） */
+            if (before && isGroupAdminMe() && saved.scope === 'family' && saved.fund_basis === 'explicit'
+                && (before.fund_basis !== 'explicit' || before.fund !== saved.fund)) await openFundFixSheet(saved.rule_id, true);
         } catch (e) { toast('儲存失敗：' + e.message, true); }
+    }
+    /** r8（R7-F01）：戶長檢查一條規則以前記下的紀錄，預覽要更正哪些、影響多少，勾選後確認才套用 */
+    let _fundFix = null;
+    async function openFundFixSheet(ruleId, quiet) {
+        let d;
+        try { d = await api.call('previewRuleFund', { rule_id: ruleId }); }
+        catch (e) { if (!quiet) toast('無法檢查：' + e.message, true); return; }
+        if (!d.candidates.length) { if (!quiet) toast('以前記下的紀錄都和目前的付款來源一致，不需要更正'); return; }
+        _fundFix = d;
+        const who = (STATE.members.find(m => m.member_id === d.impact.member_id) || {}).nickname || '記帳者';
+        const payerName = id => id === 'family_pool' ? '家庭公帳' : ((STATE.members.find(m => m.member_id === id) || {}).nickname || id);
+        const reasonText = { FIRST_TXN: '這是當初自己記的首筆，保留原本的付款人', OTHER_PAYER: '付款人不是規則擁有者或家庭公帳，請個別處理', LINKED: '已有還款或結算關聯，請個別處理',
+            NOT_FAMILY: '當時不是家庭公帳性質（例如規則改設定之前的個人支出），付款人本來就正確', TYPE: '當時不是支出或收入（例如轉帳），不能由家庭公帳支付' };
+        openSheet(`
+            <h3 class="text-lg font-bold text-stone-800 mb-2">檢查以前的紀錄：${esc(d.name)}</h3>
+            <p class="text-xs text-stone-600 leading-relaxed mb-3">這條固定收支以前產生的紀錄中，有 ${d.candidates.length} 筆的付款人和目前的設定（${esc(payerName(d.target_payer))}）不同。勾選要更正的紀錄；更正會保留原紀錄（標示為已修訂）並新增一筆修正後的紀錄，可以追溯。</p>
+            <div class="space-y-2 mb-3" data-fund-fix-list>
+                ${d.candidates.map(c => `<label class="flex items-center gap-3 p-3 rounded-tile bg-pastel-bg text-xs">
+                    <input type="checkbox" class="w-4 h-4" checked data-fund-fix="${esc(c.txn_id)}" onchange="paintFundFixImpact()">
+                    <span class="flex-1 min-w-0">${esc(c.date)}・${esc(c.entry_type)} ${fmt(c.amount)}<br><span class="text-pastel-muted">${esc(payerName(c.payer_before))} → ${esc(payerName(c.payer_after))}</span></span></label>`).join('')}</div>
+            ${d.excluded.length ? `<div class="text-[10px] text-pastel-muted leading-relaxed mb-3" data-fund-fix-excluded>不會更正：${d.excluded.map(x => `${esc(x.date)} ${fmt(x.amount)}（${esc(reasonText[x.reason] || x.reason)}）`).join('；')}</div>` : ''}
+            <p class="text-xs text-stone-700 leading-relaxed mb-4" id="fundFixImpact" data-fund-fix-impact></p>
+            <button type="button" data-fund-fix-apply onclick="applyFundFix()" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm">確認更正</button>
+            <button type="button" onclick="closeSheet()" class="w-full py-3 mt-2 text-xs text-pastel-muted font-bold">先不要</button>`);
+        _fundFix.who = who;
+        paintFundFixImpact();
+    }
+    function fundFixSelected() { return [...document.querySelectorAll('[data-fund-fix]')].filter(x => x.checked).map(x => x.dataset.fundFix); }
+    function paintFundFixImpact() {
+        const d = _fundFix, el = document.getElementById('fundFixImpact');
+        if (!d || !el) return;
+        const ids = fundFixSelected();
+        let personal = 0, pool = 0;
+        d.candidates.filter(c => ids.includes(c.txn_id)).forEach(c => {
+            const sign = c.entry_type === '收入' ? -1 : 1, dir = c.payer_after === 'family_pool' ? 1 : -1;
+            personal += sign * dir * c.amount; pool -= sign * dir * c.amount;
+        });
+        const b = document.querySelector('[data-fund-fix-apply]');
+        if (b) { b.disabled = !ids.length; b.innerText = ids.length ? `確認更正 ${ids.length} 筆` : '請勾選要更正的紀錄'; }
+        el.innerText = ids.length ? `更正後：${d.who}的個人收支${personal >= 0 ? '少計' : '多計'} ${fmt(Math.abs(personal))}；家庭公帳餘額${pool <= 0 ? '減少' : '增加'} ${fmt(Math.abs(pool))}。` : '';
+    }
+    async function applyFundFix() {
+        const d = _fundFix, ids = fundFixSelected();
+        if (!d || !ids.length) return;
+        if (!confirm(`要更正 ${ids.length} 筆紀錄的付款人嗎？原紀錄會保留並標示為已修訂。`)) return;
+        closeSheet();
+        try {
+            const r = await api.call('applyRuleFund', { rule_id: d.rule_id, txn_ids: ids, op_key: newOpKey('fundfix') });
+            toast(`已更正 ${(r.corrected || []).length} 筆`);
+            await refreshData();
+        } catch (e) { toast('更正失敗：' + e.message, true); }
+        finally { _fundFix = null; }
     }
     async function deleteRule(ruleId) {
         if (!confirm('確定要刪除這個固定收支規則嗎？（已產生的紀錄不受影響）')) return;
@@ -7463,7 +8716,7 @@ const BANKS = [
     }
     function actExport() { buzz(); const done = btnBusy('btnExport', '匯出中…'); try { exportCSV(); } finally { setTimeout(done, 700); } }
     function actReport() { buzz(); const done = btnBusy('btnReport', '產生中…'); try { exportHTMLReport(); } finally { setTimeout(done, 700); } }
-    async function actSync() { buzz(); const done = btnBusy('btnSync', '同步中…'); await refreshData(); done(); }
+    async function actSync() { buzz(); const done = btnBusy('btnSync', '同步中…'); try { await manualSync(); } finally { done(); } }
     function actReload() { buzz(); btnBusy('btnReload', '重新載入中…'); toast('正在載入最新版本…'); setTimeout(() => location.reload(), 500); }
 
     /* ---------- 連線健檢 ----------
@@ -7534,12 +8787,35 @@ const BANKS = [
         toast(rows.every(r => r.ok) ? '一切正常' : '有項目需要處理', !rows.every(r => r.ok));
     }
 
+    /* v6.25.0 開機速度：只顯示這台裝置自己量到的數字。
+       「伺服器」是 Apps Script 執行 bootstrapData 本身的時間（不含驗證與序列化，屬近似值）；
+       總時間減掉它，大約是網路＋Google 轉址＋冷啟動。分頁載入、保溫排程值不值得，等這兩段有實際數據再決定。 */
+    function bootSpeedHtml() {
+        const a = bootMetrics();
+        if (!a.length) return '';
+        const last = a[a.length - 1];
+        const ms = a.slice(-10).map(x => Number(x.ms) || 0).sort((x, y) => x - y);
+        const med = ms[Math.floor((ms.length - 1) / 2)];
+        const sec = v => (Math.round(v / 100) / 10).toFixed(1) + ' 秒';
+        const srv = Number(last.serverMs);
+        const cacheTxt = (BOOT_DIAG.bootFrom === 'cache' && BOOT_DIAG.cache === 'ok' ? '本次先顯示快取' : '') || { too_big: '資料太大，未快取', write_failed: '儲存空間不足，未快取', corrupt: '快取損壞已清除' }[BOOT_DIAG.cache] || '';
+        const row = (k, v) => `<div class="flex justify-between gap-3"><span class="flex-shrink-0">${k}</span><span class="font-tabular text-right min-w-0">${v}</span></div>`;
+        return `<div class="text-xs text-pastel-muted space-y-1" data-boot-speed>
+            ${row('開機速度（最近一次）', sec(last.ms))}
+            ${ms.length > 1 ? row(`近 ${ms.length} 次中位數`, sec(med)) : ''}
+            ${srv > 0 ? row('其中伺服器處理', sec(srv)) + row('網路與 Google 啟動', '約 ' + sec(Math.max(0, last.ms - srv))) : ''}
+            ${row('帳本資料', `${Math.round((Number(last.chars) || 0) / 1024).toLocaleString('en-US')} KB・${Number(last.rows || 0).toLocaleString('en-US')} 筆`)}
+            ${cacheTxt ? `<div class="text-[10px] text-right">${esc(cacheTxt)}</div>` : ''}
+        </div>`;
+    }
+
     async function shareInstall() {
         buzz();
         const code = installCode();
         if (!code) return toast('目前使用內建後端，沒有安裝碼', true);
-        const link = location.origin + location.pathname + '?api=' + BACKEND.id + '&code=' + AUTH.familyCode;
-        const text = `一起用家庭記帳吧！\n\n① 用 Safari 或 Chrome 開啟：\n${link}\n\n② 加入主畫面後，若需要重新設定，安裝碼是：\n${code}`;
+        /* v6.25.0：改用 #setup= 邀請連結（家庭代碼不會出現在伺服器紀錄與聊天軟體的預覽抓取裡）。舊的 ?api= 連結仍可開啟。 */
+        const link = inviteLink() || (location.origin + location.pathname);
+        const text = `一起用家庭記帳吧！\n\n① 用 Safari 或 Chrome 開啟：\n${link}\n\n② 加入主畫面後，若需要重新設定，在代碼畫面按「貼上」貼這串：\n${code}\n\n③ 登入時需要戶長另外給你的「登入碼」（只能用一次，請私下傳）。`;
         try {
             if (navigator.share) { await navigator.share({ text }); return; }
             await navigator.clipboard.writeText(text);
@@ -8044,12 +9320,29 @@ ${L.standalone ? 'PWA' : 'WEB(Safari)'}  dpr=${window.devicePixelRatio}  statusB
             setTimeout(() => { if (!isField(document.activeElement)) nav?.classList.remove('kb-hide'); }, 120);
         });
     }
-    window.addEventListener('DOMContentLoaded', () => { bindLayout(); bindKeyboardNav(); bindOfflineSync(); bootstrap(); });
-    // 上次離線時暫存的紀錄，這次一開 App 就補送
-    /* 連線恢復就自動補送；開 App 時也補一次（上次離線暫存的） */
+    window.addEventListener('DOMContentLoaded', () => { bindLayout(); bindKeyboardNav(); bindOfflineSync(); bindBootCache(); bootstrap(); });
+    /* v6.25.0：App 切到背景時把目前的帳本存成快取（含剛記的帳），下次打開就是這個畫面；
+       從背景回來、距離上次同步超過 5 分鐘時，在背景重新讀取一次。 */
+    function bindBootCache() {
+        const save = () => { if (STATE.me) bootCacheWrite(); };
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) return save();
+            /* r5（R4-F01）：回到前景，有可重試的待送就補送。
+               r6（R5-F01）：不論離開多久，回到前景都先重設重試額度並取消舊的排程，再決定要不要重新讀取帳本；
+               離開超過 5 分鐘時，重新讀取成功後也直接補送一次（不受「讀取成功」觸發的 3 秒去重影響）。
+               r5 只在 5 分鐘內的分支歸零，離開較久、額度已用完時，之後就不再自動重試。 */
+            resetSyncRetry();
+            // r7（R6-F01）：讀取暫時失敗時，revalidate 本身會補上補送排程（ensureSyncProgress）；身分失效時不排
+            if (STATE.me && Date.now() - (LAST_SYNC_AT || 0) > 5 * 60000) revalidate().then(r => { if (r && r.ok) kickSync('foreground'); });
+            else kickSync('foreground');
+        });
+        window.addEventListener('pagehide', save);
+        window.addEventListener('online', () => { if (STATE.me && document.getElementById('syncPill')?.dataset.state === 'offline') revalidate(); });
+    }
+    /* 連線恢復就補送。開 App 時不再固定 2.5 秒後補送：要等這次的身分被後端確認（afterNetworkApply 首次成功）才補送，
+       避免快取畫面、離線開機或換了帳本時，把資料送進不該去的地方。 */
     function bindOfflineSync() {
-        window.addEventListener('online', () => syncOfflineQueue(true));
-        setTimeout(() => syncOfflineQueue(true), 2500);
+        window.addEventListener('online', () => { if (SESSION.verified) { resetSyncRetry(); syncOfflineQueue(true); } });
     }
     </script>
 
