@@ -139,7 +139,6 @@
            那正是你看到的「一堆白色遮擋區塊」。改回 App 的奶油底色，
            上下安全區就跟內容連成一片，看不出邊界。 */
         @media (display-mode: standalone) { html, body { background-color:#FFF8F0; } }
-        html.dark, html.dark body { background-color:#221F1D !important; }
         .hide-scrollbar::-webkit-scrollbar { display:none; }
         .hide-scrollbar { -ms-overflow-style:none; scrollbar-width:none; }
 
@@ -236,7 +235,8 @@
         .cal-key.count { background:#292524; border:1px solid #57534E; }
         .cal-key.over { background:#F05838; box-shadow:0 0 0 1px #FFFFFF; }
         html.dark .cal-dot { color:#78716C; }
-        html.dark .cal-dot.has { background:#FFFFFF; color:#0C0A09; border-color:transparent; box-shadow:0 4px 6px rgba(0,0,0,.3); }
+        /* r2：深色模式的「亮面」統一為亮灰白 #F2F2F5＋墨黑 #232327（與明細摘要卡相同），取代純白，降低刺眼感 */
+        html.dark .cal-dot.has { background:#F2F2F5; color:#232327; border-color:transparent; box-shadow:0 4px 6px rgba(0,0,0,.3); }
         html.dark .cal-dot.today { box-shadow:0 0 0 2px #221F1D, 0 0 0 4px #F8A048; }
         html.dark .cal-badge { background:#0C0A09; box-shadow:0 0 0 2px #FFFFFF; }
         html.dark .cal-badge.over { background:#F05838; box-shadow:0 0 0 2px #0C0A09; }
@@ -317,20 +317,48 @@
         }
         .nav-add-on #addBtnInner { transform:translateY(-50%) translateY(-13px) rotate(45deg); box-shadow:0 10px 26px rgba(248,160,72,.62); }
 
+        /* v6.26.0 r2：明細頁摘要卡。淺色＝原本的深灰底（#3A3430）、薄荷綠收入、橘粉支出、白色結餘；
+           深色＝反轉為亮灰白卡（#F2F2F5），數字與結餘為墨黑（#232327）、收入深綠（#2E8B57）、小標灰（#6D6B75）。 */
+        .sum-card { background:#3A3430; }
+        .sum-label { color:rgba(255,255,255,.55); }
+        .sum-cols > * + * { border-color:rgba(255,255,255,.10); }
+        .sum-inc { color:#7BE0A5; }
+        .sum-exp, .sum-net.neg { color:#FF9B85; }
+        .sum-net { color:#FFFFFF; }
+        .sum-cmp.down { color:#7BE0A5; }
+        .sum-cmp.up { color:#FF9B85; }
+        html.dark .sum-card { background:#F2F2F5; }
+        html.dark .sum-label { color:#6D6B75; font-weight:700; }
+        html.dark .sum-cols > * + * { border-color:rgba(35,35,39,.15); }
+        html.dark .sum-inc { color:#2E8B57; }
+        html.dark .sum-exp, html.dark .sum-net, html.dark .sum-net.neg { color:#232327; }
+        html.dark .sum-cmp { color:#232327; }
+        html.dark .sum-cmp.down i { color:#2E8B57; }
+        html.dark .sum-cmp.up i { color:#F05838; }
+        /* 明細相鄰兩筆的分隔線：深色模式改為內斂暗線（stone-800／80%），淺色維持奶油細線 */
+        html.dark .txn-sep { border-color:rgba(41,37,36,.8) !important; }
+        /* 選擇分類方塊 */
+        .cat-tile { border-width:1.5px; border-style:solid; box-shadow:none !important; transition:background-color .15s ease, color .15s ease; }
+        .cat-tile.off .cat-tile-name { color:#44403C; }
+        html.dark .cat-tile.off .cat-tile-name { color:#D6D3D1; }
+        .cat-tile.on .cat-tile-name { color:#FFFFFF; }
+        .cat-tile-add { border:2px dashed #D6D3D1; color:#9A918A; }
+        html.dark .cat-tile-add { border-color:#44403C; color:#8F857A; }
         /* ───────── 深色模式 ─────────
            以覆寫實際使用到的 Tailwind 工具類別實作，
            不必改動任何一處 markup，切換即時生效。 */
         html.dark { color-scheme:dark; }
+        /* r2 整理：深色模式的頁面底只有這一個（先前另有一條 #221F1D 的規則，被這條覆蓋、從未生效，已移除） */
         html.dark, html.dark body { background-color:#171514 !important; color:#E9E2D8; }
         html.dark .bg-white, html.dark .bg-white\/95, html.dark .bg-white\/70, html.dark .bg-white\/60 { background-color:#221F1D !important; }
-        html.dark .bg-pastel-bg { background-color:#2B2724 !important; }
         html.dark .bg-\[\#FBF2E6\] { background-color:#171514 !important; }
         html.dark .bg-stone-800 { background-color:#3A3430 !important; }
         html.dark .bg-stone-100, html.dark .bg-stone-200\/40, html.dark .bg-stone-200\/50 { background-color:#332F2C !important; }
         html.dark .text-pastel-text, html.dark .text-stone-800, html.dark .text-stone-700 { color:#EFE7DC !important; }
-        html.dark .text-stone-600, html.dark .text-stone-500 { color:#BDB3A6 !important; }
+        html.dark .text-stone-600 { color:#CFC5B8 !important; }
+        html.dark .text-stone-500 { color:#BDB3A6 !important; }
         html.dark .text-pastel-muted, html.dark .text-stone-400 { color:#8F857A !important; }
-        html.dark .border-pastel-border, html.dark .border-stone-100, html.dark .border-stone-200 { border-color:#3A3430 !important; }
+        html.dark .border-stone-100, html.dark .border-stone-200 { border-color:#3A3430 !important; }
         html.dark .border-pastel-border\/60, html.dark .border-pastel-border\/70 { border-color:#332F2C !important; }
         html.dark .bg-pastel-accentLight { background-color:rgba(248,160,72,.16) !important; }
         html.dark .bg-pastel-greenLight  { background-color:rgba(64,184,104,.16) !important; }
@@ -342,11 +370,11 @@
         html.dark .shadow-card, html.dark .shadow-sm, html.dark .shadow-md { box-shadow:0 4px 18px rgba(0,0,0,.35) !important; }
         html.dark #appFrame { border-color:#000 !important; }
         html.dark img[src*="av"] { filter:brightness(.94); }
-        /* 深色下未選取的選項底色若跟背景太接近會看不見，這裡拉高對比並補上邊框 */
+        /* 深色下未選取的選項底色若跟背景太接近會看不見，這裡拉高對比並補上邊框
+           （r2 整理：先前同一個 class 寫了兩次、前一條被後一條覆蓋，現在每個 class 只留生效的那一條） */
         html.dark .bg-pastel-bg { background-color:#33302C !important; }
         html.dark .border-pastel-border { border-color:#4A443E !important; }
         html.dark [style*="background:rgba"] { outline:1px solid rgba(255,255,255,.10); outline-offset:-1px; }
-        html.dark .text-stone-600 { color:#CFC5B8 !important; }
         html.dark input, html.dark select, html.dark textarea { color:#EFE7DC !important; }
         html.dark input::placeholder { color:#8F857A !important; }
 
@@ -593,6 +621,7 @@
             <div class="text-[10px] text-pastel-muted leading-relaxed space-y-1" data-login-help>
                 <p><b>家人</b>：請戶長在 App「設定 → 群組與成員」點你的頭像，按「產生登入碼」。</p>
                 <p><b>戶長</b>：在 Google 試算表選單「🏠 家庭記帳 → 登入與安全 → 產生戶長登入碼」。</p>
+                <p><b>還不是這本帳的成員</b>：請戶長傳「邀請連結」給你，點連結就能申請加入。</p>
             </div>
             <button type="button" onclick="gateBackToBackend()" class="w-full text-[10px] font-bold text-pastel-muted pt-1">連到別的帳本 / 重新輸入安裝碼</button>
         </div>
@@ -600,7 +629,7 @@
         <div id="gateStep3" class="hidden bg-white p-6 rounded-sheet shadow-card border border-pastel-border space-y-4">
             <div class="text-sm font-bold text-stone-700">建議先加入主畫面再登入</div>
             <p class="text-xs text-stone-600 leading-relaxed">iPhone 主畫面上的 App 和 Safari 的資料是分開的。
-                如果先在 Safari 登入，登入碼就被 Safari 用掉了，主畫面 App 需要戶長再產生一組。</p>
+                如果先在 Safari 登入或加入，邀請（或登入碼）就被 Safari 用掉了，主畫面 App 需要戶長再給一次。</p>
             <ol class="text-xs text-stone-600 leading-relaxed space-y-1.5 list-decimal pl-5">
                 <li>按下方「複製邀請碼」</li>
                 <li>點 Safari 下方的 <i class="fa-solid fa-arrow-up-from-bracket"></i>「分享」→「加入主畫面」</li>
@@ -608,6 +637,34 @@
             </ol>
             <button id="gateInstallCopy" type="button" onclick="copyInviteForHomeScreen()" class="w-full py-3.5 bg-pastel-accent text-white font-bold rounded-tile shadow-md"><i class="fa-solid fa-copy mr-1.5"></i>複製邀請碼</button>
             <button type="button" onclick="joinByInvite()" class="w-full text-[10px] font-bold text-pastel-muted pt-1">只在 Safari 使用（不加入主畫面）</button>
+        </div>
+        <!-- v6.26.0：收到邀請 → 加入成為新成員（不是登入既有成員） -->
+        <div id="gateStep4" class="hidden bg-white p-6 rounded-sheet shadow-card border border-pastel-border space-y-4">
+            <div>
+                <div class="text-[10px] text-pastel-muted">你受邀加入</div>
+                <div id="gateJoinFamily" class="text-lg font-bold text-stone-800 break-words"></div>
+            </div>
+            <div id="gateJoinInfo" class="text-xs text-stone-600 leading-relaxed space-y-1.5"></div>
+            <div>
+                <label for="gateNick" class="block text-sm font-bold text-stone-700 mb-1">你的名字</label>
+                <p class="text-[10px] text-pastel-muted leading-relaxed mb-2.5">家人在帳本裡看到的稱呼（最多 20 個字，不能和現有成員相同）。</p>
+                <input type="text" id="gateNick" maxlength="20" autocomplete="nickname" placeholder="例如：媽媽、小明"
+                       onkeydown="if(event.key==='Enter')gateSubmitJoin()"
+                       class="w-full p-3 rounded-tile border-2 border-pastel-border bg-pastel-bg text-sm font-bold text-center outline-none focus:border-pastel-accent">
+            </div>
+            <button id="gateJoinBtn" onclick="gateSubmitJoin()" class="w-full py-3.5 bg-pastel-accent text-white font-bold rounded-tile shadow-md">加入</button>
+            <div class="p-3 rounded-tile bg-pastel-bg text-[10px] text-stone-600 leading-relaxed space-y-2" data-join-existing>
+                <p><b>已經是這本帳的家人？</b>（換手機、多一台裝置）請不要用邀請加入，否則會多出一位新成員。請向戶長索取登入碼。</p>
+                <button type="button" onclick="gateJoinUseCode()" class="w-full py-2 rounded-tile bg-white border border-pastel-border text-xs font-bold text-stone-700 tactile"><i class="fa-solid fa-key mr-1.5"></i>我有登入碼</button>
+            </div>
+        </div>
+        <!-- v6.26.0：等待戶長核准 -->
+        <div id="gateStep5" class="hidden bg-white p-6 rounded-sheet shadow-card border border-pastel-border space-y-4">
+            <div class="text-sm font-bold text-stone-700"><i class="fa-regular fa-hourglass-half mr-1.5 text-pastel-accent"></i>等戶長核准</div>
+            <p id="gateWaitText" class="text-xs text-stone-600 leading-relaxed"></p>
+            <div id="gateWaitStatus" class="text-[10px] text-pastel-muted" role="status" aria-live="polite"></div>
+            <button id="gateWaitBtn" onclick="gateCheckJoin(false)" class="w-full py-3.5 bg-pastel-accent text-white font-bold rounded-tile shadow-md">重新查詢</button>
+            <button type="button" onclick="gateCancelJoin()" class="w-full text-[10px] font-bold text-pastel-muted pt-1">不等了，改用登入碼</button>
         </div>
         <p class="text-center text-[10px] text-pastel-muted mt-6">版本 <span id="appVersion">–</span></p>
     </div>
@@ -666,11 +723,11 @@
         <div id="navPill">
         <button onclick="switchTab('dashboard')" id="navDashboard" aria-label="首頁" class="nav-btn"><i class="fa-solid fa-house-chimney"></i></button>
         <button onclick="switchTab('transactions')" id="navTransactions" aria-label="明細" class="nav-btn"><i class="fa-solid fa-list-ul"></i></button>
-        <button onclick="switchTab('add')" id="navAdd" aria-label="新增" class="nav-btn nav-add tactile">
+        <button onclick="navAddTap()" id="navAdd" aria-label="新增" class="nav-btn nav-add tactile">
             <div id="addBtnInner"><i class="fa-solid fa-plus"></i></div>
         </button>
         <button onclick="switchTab('stats')" id="navStats" aria-label="圖表" class="nav-btn"><i class="fa-solid fa-chart-pie"></i></button>
-        <button onclick="switchTab('settings')" id="navSettings" aria-label="設定" class="nav-btn"><i class="fa-solid fa-user-group"></i></button>
+        <button onclick="switchTab('settings')" id="navSettings" aria-label="設定" class="nav-btn relative"><i class="fa-solid fa-user-group"></i><span id="navSettingsDot" class="hidden absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-pastel-red border-2 border-white" aria-label="有加入申請等你核准"></span></button>
         </div>
     </nav>
 
@@ -706,10 +763,12 @@
        要打包成模板賣給別人時，把它清成空字串，就是乾淨的通用版。
        ========================================================== */
     const CONFIG = {
-        VERSION: 'v6.25.0',   // 前端版本；後端 API_VERSION 6.25.0（登入碼、帳本識別、伺服器耗時）。已登入的裝置接舊後端照常可用
-        BUILD: 'v6.25.0-r12',  // r4（R3-F04）：可分辨候選輪次的識別，每輪交付都要改。隨請求回報給後端（只供顯示），也顯示在「設定 → 關於」
+        VERSION: 'v6.26.0',   // 前端版本；後端 API_VERSION 6.26.0（多裝置登入、我的裝置、邀請加入）。接 6.25.0 後端時這些功能不顯示，其餘照常
+        BUILD: 'v6.26.0-r9',  // v6.25 r4（R3-F04）：可分辨候選輪次的識別，每輪交付都要改。隨請求回報給後端（只供顯示），也顯示在「設定 → 關於」
         MIN_BACKEND: '6.22.3',      // v6.22.3 起寫入需要操作鍵／期別／版本契約；舊後端不支援
         MIN_LOGIN_BACKEND: '6.25.0', // 登入碼（redeemLoginCode）從 6.25.0 起才有；更舊的後端無法在新裝置登入
+        MIN_DEVICE_BACKEND: '6.26.0', // 我的裝置、邀請加入、加入申請從 6.26.0 起才有；後端較舊時不顯示這些入口
+        MIN_GOAL_BACKEND: '6.26.0',   // r2：支出的目標欄（goal_id）從 6.26.0 起才有；後端較舊時沿用「目標標籤」表示法
         DEFAULT_API_URL: 'https://script.google.com/macros/s/AKfycbzCl73_9to7Fmev1slsskZkbZsq2jzc52wYb6ED6Y1u8sbscSsnvRBMQJ55zorbnlEm/exec',
         get API_URL() { return BACKEND.url; },
         DEMO: false
@@ -737,22 +796,28 @@
            靜靜地把它改寫成 /exec 會給出一個看起來合理、實際上連不上的網址，
            所以寧可擋下來並說清楚。 */
         if (/\/dev(?![\w-])/.test(s)) return { dev: true };
-        /* v6.25.0：整段邀請連結（…#setup=ID.代碼）也收 —— iPhone 主畫面 App 要靠「貼上」帶入邀請 */
-        const inv = /[#?&]setup=([\w-]{20,}\.[A-Za-z0-9]{8})(?![A-Za-z0-9])/.exec(s);
-        if (inv) return parseInstall(inv[1]);
-        let id = '', code = '';
+        /* v6.25.0：整段邀請連結（…#setup=ID.代碼）也收 —— iPhone 主畫面 App 要靠「貼上」帶入邀請
+           v6.26.0：邀請連結多一段邀請碼（#setup=ID.代碼.邀請碼）。整段交給下面逐段檢查：
+           第三段不完整（被截斷、多打字）就整個不收，不會默默退回「只有家庭代碼」的舊連結。 */
+        const inv = /[#?&]setup=([\w.-]+)/.exec(s);
+        if (inv) return parseInstall(inv[1].replace(/\.+$/, ''));
+        let id = '', code = '', invite = '';
         const m = /script\.google\.com\/macros\/s\/([\w-]{20,})/.exec(s);
         if (m) {
             id = m[1];
             const tail = /[?&#](?:code|c)=([A-Za-z0-9]{8})/.exec(s);
             if (tail) code = tail[1].toUpperCase();
         } else {
-            const parts = s.split('.');
+            const parts = s.replace(/\.+$/, '').split('.');
             if (!/^[\w-]{20,}$/.test(parts[0])) return null;
             id = parts[0];
             if (parts[1] && /^[A-Za-z0-9]{8}$/.test(parts[1])) code = parts[1].toUpperCase();
+            if (parts.length > 2) {
+                if (!code || parts.length > 3 || !/^[A-Za-z0-9]{24}$/.test(parts[2])) return null;
+                invite = parts[2].toUpperCase();
+            }
         }
-        return { url: `https://script.google.com/macros/s/${id}/exec`, code };
+        return invite ? { url: `https://script.google.com/macros/s/${id}/exec`, code, invite } : { url: `https://script.google.com/macros/s/${id}/exec`, code };
     }
     const installCode = () => BACKEND.id ? BACKEND.id + (AUTH.familyCode ? '.' + AUTH.familyCode : '') : '';
     /* v6.25.0 邀請連結：#setup=部署ID.家庭代碼
@@ -761,6 +826,10 @@
        連結裡只有「哪一本帳＋家庭代碼」，沒有任何成員的 token。 */
     const inviteLink = () => (BACKEND.id && AUTH.familyCode)
         ? location.origin + location.pathname + '#setup=' + BACKEND.id + '.' + AUTH.familyCode : '';
+    /* v6.26.0 邀請連結：#setup=部署ID.家庭代碼.邀請碼。邀請碼由戶長產生，後端只存雜湊、會過期、可取消、有名額；
+       它只能「申請加入成為新成員」，不能登入任何既有成員。同樣放在 # 後面。 */
+    const inviteLinkFor = secret => (BACKEND.id && AUTH.familyCode && secret)
+        ? location.origin + location.pathname + '#setup=' + BACKEND.id + '.' + AUTH.familyCode + '.' + secret : '';
 
     /** 版本比較：a < b 回傳 true。缺版本號（6.0 以前的後端）一律視為過舊。 */
     function verLt(a, b) {
@@ -785,6 +854,40 @@
     const fmt = n => {
         const v = Math.round(Number(n) || 0);
         return (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString('en-US');
+    };
+    /* r3（BASE-F01／F02）：金額契約與後端相同——最小單位是「分」（parseAmountStrict 接受到分、拒絕次分位）。
+       儲存與加總都以分計算：先前儲存時取整到元（只改備註就把 100.49 改成 100），信用卡帳單也逐筆取整（兩筆 100.49 算成 200）。
+       顯示（fmt）仍四捨五入到元，只影響畫面，不影響存進去或拿來比較的數字。 */
+    const toCents = v => Math.round((Number(v) || 0) * 100);
+    const money = v => toCents(v) / 100;
+    /* r4（R3-F04）：欠款、還款、分攤、目標提取這類「可以動作的金額」一律以整數分比較——
+       先前用 0.01 的容忍值，剛好剩 1 分錢的債務會被當成已結清（後端卻仍認為未結清），
+       多付 1 分也會被前端放行。sumC 以分加總，避免浮點誤差累積。 */
+    const sumC = (arr, f) => (arr || []).reduce((a, x) => a + toCents(f ? f(x) : x), 0) / 100;
+    /* r5（使用者 2026-11-04 決定）：台幣沒有「分」——一律顯示到整數元、不標示零頭；分攤除不盡時由登記者多負擔。
+       ・新輸入的金額一律是整數元（wholeYuan，四捨五入；鍵盤的「.」改成「00」）。
+       ・別人的分攤份額一律無條件捨去到整數元（floorYuan），總額扣掉別人的合計＝登記者負擔。
+       ・已存在的舊資料若有零頭，不改寫（儲存的數字照舊、比較仍以分為準）；畫面四捨五入顯示。
+         還沒還清的金額（dueYuan）無條件進位顯示，照著付就能結清，送出時以實際尚欠的金額記錄，不會多記。 */
+    const wholeYuan = v => Math.round(toCents(v) / 100);
+    const floorYuan = v => Math.floor(toCents(v) / 100);
+    const dueYuan = v => Math.ceil(toCents(v) / 100);
+    const fmtC = n => fmt(wholeYuan(n));
+    const fmtDue = n => fmt(dueYuan(n));
+    /** r6（R5-F03）／r7（R6-F02）：設定類的金額欄（目標、預算、固定收支）——輸入欄顯示整數元；
+        使用者「沒有動過這個欄位」就照原本儲存的數字送回，動過（touched）就取整數元。
+        r6 用「最後的字串等於舊值的整數顯示」判斷有沒有改，會把「改成 1000 再改回 100」或「改成 0 取消預算」誤當成沒改；
+        r7 改由輸入事件記錄 touched（目標存在草稿裡，表單重繪後仍保留；預算、固定收支存在欄位的 data-touched）。 */
+    const keepOrYuan = (input, orig, touched) => {
+        const has = orig !== undefined && orig !== null && String(orig).trim() !== '';
+        return has && !touched ? money(orig) : wholeYuan(input);
+    };
+    /** r6（R5-F01）：split_detail 是否「明確指定了分攤」——包含「有選家人、但每人都是 0 元」的空陣列 []。
+        空字串＝沒有指定（舊式整筆代墊／舊式私人拆帳），語意不變。 */
+    const hasExplicitSplit = t => {
+        const raw = String((t && t.split_detail) || '').trim();
+        if (!raw) return false;
+        try { return Array.isArray(JSON.parse(raw)); } catch (e) { return false; }
     };
     const pad2 = n => String(n).padStart(2, '0');
     /* 「今天」一律用台北時間，不用裝置時區。
@@ -925,7 +1028,8 @@
         saveGoal: '儲存目標', closeGoal: '結束目標', deleteGoal: '刪除目標', saveBudget: '儲存預算', updateMember: '修改成員',
         addItem: '新增分類／標籤', updateItem: '修改分類／標籤', archiveItem: '封存分類／標籤', reorderItems: '調整排序',
         sendCheer: '打氣', saveStreak: '連續紀錄', issueLoginCode: '產生登入碼', revokeMemberLogin: '讓成員登出', unlockAchievement: '成就',
-        applyRuleFund: '更正固定收支付款人'
+        applyRuleFund: '更正固定收支付款人',
+        createInvitation: '產生邀請', revokeInvitation: '取消邀請', decideJoinRequest: '處理加入申請', revokeMySession: '移除裝置'
     };
     function noteCtxWrite(action, book, timeout) {
         try {
@@ -1124,8 +1228,9 @@
        回應較大時（例如單據影像）第一次常拿到 404 —— 這是已知的重導向抖動。
        因此對「唯讀」動作自動重試；寫入動作絕不重試，否則可能重複記帳。 */
     /** 不需要身分的動作（登入動線）：不受分頁身分檢查 */
-    const PUBLIC_ACTIONS = ['ping', 'listMembers', 'claimMember', 'redeemLoginCode'];
-    const READ_ONLY = ['bootstrap', 'listMembers', 'listTransactions', 'getReceipt', 'ping', 'diagnose', 'loginStatus', 'previewRuleFund'];   // r6：loginStatus 只讀，不計入寫入追蹤
+    const PUBLIC_ACTIONS = ['ping', 'listMembers', 'claimMember', 'redeemLoginCode', 'inviteInfo', 'acceptInvite', 'checkJoinRequest'];
+    const READ_ONLY = ['bootstrap', 'listMembers', 'listTransactions', 'getReceipt', 'ping', 'diagnose', 'loginStatus', 'previewRuleFund',
+        'inviteInfo', 'listMySessions', 'listInvitations', 'listJoinRequests'];   // r6：loginStatus 只讀，不計入寫入追蹤
     /* ping 是「對一個全新部署發出的第一個請求」，正好是重導向抖動最容易發生的時刻，
        所以多給幾次。它是唯讀且冪等的，重試沒有任何副作用。 */
     const TRIES = { ping: 4 };
@@ -1146,6 +1251,12 @@
         redeemLoginCode: 'none', issueLoginCode: 'none', revokeMemberLogin: 'none', loginStatus: 'read',
         /* r8（R7-F01）：付款來源的歷史更正。預覽只讀；套用帶操作鍵，後端以操作紀錄去重，回應遺失可安全重送 */
         previewRuleFund: 'read', applyRuleFund: 'opkey',
+        /* v6.26.0：讀取類（邀請資訊、我的裝置、邀請清單、加入申請）→ read。
+           加入（acceptInvite）、查詢加入結果（checkJoinRequest，核准後會發登入）、產生／取消邀請、核准／拒絕、移除裝置 → none：
+           都有副作用，不自動重送；加入與查詢的回應遺失，由同一台裝置的隨機值重送安全取回（使用者再按一次）。 */
+        inviteInfo: 'read', listMySessions: 'read', listInvitations: 'read', listJoinRequests: 'read',
+        acceptInvite: 'none', checkJoinRequest: 'none', createInvitation: 'none', revokeInvitation: 'none',
+        decideJoinRequest: 'none', revokeMySession: 'none',
         deleteGoal: 'state'
         /* RC3-03：deleteRule 曾列為 state，但 saveRule update 可對已刪除規則寫回「啟用」，
            因此「刪除」不是不可反轉的終態：舊的 delete 重試會覆蓋另一裝置較新的排程變更。
@@ -1179,7 +1290,7 @@
             finally {
                 if (isWrite) {
                     WRITES.inflight--; WRITES.epoch++; WRITES.open.delete(w);
-                    if (action !== 'claimMember' && action !== 'redeemLoginCode') scheduleCacheWrite();
+                    if (!['claimMember', 'redeemLoginCode', 'acceptInvite', 'checkJoinRequest'].includes(action)) scheduleCacheWrite();
                 }
             }
         },
@@ -1619,17 +1730,17 @@ function hexA(hex, a) {
         if (t.split_detail) {
             try {
                 const a = JSON.parse(t.split_detail);
-                if (Array.isArray(a)) return a.filter(x => x && x.member_id && Number(x.amount) > 0)
-                    .map(x => ({ member_id: x.member_id, amount: Number(x.amount) }));
+                if (Array.isArray(a)) return a.filter(x => x && x.member_id && toCents(x.amount) > 0)
+                    .map(x => ({ member_id: x.member_id, amount: money(x.amount) }));
             } catch (e) { }
         }
-        if (t.nature === '私人拆帳' && t.related_id) return [{ member_id: t.related_id, amount: Number(t.amount) || 0 }];
+        if (t.nature === '私人拆帳' && t.related_id) return [{ member_id: t.related_id, amount: money(t.amount) }];
         return [];
     }
     /** 這筆代墊／拆帳中，某成員已還了多少 */
     function paidFor(srcId, memberId) {
         return activeTxns().filter(t => t.entry_type === '還款' && t.parent_txn_id === srcId &&
-            t.settle_member_id === memberId).reduce((a, b) => a + (Number(b.amount) || 0), 0);
+            t.settle_member_id === memberId).reduce((a, b) => a + toCents(b.amount), 0) / 100;
     }
     /** DH9（與後端 assertDebtEditable 同口徑）：這筆紀錄是否因債務關聯而不能走通用編輯／作廢。
         回傳空字串代表可以；否則回傳給使用者的說明（含更正步驟）。 */
@@ -1671,8 +1782,8 @@ function hexA(hex, a) {
             .forEach(src => {
                 const mine = parseSplit(src).find(x => x.member_id === meId);
                 if (!mine) return;
-                const remaining = mine.amount - paidFor(src.txn_id, meId);
-                if (remaining <= 0.01) return;
+                const remaining = money(mine.amount - paidFor(src.txn_id, meId));
+                if (toCents(remaining) <= 0) return;
                 const intent = (STATE.intents || []).find(i => i.parent_txn_id === src.txn_id && i.member_id === meId);
                 out.push({
                     itemType: src.nature === '家庭代墊' ? 'pool' : 'private',
@@ -1689,8 +1800,8 @@ function hexA(hex, a) {
         const out = [];
         activeTxns().filter(t => (t.nature === '家庭代墊' || t.nature === '私人拆帳') && t.payer_id === meId)
             .forEach(src => parseSplit(src).forEach(x => {
-                const remaining = x.amount - paidFor(src.txn_id, x.member_id);
-                if (remaining > 0.01) out.push({
+                const remaining = money(x.amount - paidFor(src.txn_id, x.member_id));
+                if (toCents(remaining) > 0) out.push({
                     srcId: src.txn_id, memberId: x.member_id, memberName: nameOf(x.member_id),
                     category: src.category, note: src.note, date: src.date, expected: x.amount, remaining,
                     itemType: src.nature === '家庭代墊' ? 'pool' : 'private'
@@ -1723,7 +1834,7 @@ function hexA(hex, a) {
         if (!isAdvance(t)) return null;
         const total = r2(t.amount), me = String(memberId || ''), payer = String(t.payer_id || '');
         const sp = parseSplit(t);
-        const explicit = !!t.split_detail && sp.length > 0;
+        const explicit = hasExplicitSplit(t);   // r6：[]（家人都是 0 元）也是明確指定——付款人負擔全額
         const out = (share, role, reason) => ({ share: r2(share), role, total, reliable: !reason, reason: reason || '' });
         if (me && me === payer) {
             if (!explicit) {
@@ -1731,18 +1842,18 @@ function hexA(hex, a) {
                 return out(0, 'payer', (t.nature === '家庭代墊' || debtors.length) ? '' : 'NO_DEBTOR');
             }
             const others = sp.filter(x => String(x.member_id) !== payer);
-            const sum = others.reduce((a, x) => a + x.amount, 0);
+            const sum = sumC(others, x => x.amount);
             let reason = '';
             if (others.length !== sp.length) reason = 'SPLIT_HAS_PAYER';
             else if (new Set(sp.map(x => String(x.member_id))).size !== sp.length) reason = 'SPLIT_DUP';
-            else if (sum > total + 0.01) reason = 'SPLIT_EXCEEDS';
+            else if (toCents(sum) > toCents(total)) reason = 'SPLIT_EXCEEDS';
             return out(Math.max(0, total - sum), 'payer', reason);
         }
         const mine = me ? sp.filter(x => String(x.member_id) === me) : [];
         if (!mine.length) return out(0, 'none', '');
         let reason = '';
         if (mine.length > 1) reason = 'SPLIT_DUP';
-        else if (sp.reduce((a, x) => a + x.amount, 0) > total + 0.01) reason = 'SPLIT_EXCEEDS';
+        else if (toCents(sumC(sp, x => x.amount)) > toCents(total)) reason = 'SPLIT_EXCEEDS';
         return out(Math.min(mine[0].amount, total), 'debtor', reason);
     }
     const ADVANCE_REASON_TEXT = {
@@ -1823,15 +1934,43 @@ function hexA(hex, a) {
     function goalDeposits(goalId) {
         return activeTxns().filter(t => t.entry_type === '劃撥儲蓄' && t.related_id === goalId);
     }
+    /* r3（BASE-F03）：共同目標的合計要全家一致。看不到的交易（例如別人「純個人」的目標支出）由後端只給合計（hidden_saved／hidden_spent），
+       加上自己看得到的部分，就是後端用來檢查提取與結案上限的同一個數字。 */
     function goalSaved(goalId) {
-        return goalDeposits(goalId).reduce((a, t) =>
-            a + (t.settle_member_id === 'RELEASE' ? -Number(t.amount) : Number(t.amount)), 0);
+        const g = goalById(goalId);
+        return (goalDeposits(goalId).reduce((a, t) =>
+            a + (t.settle_member_id === 'RELEASE' ? -toCents(t.amount) : toCents(t.amount)), 0) + toCents(g && g.hidden_saved)) / 100;
     }
-    /** 貼了這個目標標籤的實際花費 */
+    /* v6.26.0 r2：支出「算進哪個目標」改存在 goal_id，標籤回歸付款方式（現金、信用卡…）。
+       沒有 goal_id 的舊紀錄照舊：標籤等於目標專屬標籤（project_tag）的支出仍算進該目標。後端 spendCountsForGoal 同一口徑。 */
+    function spendCountsForGoal(t, g) {
+        if (!t || !g || t.entry_type !== '支出') return false;
+        const gid = String(t.goal_id || '').trim();
+        if (gid) return gid === String(g.goal_id);
+        return !!g.project_tag && String(t.tag) === String(g.project_tag);
+    }
+    /** 這筆支出算進哪個目標（舊紀錄以標籤判斷）；沒有 → '' */
+    function goalIdOfSpend(t) {
+        if (!t || t.entry_type !== '支出') return '';
+        if (String(t.goal_id || '').trim()) return String(t.goal_id).trim();
+        const g = (STATE.goals || []).find(x => x.project_tag && x.project_tag === t.tag);
+        return g ? g.goal_id : '';
+    }
+    /** 這個名稱是不是某個目標的專屬標籤（舊表示法）——它不是付款方式，不能當成「常用帳戶」 */
+    const isGoalTagName = n => !!n && (STATE.goals || []).some(g => g.project_tag && g.project_tag === n);
+    /** 預設的付款帳戶：上次用的帳戶；若那是目標專屬標籤（舊版留下的），改用第一個真正的帳戶 */
+    function prefTag() {
+        const p = PREF.get('tag', '');
+        if (p && !isGoalTagName(p)) return p;
+        const first = (STATE.tags || []).find(t => !isGoalTagName(t.item_name));
+        return first ? first.item_name : '';
+    }
+    const goalColSupported = () => CONFIG.DEMO || !verLt(BACKEND_VERSION, CONFIG.MIN_GOAL_BACKEND);
+    /** 實際花費：算進這個目標的支出 */
     function goalSpent(goalId) {
         const g = goalById(goalId); if (!g) return 0;
-        return activeTxns().filter(t => t.entry_type === '支出' && t.tag === g.project_tag)
-            .reduce((a, t) => a + Number(t.amount), 0);
+        return (activeTxns().filter(t => spendCountsForGoal(t, g))
+            .reduce((a, t) => a + toCents(t.amount), 0) + toCents(g.hidden_spent)) / 100;
     }
     /** 有效保留額：隨著貼標籤的花費同步遞減，永遠不會是負數。
         這樣旅程進行中「可支配現金」就不會出現嚇人的負值，也不必靠提醒補救。 */
@@ -1895,7 +2034,7 @@ function hexA(hex, a) {
                     // 有分攤明細時，只有「其他人該還我」的部分算應收；
                     // 自己吸收的那一份不是任何人的債務。這是本次最重要的金額修正。
                     const sp = parseSplit(t);
-                    s.poolOwesMe += t.split_detail && sp.length ? sp.reduce((x, y) => x + y.amount, 0) : a;
+                    s.poolOwesMe += hasExplicitSplit(t) ? sumC(sp, y => y.amount) : a;   // r6：[] → 公帳不欠（自己負擔全額）
                 }
             });
             s.cashBalance += Number(STATE.me?.initial_balance) || 0;
@@ -1904,7 +2043,7 @@ function hexA(hex, a) {
             // 還款扣減：公帳撥款與成員直接還款都算（舊資料只有前者，行為不變）
             rows.filter(t => t.entry_type === '還款' && t.related_id === meId)
                 .forEach(t => s.poolOwesMe -= Number(t.amount) || 0);
-            s.iOweOthers = myPendingSettlements().reduce((x, y) => x + y.remaining, 0);
+            s.iOweOthers = sumC(myPendingSettlements(), y => y.remaining);
             const cm = {};
             // 分類統計用同一個口徑（plKind＋plAmount），否則圓餅圖加起來會跟上面的總額對不起來
             scope.filter(t => plKind(t, 'personal') === 'expense' && inMonth(t.date, ym))
@@ -1951,13 +2090,13 @@ function hexA(hex, a) {
                         amount: -Number(t.amount), txn_id: t.txn_id
                     });
                 });
-            s.poolOwesMembers = Object.entries(owe).filter(([, v]) => v > 0.01).map(([id, v]) => ({
-                member: nameOf(id), amount: v,
+            s.poolOwesMembers = Object.entries(owe).filter(([, v]) => toCents(v) > 0).map(([id, v]) => ({
+                member: nameOf(id), amount: money(v),
                 items: (oweItems[id] || []).sort((a, b) => String(a.date).localeCompare(String(b.date)))
             }));
             const back = {};
             rows.filter(t => t.nature === '公帳注資' && t.entry_type === '支出').forEach(t => { back[t.payer_id] = (back[t.payer_id] || 0) + Number(t.amount); });
-            s.membersOwePool = Object.entries(back).filter(([, v]) => v > 0.01).map(([id, v]) => ({ member: nameOf(id), amount: v }));
+            s.membersOwePool = Object.entries(back).filter(([, v]) => toCents(v) > 0).map(([id, v]) => ({ member: nameOf(id), amount: money(v) }));
             const cm = {};
             fam.filter(t => t.entry_type === '支出' && inMonth(t.date, ym))
                 .forEach(t => { const k = t.category || '未分類'; cm[k] = (cm[k] || 0) + Number(t.amount); });
@@ -1982,7 +2121,7 @@ function hexA(hex, a) {
         try { history.replaceState(null, '', location.pathname); } catch (e) { }
         if (setup) {
             const p = parseInstall(setup);
-            return p && !p.dev && p.code ? { url: p.url, code: p.code, kind: 'setup' } : { bad: true };
+            return p && !p.dev && p.code ? { url: p.url, code: p.code, invite: p.invite || '', kind: 'setup' } : { bad: true };
         }
         const p = api ? parseInstall(api) : null;
         if (p && p.dev) return { bad: true };
@@ -2061,6 +2200,11 @@ function hexA(hex, a) {
             }
         }
         if (!CONFIG.API_URL && !CONFIG.DEMO) return showGate(0);
+        /* v6.26.0：這台裝置有一筆還沒完成的加入申請（同一本帳）→ 回到等待核准或加入畫面，不必重新點邀請連結 */
+        if (AUTH.familyCode && !AUTH.memberId && !fromLink) {
+            const jp = joinPendingRead();
+            if (joinPendingHere(jp)) return resumeJoin(jp);
+        }
         // 有家庭代碼、沒有身分（被登出、token 失效、上次登入沒完成）：直接到登入碼畫面
         if (AUTH.familyCode && !AUTH.memberId && !fromLink) return enterLoginStep('請輸入戶長給你的登入碼');
         // 連結帶了代碼、還沒選成員：填好代碼，讓 paintOtp 自動送出（不要再手動呼叫一次）
@@ -2077,7 +2221,7 @@ function hexA(hex, a) {
         AUTH.clear();                                   // 這台裝置沒有登入（或已同意登出），不留舊身分的任何東西
         BACKEND.url = link.url;
         AUTH.familyCode = link.code;
-        _invite = { url: link.url, code: link.code };
+        _invite = { url: link.url, code: link.code, invite: link.invite || '' };
         /* iPhone 的主畫面 App 與 Safari 儲存空間分開：在 Safari 用掉登入碼，主畫面 App 就需要戶長再產生一組。
            所以 Safari 裡先引導加入主畫面，不先登入。 */
         if (isIOSBrowserTab()) return showInstallFirst();
@@ -2089,7 +2233,7 @@ function hexA(hex, a) {
         showGate(3);
     }
     async function copyInviteForHomeScreen() {
-        const code = _invite ? `${(EXEC_RE.exec(_invite.url) || [])[1] || ''}.${_invite.code}` : installCode();
+        const code = _invite ? `${(EXEC_RE.exec(_invite.url) || [])[1] || ''}.${_invite.code}${_invite.invite ? '.' + _invite.invite : ''}` : installCode();
         buzz();
         try {
             await navigator.clipboard.writeText(code);
@@ -2110,8 +2254,18 @@ function hexA(hex, a) {
             if (!p.ready) throw new Error('這本帳還沒初始化完成，請戶長在 Google 試算表執行「① 初始化 / 升級系統」。');
             const d = await api.call('listMembers');
             STATE.familyName = d.familyName;
+            if (_invite && _invite.invite) {
+                /* v6.26.0：帶邀請碼的連結 → 加入成為新成員。後端較舊（沒有邀請功能）→ 說清楚，改走登入碼 */
+                if (verLt(BACKEND_VERSION, CONFIG.MIN_DEVICE_BACKEND)) {
+                    enterLoginStep('這本帳還不能用邀請加入');
+                    return showGateError(`這本帳的後端是 ${BACKEND_VERSION || '舊版'}，還不支援邀請加入（需要 ${CONFIG.MIN_DEVICE_BACKEND}）。請戶長更新 Code.gs；如果你已經是這本帳的家人，請向戶長索取登入碼。`);
+                }
+                return await openJoinStep();
+            }
             enterLoginStep(`歡迎加入「${STATE.familyName || '家庭記帳'}」！請輸入戶長給你的登入碼`);
         } catch (e) {
+            if (JOIN_FINAL_CODES.includes(e.code)) return joinFail(e);   // 邀請本身的問題：不是連線問題
+            if (e.code === 'LOGIN_THROTTLED') { enterLoginStep('嘗試次數過多'); return showGateError(e.message + '\n之後請再點一次邀請連結。'); }
             const badCode = e.code === 'BAD_CODE';
             if (badCode) localStorage.removeItem('fc');
             _otpAuto = true;                            // 不要自動重送；讓使用者看完訊息再決定
@@ -2121,6 +2275,237 @@ function hexA(hex, a) {
             showGateError(badCode ? '這個邀請已失效（家庭代碼可能已更換），請向家人索取新的邀請。'
                 : diagnoseConnError(e, BACKEND.url));
         }
+    }
+    /* ==========================================================
+       v6.26.0 邀請加入（成為新成員）
+       ・邀請碼只能「申請加入成為新成員」，不能登入任何既有成員；既有家人換手機請用登入碼。
+       ・這台裝置的隨機值（join_pending.nonce）決定「是不是同一次申請」：回應遺失後再按一次，
+         後端找回同一筆申請，不會多出第二位成員。隨機值存在這台裝置，換裝置或清除資料就不能接續。
+       ・需要核准時：申請送出後在等待畫面自動查詢；關掉 App 再打開，會回到等待畫面。
+       ・核准後由「送出申請的這台裝置」取得登入（後端以隨機值核對），token 不經過任何人的手。
+       ========================================================== */
+    const JOIN_PENDING_KEY = 'join_pending';
+    const JOIN_KEEP_MS = 30 * 86400000;
+    /* 終局錯誤：邀請或申請已失效，再按幾次都一樣 → 忘掉這次申請，改走登入碼 */
+    const JOIN_FINAL_CODES = ['INVITE_INVALID', 'INVITE_REVOKED', 'INVITE_EXPIRED', 'INVITE_USED_UP',
+        'JOIN_REJECTED', 'JOIN_INVALID', 'JOIN_EXPIRED', 'JOIN_DELIVERED'];
+    let JOIN_POLL_MS = 20000, JOIN_POLL_MAX = 30;       // 等待核准時每 20 秒查一次，最多 30 次（測試可調整）
+    let _joinMem = null;                                // 儲存空間寫不進去時的備援（只在這次開啟有效）
+    let _joinInfo = null, _joinBusy = false, _joinPoll = null, _joinPollN = 0;
+    function joinPendingRead() {
+        let p = null;
+        try { p = JSON.parse(localStorage.getItem(JOIN_PENDING_KEY) || 'null'); } catch (e) { p = null; }
+        if (!p || typeof p !== 'object') p = _joinMem;
+        if (!p || typeof p !== 'object' || !p.nonce || !p.inv) return null;
+        if (Date.now() - Number(p.at) > JOIN_KEEP_MS) { joinPendingClear(); return null; }
+        return p;
+    }
+    function joinPendingWrite(p) {
+        _joinMem = p;
+        try { localStorage.setItem(JOIN_PENDING_KEY, JSON.stringify(p)); return true; } catch (e) { return false; }
+    }
+    function joinPendingClear() {
+        _joinMem = null;
+        try { localStorage.removeItem(JOIN_PENDING_KEY); } catch (e) { }
+    }
+    /** 這筆申請屬於目前連著的這本帳（部署＋家庭代碼都相同） */
+    function joinPendingHere(p) { return !!p && !!BACKEND.id && p.dep === BACKEND.id && p.fc === AUTH.familyCode; }
+    /** 給後端看的裝置名稱（只用於「我的裝置」清單，讓本人分得出是哪一台；不做任何判斷） */
+    function deviceLabel() {
+        const ua = navigator.userAgent || '';
+        const ipad = /iPad/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        const os = ipad ? 'iPad' : /iPhone|iPod/.test(ua) ? 'iPhone' : /Android/.test(ua) ? 'Android'
+            : /Windows/.test(ua) ? 'Windows' : /CrOS/.test(ua) ? 'Chromebook' : /Mac OS X|Macintosh/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux' : '裝置';
+        const br = /Edg[A-Z]?\//.test(ua) ? 'Edge' : /SamsungBrowser/.test(ua) ? 'Samsung 瀏覽器' : /\bLine\//i.test(ua) ? 'LINE'
+            : /FBAN|FBAV|Instagram/.test(ua) ? 'App 內瀏覽器' : /CriOS|Chrome\//.test(ua) ? 'Chrome' : /FxiOS|Firefox\//.test(ua) ? 'Firefox'
+                : /Safari\//.test(ua) ? 'Safari' : '瀏覽器';
+        let standalone = !!window.navigator.standalone;
+        try { standalone = standalone || window.matchMedia('(display-mode: standalone)').matches; } catch (e) { }
+        return (os + ' · ' + (standalone ? '主畫面 App' : br)).slice(0, 40);
+    }
+    function fmtDay(ms) {
+        if (!ms) return '';
+        const d = new Date(Number(ms));
+        return `${d.getFullYear()}/${pad2(d.getMonth() + 1)}/${pad2(d.getDate())}`;
+    }
+    /** 讀邀請內容後顯示加入畫面。這台裝置已經對同一個邀請送出過申請 → 直接接續，不再讀邀請
+        （單人邀請被自己的申請用掉後，再讀邀請會得到「已用完」，但同一台裝置仍可接續自己的申請）。 */
+    async function openJoinStep() {
+        const pend = joinPendingRead();
+        if (joinPendingHere(pend) && pend.inv === _invite.invite) return resumeJoin(pend);
+        document.getElementById('splashMsg').innerText = '正在讀取邀請…';
+        const info = await api.call('inviteInfo', { inviteSecret: _invite.invite });
+        _joinInfo = { familyName: info.familyName || STATE.familyName || '', inviter: info.inviter || '', approval: info.approval === 'required' ? 'required' : 'auto',
+            kind: info.kind === 'group' ? 'group' : 'single', expiresAt: Number(info.expiresAt) || 0, custodian: info.custodian || '' };
+        showJoinForm(_joinInfo, '');
+    }
+    function resumeJoin(p) {
+        _invite = { url: BACKEND.url, code: AUTH.familyCode, invite: p.inv };
+        _joinInfo = p.info || { familyName: STATE.familyName || '', inviter: '', approval: 'auto', kind: 'single', expiresAt: 0, custodian: '' };
+        if (p.rid) { showJoinWait(p); return gateCheckJoin(false); }
+        showJoinForm(_joinInfo, p.nick || '', true);
+    }
+    function showJoinForm(info, nick, resumed) {
+        showGate(4);
+        document.getElementById('gateError').classList.add('hidden');
+        document.getElementById('gateJoinFamily').innerText = info.familyName || '家庭記帳';
+        const lines = [];
+        if (info.inviter) lines.push(`<p><i class="fa-solid fa-user-plus w-4 text-pastel-muted"></i> ${esc(info.inviter)} 邀請你加入</p>`);
+        lines.push(`<p><i class="fa-solid fa-user-check w-4 text-pastel-muted"></i> ${info.approval === 'required' ? '送出後要等戶長核准，才能開始記帳' : '送出後就可以開始記帳'}</p>`);
+        if (info.expiresAt && !resumed) lines.push(`<p><i class="fa-regular fa-clock w-4 text-pastel-muted"></i> 邀請在 ${esc(fmtSyncTime(info.expiresAt))} 前有效</p>`);
+        if (info.custodian) lines.push(`<p><i class="fa-solid fa-table w-4 text-pastel-muted"></i> ${esc(info.custodian)}</p>`);
+        if (resumed) lines.push(`<p class="text-pastel-accent font-bold">上次的加入還沒完成，按「加入」繼續（不會重複加入）。</p>`);
+        document.getElementById('gateJoinInfo').innerHTML = lines.join('');
+        const el = document.getElementById('gateNick');
+        el.value = nick || '';
+        el.readOnly = !!resumed;                        // 接續上次的申請：名字以上次送出的為準
+        document.getElementById('gateJoinBtn').innerText = resumed ? '繼續加入' : '加入';
+    }
+    function showJoinWait(p) {
+        showGate(5);
+        document.getElementById('gateError').classList.add('hidden');
+        const info = p.info || _joinInfo || {};
+        document.getElementById('gateWaitText').innerHTML = `已經送出加入「${esc(info.familyName || STATE.familyName || '家庭記帳')}」的申請（名字：<b>${esc(p.nick || '')}</b>）。`
+            + '戶長在 App「設定 → 邀請與加入申請」核准後，這台裝置就會自動登入。可以先關掉 App，之後再打開就會回到這裡。';
+        document.getElementById('gateWaitStatus').innerText = '';
+    }
+    function stopJoinPoll() { clearTimeout(_joinPoll); _joinPoll = null; }
+    function scheduleJoinPoll() {
+        stopJoinPoll();
+        if (_joinPollN >= JOIN_POLL_MAX) {               // 約 10 分鐘後停止自動查詢，避免一直佔用帳本
+            document.getElementById('gateWaitStatus').innerText = '已暫停自動查詢。戶長核准後，請按「重新查詢」。';
+            return;
+        }
+        _joinPoll = setTimeout(() => {
+            _joinPoll = null;
+            const box = document.getElementById('gateStep5');
+            if (!box || box.classList.contains('hidden') || document.hidden) return;
+            _joinPollN++;
+            gateCheckJoin(true);
+        }, JOIN_POLL_MS);
+    }
+    document.addEventListener('visibilitychange', () => {
+        const box = document.getElementById('gateStep5');
+        if (!document.hidden && box && !box.classList.contains('hidden') && !_joinBusy) { _joinPollN = 0; gateCheckJoin(true); }
+    });
+    /** 加入流程的共同收尾：拿到登入就跟登入碼一樣進入 App。其他分頁已切換帳本或登入 → 不套用，重新載入。 */
+    async function joinOutcome(d, pend, stale) {
+        if (stale()) return joinDropStale();
+        if (d && d.status === 'pending' && d.requestId) {
+            pend.rid = String(d.requestId);
+            joinPendingWrite(pend);
+            showJoinWait(pend);
+            document.getElementById('gateWaitStatus').innerText = `還在等戶長核准（${fmtSyncTime(Date.now())} 查詢）`;
+            return scheduleJoinPoll();
+        }
+        if (!d || d.status !== 'approved' || !d.authToken || !d.memberId) {
+            throw Object.assign(new Error('加入的回應不完整，請再按一次（同一台裝置重送不會重複加入）'), { code: 'RESULT_UNKNOWN' });
+        }
+        joinPendingClear(); stopJoinPoll();
+        AUTH.memberId = d.memberId;
+        AUTH.authToken = d.authToken;
+        AUTH.bookId = d.bookId || '';
+        tabBind();
+        if (d.apiVersion) BACKEND_VERSION = d.apiVersion;
+        _invite = null;
+        gateSay(`歡迎加入，${d.nickname || ''}！`);
+        await new Promise(z => setTimeout(z, 500));
+        document.getElementById('splash').classList.remove('js-hide');
+        try { await loadAll(); enterApp(); }
+        catch (e) {
+            document.getElementById('splash').classList.add('js-hide');
+            if (e.code === 'CONTEXT_CHANGED') return joinDropStale();
+            if (isAuthFailure(e)) { e.code === 'BAD_CODE' ? AUTH.clear() : AUTH.clearIdentity(); return e.code === 'BAD_CODE' ? showGate(1) : enterLoginStep('登入沒有成功，請向戶長索取登入碼'); }
+            showGate(2); showGateError('已加入，但讀取帳本失敗：' + e.message + '。請稍後重新開啟 App。');
+        }
+    }
+    function joinDropStale() {
+        stopJoinPoll();
+        gateSay('登入設定已在其他分頁變更');
+        showGateError('其他分頁已切換帳本或完成登入，這次加入的結果沒有套用。這個分頁將重新載入。');
+        setTimeout(() => location.reload(), 1500);
+    }
+    /** 加入失敗：終局 → 忘掉申請、改走登入碼；名字問題 → 留在加入畫面；連線問題 → 保留申請，請使用者再按一次 */
+    function joinFail(e, where) {
+        if (e && e.code === 'BAD_CODE') {
+            joinPendingClear(); localStorage.removeItem('fc'); _otpAuto = true; showGate(1);
+            return showGateError('家庭代碼已更換，這個邀請已失效。請向戶長索取新的邀請。');
+        }
+        if (e && JOIN_FINAL_CODES.includes(e.code)) {
+            joinPendingClear(); _invite = null;
+            enterLoginStep(e.code === 'JOIN_REJECTED' ? '這次沒有加入成功' : '這個邀請不能用了');
+            return showGateError(e.message + (e.code === 'JOIN_REJECTED' ? '' : '\n如果你已經是這本帳的家人，請向戶長索取登入碼。'));
+        }
+        if (where === 'wait') {
+            document.getElementById('gateWaitStatus').innerText = e && e.code === 'TOO_MANY_SESSIONS' ? e.message
+                : e && e.code === 'LOGIN_THROTTLED' ? e.message : '暫時查不到結果（連線不穩），稍後會再試；也可以按「重新查詢」。';
+            if (!(e && (e.code === 'TOO_MANY_SESSIONS' || e.code === 'LOGIN_THROTTLED'))) scheduleJoinPoll();
+            return;
+        }
+        if (e && (e.code === 'RESULT_UNKNOWN' || e.code === 'OFFLINE' || /Failed to fetch|NetworkError|Load failed|HTTP/i.test(e.message || ''))) {
+            return showGateError('連線中斷，不確定是否已送出。請再按一次（同一台裝置重送不會重複加入）。');
+        }
+        showGateError((e && e.message) || '加入失敗');
+    }
+    async function gateSubmitJoin() {
+        if (_joinBusy || !_invite || !_invite.invite) return;
+        const el = document.getElementById('gateNick');
+        const nick = String((el && el.value) || '').replace(/\s+/g, ' ').trim();
+        if (!nick) return showGateError('請輸入你的名字（家人看到的稱呼）');
+        if (nick.length > 20) return showGateError('名字最多 20 個字');
+        let pend = joinPendingRead();
+        _joinPollN = 0;
+        if (!(joinPendingHere(pend) && pend.inv === _invite.invite)) {
+            pend = { dep: BACKEND.id, fc: AUTH.familyCode, inv: _invite.invite, nonce: randomNonce(), nick, info: _joinInfo, rid: '', at: Date.now() };
+        } else if (!pend.rid) pend.nick = nick;          // 名字被拒（重複）後改名：同一個隨機值，後端還沒有這筆申請
+        joinPendingWrite(pend);
+        _joinBusy = true;
+        const b = document.getElementById('gateJoinBtn'); b.disabled = true; b.innerText = '送出中…';
+        document.getElementById('gateError').classList.add('hidden');
+        const attempt = authCtxKey(), stale = () => authCtxKey() !== attempt;
+        const cancelled = () => { const p = joinPendingRead(); return !p || p.nonce !== pend.nonce; };
+        try {
+            const d = await api.call('acceptInvite', { inviteSecret: pend.inv, clientNonce: pend.nonce, nickname: pend.nick, deviceLabel: deviceLabel() });
+            if (cancelled()) return;                        // 送出途中改按「我有登入碼」：結果不套用
+            await joinOutcome(d, pend, stale);
+        } catch (e) {
+            if (stale()) return joinDropStale();
+            if (cancelled()) return;
+            joinFail(e, 'form');
+        } finally { _joinBusy = false; b.disabled = false; b.innerText = document.getElementById('gateNick').readOnly ? '繼續加入' : '加入'; }
+    }
+    async function gateCheckJoin(auto) {
+        if (_joinBusy) return;
+        const pend = joinPendingRead();
+        if (!joinPendingHere(pend) || !pend.rid) { stopJoinPoll(); return enterLoginStep('請輸入戶長給你的登入碼'); }
+        stopJoinPoll();
+        _joinBusy = true;
+        const b = document.getElementById('gateWaitBtn'); b.disabled = true; b.innerText = '查詢中…';
+        if (!auto) _joinPollN = 0;
+        const attempt = authCtxKey(), stale = () => authCtxKey() !== attempt;
+        /* 查詢途中按了「不等了」（申請已從這台裝置忘掉）：回來的結果一律不套用，不重新排查詢、不切回等待畫面 */
+        const cancelled = () => { const p = joinPendingRead(); return !p || p.nonce !== pend.nonce; };
+        try {
+            const d = await api.call('checkJoinRequest', { requestId: pend.rid, clientNonce: pend.nonce, deviceLabel: deviceLabel() });
+            if (cancelled()) return;                        // 等待中已按「不等了」：結果不套用
+            await joinOutcome(d, pend, stale);
+        } catch (e) {
+            if (stale()) return joinDropStale();
+            if (cancelled()) return;
+            joinFail(e, 'wait');
+        } finally { _joinBusy = false; b.disabled = false; b.innerText = '重新查詢'; }
+    }
+    function gateCancelJoin() {
+        if (!confirm('不等了嗎？\n\n這台裝置會忘記這次的加入申請（戶長那邊仍看得到，可以拒絕）。\n如果你已經是這本帳的家人，請改用登入碼登入。')) return;
+        joinPendingClear(); _invite = null;
+        enterLoginStep('請輸入戶長給你的登入碼');          // 離開等待畫面（gateStep）即停止自動查詢
+    }
+    function gateJoinUseCode() {
+        const p = joinPendingRead();
+        if (p && p.rid && !confirm('這台裝置已經送出加入申請。改用登入碼的話，這台裝置會忘記那筆申請（戶長那邊仍看得到）。要改用登入碼嗎？')) return;
+        if (p) joinPendingClear();
+        _invite = null;
+        enterLoginStep('請輸入戶長給你的登入碼');
     }
     /* ==========================================================
        v6.25.0 開機快取：套用、重驗
@@ -2149,7 +2534,8 @@ function hexA(hex, a) {
             archivedItems: d.archivedItems || [], transactions: serverTx.concat(keep), rules: d.rules || [],
             budgets: d.budgets || [], intents: d.intents || [], goals: d.goals || [], achievements: d.achievements || [],
             cheers: d.cheers || [], memberStats: d.memberStats || {}, familyStats: d.familyStats || {},
-            streakSaves: d.streakSaves || [], poolInitial: d.poolInitial
+            streakSaves: d.streakSaves || [], poolInitial: d.poolInitial,
+            pendingJoins: Number(d.pendingJoins) || 0     // v6.26.0：戶長才會拿到（待核准的加入申請筆數）；清單在展開時才讀
         });
         normalizeState();
         STATE.me = STATE.members.find(m => m.member_id === AUTH.memberId);
@@ -2165,7 +2551,7 @@ function hexA(hex, a) {
         const firstVerify = !SESSION.verified;
         SESSION.verified = true;                        // 後端接受了這組 token：之後才補送離線資料
         bootCacheWrite();
-        if (firstVerify) setTimeout(() => syncOfflineQueue(true), 400);
+        if (firstVerify) { triageLegacyJobs(); setTimeout(() => syncOfflineQueue(true), 400); }
         else kickSync('network');                      // r5（R4-F01）：讀取帳本成功＝後端可達：有可重試的待送就一併送出
         if (d.generated > 0) setTimeout(() => toast(`已自動補記 ${d.generated} 筆固定收支`), 800);
     }
@@ -2363,7 +2749,7 @@ function hexA(hex, a) {
         /* v6.25.0：剪貼簿是邀請碼（部署ID.代碼）或整段邀請連結 → 直接走邀請加入。
            iPhone 從 Safari 加入主畫面後，靠的就是這一步把邀請帶進主畫面 App。 */
         const inv = parseInstall(txt);
-        if (inv && !inv.dev && inv.code) { buzz(); return startInvite({ url: inv.url, code: inv.code, kind: 'setup' }); }
+        if (inv && !inv.dev && inv.code) { buzz(); return startInvite({ url: inv.url, code: inv.code, invite: inv.invite || '', kind: 'setup' }); }
         el.value = String(txt || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
         paintOtp(); buzz();
     }
@@ -2388,11 +2774,14 @@ function hexA(hex, a) {
         showCtxNotes();
     }
     function gateStep(n) {
-        [0, 1, 2, 3].forEach(i => document.getElementById('gateStep' + i)?.classList.toggle('hidden', i !== n));
+        [0, 1, 2, 3, 4, 5].forEach(i => document.getElementById('gateStep' + i)?.classList.toggle('hidden', i !== n));
+        if (n !== 5) stopJoinPoll();                   // v6.26.0：離開等待畫面就停止自動查詢
         gateSay(n === 0 ? '先連上你的帳本，貼上安裝碼吧！'
             : n === 1 ? '請輸入 8 位家庭代碼，跟家人連線吧！'
                 : n === 2 ? '請輸入戶長給你的登入碼'
-                    : '先把家庭記帳加到主畫面吧！');
+                    : n === 4 ? '一起來記帳吧！'
+                        : n === 5 ? '等戶長核准一下下～'
+                            : '先把家庭記帳加到主畫面吧！');
     }
     function showGateError(m) { const e = document.getElementById('gateError'); e.innerText = m; e.classList.remove('hidden'); }
 
@@ -2419,6 +2808,7 @@ function hexA(hex, a) {
             BACKEND_VERSION = d.apiVersion || '';
             if (!d.ready) throw new Error('連上了，但這本帳還沒初始化。請在 Google 試算表的「🏠 家庭記帳」選單執行「① 初始化 / 升級系統」。');
             document.getElementById('gateError').classList.add('hidden');
+            if (p.code && p.invite) return startInvite({ url: p.url, code: p.code, invite: p.invite, kind: 'setup' });   // v6.26.0：貼的是新的邀請碼
             if (p.code) { AUTH.familyCode = p.code; document.getElementById('gateCode').value = p.code; }
             gateStep(1); _otpAuto = false; paintOtp();   // 八碼齊全時 paintOtp 會自動送出
         } catch (e) {
@@ -2451,6 +2841,7 @@ function hexA(hex, a) {
     async function gateSubmitCode() {
         const code = document.getElementById('gateCode').value.trim().toUpperCase();
         if (!code) return showGateError('請輸入家庭代碼');
+        if (_invite && _invite.invite && code === _invite.code && BACKEND.url === _invite.url) return joinByInvite();   // v6.26.0：邀請連線失敗後重試，繼續走邀請加入
         const b = document.getElementById('gateCodeBtn'); b.disabled = true; b.innerText = '連線中…';
         try {
             AUTH.familyCode = code;
@@ -2534,10 +2925,11 @@ function hexA(hex, a) {
             setTimeout(() => location.reload(), 1500);
         };
         try {
-            const d = await api.call('redeemLoginCode', { loginCode: code, clientNonce: pend.nonce });
+            const d = await api.call('redeemLoginCode', { loginCode: code, clientNonce: pend.nonce, deviceLabel: deviceLabel() });
             if (stale()) return dropStale();
             if (!d || !d.authToken || !d.memberId) throw Object.assign(new Error('登入回應不完整，請再按一次「登入」'), { code: 'RESULT_UNKNOWN' });
             try { localStorage.removeItem(LOGIN_PENDING_KEY); } catch (e) { }
+            joinPendingClear();                         // v6.26.0：改用登入碼登入了，這台裝置不再等之前的加入申請
             AUTH.memberId = d.memberId;
             AUTH.authToken = d.authToken;
             AUTH.bookId = d.bookId || '';
@@ -2825,7 +3217,7 @@ function hexA(hex, a) {
         let n = 0;
         activeTxns().filter(t => (t.nature === '家庭代墊' || t.nature === '私人拆帳') && t.entry_type === '支出')
             .forEach(src => parseSplit(src).forEach(x => {
-                if (x.amount - paidFor(src.txn_id, x.member_id) > 0.01) n++;
+                if (toCents(x.amount - paidFor(src.txn_id, x.member_id)) > 0) n++;
             }));
         return n;
     }
@@ -2976,7 +3368,15 @@ function hexA(hex, a) {
             ic?.classList.remove('spin-slow');
         }
     }
-    function logout() { if (confirm('確定要登出嗎？')) { AUTH.clear(); location.reload(); } }
+    /* v6.26.0：登出時一併讓後端的這台裝置失效（最多等 5 秒；離線就只清這台，之後可在其他裝置的「我的裝置」移除） */
+    async function logout() {
+        if (!confirm('確定要登出嗎？\n\n要再登入，需要戶長產生的登入碼。')) return;
+        if (devicesSupported() && AUTH.hasToken && tabOk()) {
+            try { await Promise.race([api.call('revokeMySession', { sessionId: 'current' }), new Promise((_, no) => setTimeout(() => no(new Error('timeout')), 5000))]); }
+            catch (e) { }
+        }
+        AUTH.clear(); location.reload();
+    }
 
     /* ---------- 深色模式：跟隨系統 / always on / always off ---------- */
     const THEMES = [['auto', '跟隨系統', 'fa-circle-half-stroke'], ['light', '淺色', 'fa-sun'], ['dark', '深色', 'fa-moon']];
@@ -3029,7 +3429,29 @@ function hexA(hex, a) {
     /* ==========================================================
        導覽
        ========================================================== */
+    /* v6.26.0 r2：在新增頁時，導覽列的「＋」轉成「×」——按下＝取消這次新增（或編輯），回到進來之前的頁面。
+       已經輸入金額、備註或附了單據時先確認，避免誤觸把內容丟掉；表單還是空的就直接關閉。 */
+    let _tabBeforeAdd = 'dashboard';
+    function navAddTap() {
+        if (currentTab !== 'add') return switchTab('add');
+        cancelAddFlow();
+    }
+    function addFormDirty() {
+        return !!editingTxnId || evalExpr(addState.expr) > 0 || !!String(addState.note || '').trim() || !!pendingReceipt;
+    }
+    function cancelAddFlow() {
+        const wasEdit = !!editingTxnId;
+        if (addFormDirty() && !confirm(wasEdit ? '要放棄這次的修改嗎？\n\n原本的紀錄不會改變。' : '要放棄這筆還沒儲存的記帳嗎？')) return;
+        if (!document.getElementById('sheetModal')?.classList.contains('js-hide')) closeSheet();
+        addState.splitOpen = false;
+        editingTxnId = null; pendingReceipt = null;
+        initAddForm();
+        buzz(8);
+        switchTab(_tabBeforeAdd && _tabBeforeAdd !== 'add' ? _tabBeforeAdd : 'dashboard');
+        toast(wasEdit ? '已取消編輯' : '已取消新增');
+    }
     function switchTab(tab) {
+        if (tab === 'add' && currentTab !== 'add') _tabBeforeAdd = currentTab;
         currentTab = tab;
         if (tab !== 'add' && addState.splitOpen) {
             addState.splitOpen = false;
@@ -3038,7 +3460,8 @@ function hexA(hex, a) {
         setSplitStage(tab === 'add' && !!addState.splitOpen);
         document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('nav-active'));
         document.getElementById('appFrame')?.classList.toggle('mode-family', currentMode === 'family');
-        document.getElementById('navAdd')?.classList.toggle('nav-add-on', tab === 'add');
+        const na = document.getElementById('navAdd');
+        if (na) { na.classList.toggle('nav-add-on', tab === 'add'); na.setAttribute('aria-label', tab === 'add' ? '取消新增' : '新增'); }
         if (tab !== 'add') {
             document.getElementById('nav' + tab.charAt(0).toUpperCase() + tab.slice(1))?.classList.add('nav-active');
         }
@@ -3121,10 +3544,10 @@ function hexA(hex, a) {
                         <div class="bg-pastel-greenLight border border-pastel-green/20 p-3 rounded-tile min-w-0"><div class="text-xs text-pastel-green mb-1">公帳欠我</div>
                             <div class="font-bold text-pastel-green text-lg font-tabular truncate">+${fmt(s.poolOwesMe)}</div></div>
                     </div>
-                    ${s.cardDebt > 0.01 ? `
+                    ${toCents(s.cardDebt) > 0 ? `
                     <div class="flex justify-between items-center mt-3 pt-3 border-t border-dashed border-pastel-border">
                         <span class="text-sm text-stone-600"><i class="fa-solid fa-credit-card text-pastel-red mr-1.5"></i>信用卡待繳</span>
-                        <span class="text-sm font-bold font-tabular text-pastel-red">-${fmt(s.cardDebt)}</span>
+                        <span class="text-sm font-bold font-tabular text-pastel-red">-${fmtDue(s.cardDebt)}</span>
                     </div>` : ''}
                     <div class="flex justify-between items-center mt-3 pt-3 border-t border-dashed border-pastel-border">
                         <span class="text-sm font-bold text-stone-700">淨資產</span>
@@ -3291,14 +3714,14 @@ function hexA(hex, a) {
             <p class="text-xs text-pastel-muted mb-5">留空或填 0 表示不設限。設定後每月自動沿用。</p>
             <div class="space-y-4">
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">每月總預算</label>
-                    <input id="bTotal" type="number" inputmode="numeric" value="${budgetFor(scope, '') || ''}" placeholder="例如 30000"
+                    <input id="bTotal" type="number" inputmode="numeric" step="1" oninput="this.dataset.touched = '1'" value="${budgetFor(scope, '') ? wholeYuan(budgetFor(scope, '')) : ''}" placeholder="例如 30000"
                         class="w-full p-3.5 rounded-tile bg-pastel-accentLight border-2 border-pastel-accent/40 text-stone-800 font-bold text-lg font-tabular"></div>
                 <div class="text-xs font-bold text-stone-600 pt-1">分類預算（選填）</div>
                 ${cats.map(c => `
                     <div class="flex items-center gap-3">
                         <div class="cat-dot w-9 h-9 rounded-tile flex items-center justify-center flex-shrink-0" style="background:${catColor(c.item_name)}"><i class="fa-solid ${esc(normIcon(c.icon_emoji, c.item_group))}"></i></div>
                         <span class="text-sm text-stone-700 flex-1 truncate">${esc(c.item_name)}</span>
-                        <input type="number" inputmode="numeric" data-cat="${esc(c.item_name)}" value="${budgetFor(scope, c.item_name) || ''}" placeholder="—"
+                        <input type="number" inputmode="numeric" step="1" oninput="this.dataset.touched = '1'" data-cat="${esc(c.item_name)}" value="${budgetFor(scope, c.item_name) ? wholeYuan(budgetFor(scope, c.item_name)) : ''}" placeholder="—"
                             class="bud-inp w-24 p-2.5 rounded-tile bg-pastel-bg border border-pastel-border text-sm text-right font-tabular">
                     </div>`).join('')}
                 <button onclick="saveBudgets('${scope}')" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm mt-2">儲存預算</button>
@@ -3306,9 +3729,12 @@ function hexA(hex, a) {
     }
 
     async function saveBudgets(scope) {
-        const total = Number(document.getElementById('bTotal').value) || 0;
+        /* r6（R5-F03、F04）：總預算與分類預算同一規則——新輸入取整數元；沒有改動的舊金額照原本儲存的數字送回 */
+        const keep = cat => { const v = budgetFor(scope, cat); return v ? v : undefined; };
+        const bt = document.getElementById('bTotal');
+        const total = keepOrYuan(bt.value, keep(''), bt.dataset.touched === '1');
         const items = [{ category: '', amount: total }];
-        document.querySelectorAll('.bud-inp').forEach(i => items.push({ category: i.dataset.cat, amount: Number(i.value) || 0 }));
+        document.querySelectorAll('.bud-inp').forEach(i => items.push({ category: i.dataset.cat, amount: keepOrYuan(i.value, keep(i.dataset.cat), i.dataset.touched === '1') }));
         closeSheet();
         // 先更新本地讓畫面即時反應，再依序同步
         items.forEach(it => {
@@ -3329,7 +3755,7 @@ function hexA(hex, a) {
     function pendingSection() {
         const list = myPendingSettlements();
         if (!list.length) return '';
-        const total = list.reduce((a, b) => a + b.remaining, 0);
+        const total = sumC(list, b => b.remaining);
         const priv = list.filter(x => x.itemType === 'private');
         const grp = (type, label, icon) => {
             const items = list.filter(x => x.itemType === type);
@@ -3341,9 +3767,9 @@ function hexA(hex, a) {
                         <div class="flex justify-between items-start gap-2 mb-2">
                             <div class="min-w-0">
                                 <div class="font-bold text-sm text-stone-800 truncate">${esc(x.payerName)}代墊：${esc(x.note || x.category || '—')}</div>
-                                <div class="text-[10px] text-pastel-muted">${esc(x.date)} ・ 你的分攤 ${fmt(x.expected)}${x.marked ? ' ・ <span class="text-pastel-blue font-bold">已選公帳月結</span>' : ''}</div>
+                                <div class="text-[10px] text-pastel-muted">${esc(x.date)} ・ 你的分攤 ${fmtC(x.expected)}${x.marked ? ' ・ <span class="text-pastel-blue font-bold">已選公帳月結</span>' : ''}</div>
                             </div>
-                            <div class="font-tabular text-pastel-red flex-shrink-0">${fmt(x.remaining)}</div>
+                            <div class="font-tabular text-pastel-red flex-shrink-0">${fmtDue(x.remaining)}</div>
                         </div>
                         <div class="grid ${type === 'pool' ? 'grid-cols-2' : 'grid-cols-1'} gap-2">
                             <button onclick="openRepay('${esc(x.srcId)}')" class="py-2 bg-pastel-accent text-white rounded-lg text-xs font-bold tactile"><i class="fa-solid fa-hand-holding-dollar mr-1"></i>直接還款</button>
@@ -3359,7 +3785,7 @@ function hexA(hex, a) {
         list.forEach(x => {
             const k = x.payerId;
             byPayer[k] = byPayer[k] || { name: x.payerName, id: k, sum: 0, n: 0 };
-            byPayer[k].sum += x.remaining; byPayer[k].n++;
+            byPayer[k].sum = money(byPayer[k].sum + x.remaining); byPayer[k].n++;
         });
         const payers = Object.values(byPayer).sort((a, b) => b.sum - a.sum);
 
@@ -3392,16 +3818,16 @@ function hexA(hex, a) {
         list.forEach(x => {
             byMember[x.memberId] = byMember[x.memberId] || { name: x.memberName, items: [], remaining: 0, expected: 0 };
             byMember[x.memberId].items.push(x);
-            byMember[x.memberId].remaining += x.remaining;
-            byMember[x.memberId].expected += x.expected;
+            byMember[x.memberId].remaining = money(byMember[x.memberId].remaining + x.remaining);
+            byMember[x.memberId].expected = money(byMember[x.memberId].expected + x.expected);
         });
-        const total = list.reduce((a, b) => a + b.remaining, 0);
+        const total = sumC(list, b => b.remaining);
         return `<div class="space-y-2.5">
             <div class="flex justify-between items-center">
                 <span class="text-xs font-bold text-stone-600"><i class="fa-solid fa-hand-holding-dollar text-pastel-green mr-1.5"></i>別人要還我</span>
-                <span class="text-xs text-pastel-muted">${list.length} 筆 ・ <span class="text-pastel-green font-tabular">${fmt(total)}</span></span></div>
+                <span class="text-xs text-pastel-muted">${list.length} 筆 ・ <span class="text-pastel-green font-tabular">${fmtDue(total)}</span></span></div>
             ${Object.entries(byMember).map(([id, g]) => {
-                const paid = g.expected - g.remaining, pct = g.expected ? paid / g.expected * 100 : 0;
+                const paid = money(g.expected - g.remaining), pct = g.expected ? paid / g.expected * 100 : 0;
                 const m = STATE.members.find(x => x.member_id === id);
                 const lv = getLevelInfo(m?.streak_days);
                 return `<button onclick="openOweDetail('${esc(id)}')" class="w-full text-left bg-pastel-bg rounded-tile p-3 border border-pastel-border tactile active:bg-white">
@@ -3409,9 +3835,9 @@ function hexA(hex, a) {
                         <div class="w-8 h-8 rounded-full border-2 ${lv.border} ${lv.bg} overflow-hidden flex items-center justify-center text-xs flex-shrink-0">${avatarInner(m?.avatar_emoji)}</div>
                         <div class="flex-1 min-w-0">
                             <div class="font-bold text-sm text-stone-800 truncate">${esc(g.name)}</div>
-                            <div class="text-[10px] text-pastel-muted">${g.items.length} 筆 ・ 已還 ${fmt(paid)} / ${fmt(g.expected)}</div></div>
+                            <div class="text-[10px] text-pastel-muted">${g.items.length} 筆 ・ 已還 ${fmtC(paid)} / ${fmtC(g.expected)}</div></div>
                         <div class="flex items-center gap-1.5 flex-shrink-0">
-                            <span class="font-bold font-tabular text-pastel-green">${fmt(g.remaining)}</span>
+                            <span class="font-bold font-tabular text-pastel-green">${fmtDue(g.remaining)}</span>
                             <i class="fa-solid fa-chevron-right text-[10px] text-pastel-muted"></i></div></div>
                     <div class="w-full bg-white rounded-full h-2.5 overflow-hidden border border-pastel-border">
                         <div class="bg-pastel-green h-2.5 rounded-full transition-all duration-700" style="width:${pct.toFixed(0)}%"></div></div>
@@ -3428,22 +3854,22 @@ function hexA(hex, a) {
         if (!all.length) return;
         const m = STATE.members.find(x => x.member_id === memberId);
         const lv = getLevelInfo(m?.streak_days);
-        const remaining = all.reduce((a, b) => a + b.remaining, 0);
-        const expected = all.reduce((a, b) => a + b.expected, 0);
-        const paid = expected - remaining;
+        const remaining = sumC(all, b => b.remaining);
+        const expected = sumC(all, b => b.expected);
+        const paid = money(expected - remaining);
         openSheet(`
             <div class="flex items-center gap-3 mb-4">
                 <div class="w-12 h-12 rounded-full border-[3px] ${lv.border} ${lv.bg} overflow-hidden flex items-center justify-center text-lg flex-shrink-0">${avatarInner(m?.avatar_emoji)}</div>
                 <div class="min-w-0">
                     <h3 class="text-lg font-bold text-stone-800 truncate">${esc(nameOf(memberId))} 要還我</h3>
-                    <div class="text-[10px] text-pastel-muted">${all.length} 筆 ・ 已還 ${fmt(paid)} / ${fmt(expected)}</div></div>
+                    <div class="text-[10px] text-pastel-muted">${all.length} 筆 ・ 已還 ${fmtC(paid)} / ${fmtC(expected)}</div></div>
                 <div class="ml-auto text-right flex-shrink-0">
-                    <div class="text-2xl font-bold font-tabular text-pastel-green">${fmt(remaining)}</div>
+                    <div class="text-2xl font-bold font-tabular text-pastel-green">${fmtDue(remaining)}</div>
                     <div class="text-[10px] text-pastel-muted">尚未歸還</div></div>
             </div>
             <div class="space-y-2 max-h-[52vh] overflow-y-auto hide-scrollbar">
                 ${all.map(x => {
-            const done = x.expected - x.remaining;
+            const done = money(x.expected - x.remaining);
             return `<div class="p-3 rounded-tile bg-pastel-bg">
                         <div class="flex items-start gap-2.5">
                             <div class="cat-dot w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-xs"
@@ -3453,10 +3879,10 @@ function hexA(hex, a) {
                                 <div class="text-sm font-bold text-stone-800 truncate">${esc(x.note || x.category || '（無備註）')}</div>
                                 <div class="text-[10px] text-pastel-muted">${esc(x.date)} ・ ${esc(x.category || '未分類')}
                                     ・ <span class="${x.itemType === 'pool' ? 'text-pastel-accent' : 'text-pastel-blue'}">${x.itemType === 'pool' ? '公帳代墊' : '私人拆帳'}</span></div>
-                                ${done > 0.01 ? `<div class="text-[10px] text-pastel-green mt-0.5">已還 ${fmt(done)} / ${fmt(x.expected)}</div>` : ''}
+                                ${toCents(done) > 0 ? `<div class="text-[10px] text-pastel-green mt-0.5">已還 ${fmtC(done)} / ${fmtC(x.expected)}</div>` : ''}
                             </div>
                             <div class="text-right flex-shrink-0">
-                                <div class="font-bold font-tabular text-pastel-green text-sm">${fmt(x.remaining)}</div></div>
+                                <div class="font-bold font-tabular text-pastel-green text-sm">${fmtDue(x.remaining)}</div></div>
                         </div>
                         <button onclick="closeSheet();openTxnSheet('${esc(x.srcId)}')"
                             class="w-full mt-2 py-1.5 rounded-lg bg-white border border-pastel-border text-[10px] font-bold text-stone-600 tactile">看這筆原始紀錄</button>
@@ -3465,7 +3891,7 @@ function hexA(hex, a) {
             </div>
             <button onclick="closeSheet();settleUp('${esc(nameOf(memberId))}', ${remaining}, 'member2pool')"
                 class="w-full mt-4 py-3.5 bg-pastel-green text-white font-bold rounded-tile text-sm shadow-md tactile">
-                <i class="fa-solid fa-money-bill-transfer mr-1.5"></i>記錄一筆結算 ${fmt(remaining)}</button>`);
+                <i class="fa-solid fa-money-bill-transfer mr-1.5"></i>記錄一筆結算 ${fmtDue(remaining)}</button>`);
     }
 
     /* ---------- 第二層：待辦（三類合併成一張，但個別項目仍直接列出） ---------- */
@@ -3480,17 +3906,17 @@ function hexA(hex, a) {
                這樣未繳的部分會自然滾到下一期，不必額外做結轉的簿記。 */
             const billed = statementAmount(c.item_name, '0000-01-01', st.closed.end);
             const paid = paidOnCard(c.item_name);
-            const due = Math.round(billed - paid);
-            if (due <= 0) return null;
+            const due = money(billed - paid);
+            if (toCents(due) <= 0) return null;
             return {
                 card: c, name: c.item_name, due,
                 thisPeriod: st.closed.amount,
-                carry: Math.round(due - st.closed.amount),   // 上期沒繳完滾過來的
+                carry: money(due - st.closed.amount),        // 上期沒繳完滾過來的
                 dueDate: st.closed.due, statementId: `${c.item_name}|${st.closed.end}`,
                 payFrom: c.auto_pay_tag || '',
                 /* carry > 0 代表更早的帳單沒繳完，而那一期的繳款日必然已經過了 ——
                    只比對本期的到期日，會把「早就遲繳」顯示成「今天到期」。 */
-                overdue: st.closed.due < today || Math.round(due - st.closed.amount) > 0
+                overdue: st.closed.due < today || toCents(due - st.closed.amount) > 0
             };
         }).filter(Boolean);
     }
@@ -3499,8 +3925,8 @@ function hexA(hex, a) {
         return (STATE.transactions || []).reduce((sum, t) => {
             if (t.status === '作廢' || t.status === '已修訂' || t.is_rollup) return sum;
             if (t.entry_type !== '轉帳' || t.related_id !== name) return sum;
-            return sum + Math.round(Number(t.amount) || 0);
-        }, 0);
+            return sum + toCents(t.amount);
+        }, 0) / 100;
     }
     function cardDueSection() {
         const list = cardDues();
@@ -3514,11 +3940,11 @@ function hexA(hex, a) {
                     <div class="flex items-center gap-2">
                         <i class="fa-solid fa-credit-card ${d.overdue ? 'text-pastel-red' : 'text-pastel-blue'}"></i>
                         <span class="text-sm font-bold text-stone-800 truncate">${esc(d.name)}</span>
-                        <span class="ml-auto font-bold font-tabular ${d.overdue ? 'text-pastel-red' : 'text-stone-800'}">${fmt(d.due)}</span>
+                        <span class="ml-auto font-bold font-tabular ${d.overdue ? 'text-pastel-red' : 'text-stone-800'}">${fmtDue(d.due)}</span>
                         <i class="fa-solid fa-chevron-right text-[10px] text-pastel-muted"></i></div>
                     <div class="text-[10px] text-pastel-muted mt-1">
                         ${d.overdue ? '已逾期 ・ ' : ''}${esc(d.dueDate)} 到期${d.payFrom ? ` ・ 由 ${esc(d.payFrom)} 扣繳` : ''}
-                        ${d.carry > 0 ? ` ・ 含上期未繳 ${fmt(d.carry)}` : ''}</div>
+                        ${toCents(d.carry) > 0 ? ` ・ 含上期未繳 ${fmtDue(d.carry)}` : ''}</div>
                 </button>`).join('')}
         </div>`;
     }
@@ -3533,19 +3959,19 @@ function hexA(hex, a) {
         openSheet(`
             <h3 class="text-lg font-bold text-stone-800 mb-1">繳 ${esc(name)}</h3>
             <p class="text-[10px] text-pastel-muted mb-4">${esc(d.dueDate)} 到期
-                ${d.carry > 0 ? ` ・ 含上期未繳 ${fmt(d.carry)}` : ''}</p>
+                ${toCents(d.carry) > 0 ? ` ・ 含上期未繳 ${fmtDue(d.carry)}` : ''}</p>
             <div class="space-y-3">
                 <div><div class="text-xs font-bold text-stone-500 mb-1">繳款金額</div>
-                    <input id="cpAmt" type="number" inputmode="decimal" value="${d.due}"
+                    <input id="cpAmt" type="number" inputmode="numeric" step="1" value="${dueYuan(d.due)}"
                         class="field w-full py-3 px-3 rounded-tile bg-pastel-bg border border-pastel-border text-lg font-bold font-tabular text-right">
-                    <div class="text-[10px] text-pastel-muted mt-1">應繳 ${fmt(d.due)}。少繳的部分會留到下一期，不會消失。</div></div>
+                    <div class="text-[10px] text-pastel-muted mt-1">應繳 ${fmtDue(d.due)}。少繳的部分會留到下一期，不會消失；多繳的會抵下一期。</div></div>
                 <div><div class="text-xs font-bold text-stone-500 mb-1">從哪個帳戶扣</div>
                     <select id="cpFrom" class="field w-full py-2.5 px-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
                         ${visibleTags().filter(x => !isCreditCard(x))
                 .map(x => `<option ${d.payFrom === x.item_name ? 'selected' : ''}>${esc(x.item_name)}</option>`).join('')}
                     </select></div>
                 <div><div class="text-xs font-bold text-stone-500 mb-1">這期的循環利息（選填）</div>
-                    <input id="cpInt" type="number" inputmode="decimal" placeholder="照帳單上的數字填"
+                    <input id="cpInt" type="number" inputmode="numeric" step="1" placeholder="照帳單上的數字填"
                         class="field w-full py-2.5 px-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm text-right">
                     <div class="text-[10px] text-pastel-muted mt-1">會另外記成一筆「貸款利息」支出。系統不自己算 —— 各家的計息方式不同，算不準反而誤導。</div></div>
             </div>
@@ -3555,9 +3981,9 @@ function hexA(hex, a) {
     async function confirmCardPay(name) {
         const d = cardDues().find(x => x.name === name);
         if (!d) return;
-        const amt = Math.round(Number(document.getElementById('cpAmt')?.value) || 0);
+        const amt = wholeYuan(document.getElementById('cpAmt')?.value);
         const from = document.getElementById('cpFrom')?.value || '';
-        const interest = Math.round(Number(document.getElementById('cpInt')?.value) || 0);
+        const interest = wholeYuan(document.getElementById('cpInt')?.value);
         if (amt <= 0) { buzz(30); return toast('金額必須大於 0', true); }
         if (!from) { buzz(30); return toast('請選擇扣款帳戶', true); }
         closeSheet();
@@ -3582,8 +4008,10 @@ function hexA(hex, a) {
                 });
             }
             await refreshData();
-            const left = d.due - amt;
-            toast(left > 0 ? `已記錄，還有 ${fmt(left)} 留到下一期` : '已記錄扣繳');
+            /* r6（R5-F02）：記錄的是實際付出的整數元（與銀行／現金帳一致）。舊資料的應繳有零頭時，預填的是進位後的整數，
+               照預填付清會多出不到 1 元，留在卡片當溢繳、抵下一期——不會出現「已逾期 $0」，也不會憑空刪掉差額 */
+            const left = money(d.due - amt);
+            toast(toCents(left) > 0 ? `已記錄，還有 ${fmtDue(left)} 留到下一期` : toCents(left) < 0 ? `已記錄扣繳，多繳的 ${fmtC(-left)} 會抵下一期` : '已記錄扣繳');
         } catch (e) { toast(e.message, true); }
         finally { if (done) done(); }
     }
@@ -3605,18 +4033,18 @@ function hexA(hex, a) {
         const x = myPendingSettlements().find(i => i.srcId === srcId); if (!x) return;
         openSheet(`
             <h3 class="text-lg font-bold text-stone-800 mb-1">歸還給 ${esc(x.payerName)}</h3>
-            <p class="text-xs text-pastel-muted mb-3">${esc(x.note || x.category || '')} ・ 應付 ${fmt(x.expected)}</p>
+            <p class="text-xs text-pastel-muted mb-3">${esc(x.note || x.category || '')} ・ 應付 ${fmtC(x.expected)}${toCents(x.remaining) !== toCents(x.expected) ? ` ・ 尚欠 ${fmtDue(x.remaining)}` : ''}</p>
             ${x.itemType === 'pool' ? '' : payeeBlock((STATE.members || []).find(m => m.member_id === x.payerId))}
             <div class="space-y-4 mt-4">
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">歸還金額（可部分歸還）</label>
-                    <input id="rpAmt" type="number" inputmode="decimal" value="${x.remaining}" class="w-full p-3.5 rounded-tile bg-pastel-accentLight border-2 border-pastel-accent/40 text-stone-800 font-bold text-xl font-tabular"></div>
+                    <input id="rpAmt" type="number" inputmode="numeric" step="1" value="${dueYuan(x.remaining)}" class="w-full p-3.5 rounded-tile bg-pastel-accentLight border-2 border-pastel-accent/40 text-stone-800 font-bold text-xl font-tabular"></div>
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">日期</label>
                     <input id="rpDate" type="date" value="${todayISO()}" class="w-full py-3 px-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm"></div>
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">備註</label>
                     <input id="rpNote" value="${esc(`還款給${x.payerName}・${x.note || x.category || ''}`)}" class="w-full p-3.5 rounded-tile bg-pastel-bg border border-pastel-border text-sm"></div>
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">從哪個帳戶付</label>
                     <select id="rpTag" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
-                        ${tagChoices(PREF.get('tag', '')).map(t => `<option ${PREF.get('tag', '') === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
+                        ${tagChoices(prefTag()).map(t => `<option ${prefTag() === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
                 <button onclick="doRepay('${esc(srcId)}')" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile">確認歸還</button>
             </div>`);
     }
@@ -3635,9 +4063,11 @@ function hexA(hex, a) {
 
     async function doRepay(srcId) {
         const x = myPendingSettlements().find(i => i.srcId === srcId); if (!x) return;
-        const amt = Number(document.getElementById('rpAmt').value);
-        if (!amt || amt <= 0) { buzz(30); return toast('請輸入金額', true); }
-        if (amt > x.remaining + 0.01) { buzz(30); return toast(`不能超過應付的 ${fmt(x.remaining)}`, true); }
+        const n = wholeYuan(document.getElementById('rpAmt').value);
+        if (n <= 0) { buzz(30); return toast('請輸入金額', true); }
+        if (n > dueYuan(x.remaining)) { buzz(30); return toast(`不能超過應付的 ${fmtDue(x.remaining)}`, true); }
+        /* 輸入的是整數元；剛好付清（舊資料的尚欠有零頭時，付到進位後的整數）就以實際尚欠的金額記錄，不會多記 */
+        const amt = toCents(n) >= toCents(x.remaining) ? money(x.remaining) : n;
         const txn = buildRepayTxn(x, amt, document.getElementById('rpDate').value,
             document.getElementById('rpNote').value, document.getElementById('rpTag').value);
         closeSheet();
@@ -3657,7 +4087,7 @@ function hexA(hex, a) {
         if (!list.length) return;
         buzz();
         const m = memberOf(payerId);
-        const sum = list.reduce((a, b) => a + b.remaining, 0);
+        const sum = sumC(list, b => b.remaining);
         openSheet(`
             <div class="flex items-center gap-3 mb-4">
                 <div class="w-12 h-12 rounded-full overflow-hidden flex items-center justify-center text-xl flex-shrink-0 bg-pastel-bg">${avatarInner(m?.avatar_emoji)}</div>
@@ -3665,7 +4095,7 @@ function hexA(hex, a) {
                     <h3 class="text-lg font-bold text-stone-800 truncate">要還給 ${esc(nameOf(payerId))}</h3>
                     <div class="text-[10px] text-pastel-muted">${list.length} 筆代墊</div></div>
                 <div class="ml-auto text-right flex-shrink-0">
-                    <div class="text-2xl font-bold font-tabular text-pastel-red">${fmt(sum)}</div>
+                    <div class="text-2xl font-bold font-tabular text-pastel-red">${fmtDue(sum)}</div>
                     <div class="text-[10px] text-pastel-muted">合計要轉</div></div>
             </div>
             ${payeeBlock(m)}
@@ -3676,9 +4106,9 @@ function hexA(hex, a) {
                             <div class="min-w-0 flex-1">
                                 <div class="text-sm font-bold text-stone-800 truncate">${esc(x.note || x.category || '（無備註）')}</div>
                                 <div class="text-[10px] text-pastel-muted">${esc(x.date)} ・ ${esc(x.category || '未分類')}
-                                    ・ ${x.itemType === 'pool' ? '公帳代墊' : '私人拆帳'} ・ 你的分攤 ${fmt(x.expected)}</div>
+                                    ・ ${x.itemType === 'pool' ? '公帳代墊' : '私人拆帳'} ・ 你的分攤 ${fmtC(x.expected)}</div>
                             </div>
-                            <div class="font-tabular text-pastel-red flex-shrink-0">${fmt(x.remaining)}</div>
+                            <div class="font-tabular text-pastel-red flex-shrink-0">${fmtDue(x.remaining)}</div>
                         </div>
                         <button onclick="closeSheet();openTxnSheet('${esc(x.srcId)}')"
                             class="w-full mt-2 py-1.5 rounded-lg bg-white border border-pastel-border text-[10px] font-bold text-stone-600 tactile">看這筆原始代墊</button>
@@ -3686,7 +4116,7 @@ function hexA(hex, a) {
             </div>
             <button onclick="closeSheet();repayAllTo('${esc(payerId)}')"
                 class="w-full mt-4 py-3.5 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile">
-                <i class="fa-solid fa-hand-holding-dollar mr-1.5"></i>一次還清 ${fmt(sum)}</button>`);
+                <i class="fa-solid fa-hand-holding-dollar mr-1.5"></i>一次還清 ${fmtDue(sum)}</button>`);
     }
     async function repayAllTo(payerId) {
         await repayAll('all', x => x.payerId === payerId);
@@ -3702,13 +4132,13 @@ function hexA(hex, a) {
         let list = scope === 'private' ? all.filter(x => x.itemType === 'private') : all;
         if (extraFilter) list = list.filter(extraFilter);
         if (!list.length) return;
-        const total = list.reduce((a, b) => a + b.remaining, 0);
+        const total = sumC(list, b => b.remaining);
         const pool = list.filter(x => x.itemType === 'pool');
-        const detail = list.map(x => `・${x.payerName}（${x.itemType === 'pool' ? '公帳代墊' : '私人拆帳'}）：${fmt(x.remaining)}`).join('\n');
+        const detail = list.map(x => `・${x.payerName}（${x.itemType === 'pool' ? '公帳代墊' : '私人拆帳'}）：${fmtDue(x.remaining)}`).join('\n');
         const warn = pool.length
             ? `\n\n注意：其中 ${pool.length} 筆是公帳代墊，將以「直接還款」處理；\n若你原本想讓公帳月結，請改用逐筆的「記為公帳扣抵」。`
             : '';
-        if (!confirm(`將產生 ${list.length} 筆還款交易，合計 ${fmt(total)}：\n\n${detail}${warn}\n\n確定嗎？`)) return;
+        if (!confirm(`將產生 ${list.length} 筆還款交易，合計 ${fmtDue(total)}：\n\n${detail}${warn}\n\n確定嗎？`)) return;
         _repayAllBusy = true;
         toast(`處理中… 共 ${list.length} 筆`);
         let okN = 0, failN = 0;
@@ -3760,7 +4190,7 @@ function hexA(hex, a) {
                         <div class="font-bold text-sm text-stone-800 truncate">${esc(nameOf(i.member_id))} → ${esc(nameOf(i.payer_id))}</div>
                         <div class="text-[10px] text-pastel-muted truncate">${esc(src ? (src.note || src.category) : '—')}</div></div>
                     <div class="text-right flex-shrink-0">
-                        <div class="font-bold font-tabular text-sm mb-1">${fmt(i.amount)}</div>
+                        <div class="font-bold font-tabular text-sm mb-1">${fmtC(i.amount)}</div>
                         <button onclick="settleIntent('${esc(i.intent_id)}')" class="px-3 py-1.5 bg-pastel-accent text-white rounded-lg text-[10px] font-bold tactile">確認撥款</button></div>
                 </div>`;
             }).join('')}
@@ -3768,11 +4198,11 @@ function hexA(hex, a) {
     }
     async function settleIntent(id) {
         const it = (STATE.intents || []).find(i => i.intent_id === id); if (!it) return;
-        if (!confirm(`確認由公帳撥款 ${fmt(it.amount)} 給 ${nameOf(it.payer_id)}？`)) return;
+        if (!confirm(`確認由公帳撥款 ${fmtC(it.amount)} 給 ${nameOf(it.payer_id)}？`)) return;
         try {
             const res = await api.call('settleIntent', { intent_id: id, expected_version: Number(it.version) || 0, op_key: newOpKey('stl') });
             if (res.txn) upsertTxnInto(STATE.transactions, res.txn);
-            if (res.remaining > 0.01) { it.amount = res.remaining; it.version = res.version; }
+            if (toCents(res.remaining) > 0) { it.amount = money(res.remaining); it.version = res.version; }
             else STATE.intents = STATE.intents.filter(i => i.intent_id !== id);
             renderDataViews(); toast('已撥款結清');
         } catch (e) {
@@ -3850,7 +4280,7 @@ function hexA(hex, a) {
                             <button onclick="openGoalMenu('${esc(g.goal_id)}')" aria-label="更多" class="tap44 w-8 h-8 -mt-1 -mr-1 rounded-full flex items-center justify-center text-stone-400 flex-shrink-0 tactile"><i class="fa-solid fa-ellipsis"></i></button>
                         </div>
                         <div class="mt-2 text-2xl font-bold font-tabular text-stone-800 tracking-tight truncate">
-                            <span class="num-sym text-sm">$</span>${Number(saved).toLocaleString('en-US')}</div>
+                            <span class="num-sym text-sm">$</span>${wholeYuan(saved).toLocaleString('en-US')}</div>
                         <div class="text-[10px] text-pastel-muted truncate">目標 ${fmt(g.target_amount)}${spent > 0 ? ` ・ 已花 ${fmt(spent)}` : ''}</div>
                         ${g.note ? `<div class="text-[10px] text-stone-500 mt-1 truncate">${esc(g.note)}</div>` : ''}
                     </div>
@@ -3925,7 +4355,7 @@ function hexA(hex, a) {
         const saved = goalSaved(id), spent = goalSpent(id), reserved = goalReserved(id);
         const coins = goalCoins(id);
         const deps = goalDeposits(id).slice().sort((a, b) => (b.date + b.created_at).localeCompare(a.date + a.created_at));
-        const spends = activeTxns().filter(t => t.entry_type === '支出' && t.tag === g.project_tag)
+        const spends = activeTxns().filter(t => spendCountsForGoal(t, g))
             .sort((a, b) => (b.date + b.created_at).localeCompare(a.date + a.created_at));
         const byMember = {};
         coins.forEach(c => { byMember[c.member_id] = (byMember[c.member_id] || 0) + 1; });
@@ -3939,7 +4369,7 @@ function hexA(hex, a) {
                     <div class="min-w-0 flex-1">
                         <div class="font-bold text-stone-800 text-lg truncate"><i class="fa-solid ${esc(g.icon || 'fa-piggy-bank')} mr-1.5 text-pastel-accent"></i>${esc(g.name)}</div>
                         <div class="text-[10px] text-pastel-muted mb-2">${esc(g.scope === 'family' ? '家庭共同目標' : '個人目標')} ・ 建立者 ${esc(nameOf(g.owner_id))}</div>
-                        <div class="text-2xl font-bold font-tabular text-stone-800"><span class="num-sym text-sm">$</span>${Number(saved).toLocaleString('en-US')}</div>
+                        <div class="text-2xl font-bold font-tabular text-stone-800"><span class="num-sym text-sm">$</span>${wholeYuan(saved).toLocaleString('en-US')}</div>
                         <div class="text-[10px] text-pastel-muted">目標 ${fmt(g.target_amount)}</div>
                     </div>
                 </div>
@@ -3981,6 +4411,7 @@ function hexA(hex, a) {
                         <div class="text-[10px] text-pastel-muted">${esc(t.date)} ・ ${esc(nameOf(t.payer_id))}</div></div>
                         <div class="font-bold font-tabular text-pastel-red flex-shrink-0 ml-2">-${fmt(t.amount)}</div>
                     </div>`).join('')}</div></div>` : ''}
+            ${Number(g.hidden_spent) > 0 ? `<p class="text-[10px] text-pastel-muted mb-5 -mt-3" data-goal-hidden>另有其他成員不公開明細的支出 ${fmt(g.hidden_spent)} 算進這個目標（只顯示合計）。</p>` : ''}
 
             <div class="grid grid-cols-2 gap-2">
                 <button onclick="closeSheet();setTimeout(()=>openDeposit('${esc(id)}'),320)" class="py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile"><i class="fa-solid fa-coins mr-1.5"></i>存入</button>
@@ -4029,7 +4460,7 @@ function hexA(hex, a) {
                         <i class="fa-solid ${ic}"></i></button>`).join('')}
                 </div>
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">目標金額</label>
-                    <input id="glAmt" type="number" inputmode="numeric" ${mine ? '' : 'disabled'} value="${esc(d.target_amount)}"
+                    <input id="glAmt" type="number" inputmode="numeric" step="1" oninput="_goalDraft.amtTouched = true" ${mine ? '' : 'disabled'} value="${esc(d.target_amount === '' || d.target_amount == null ? '' : wholeYuan(d.target_amount))}"
                         class="w-full p-3.5 rounded-tile bg-pastel-accentLight border-2 border-pastel-accent/40 text-stone-800 font-bold text-lg font-tabular"></div>
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">說明（選填）</label>
                     <textarea id="glNote" rows="3" ${mine ? '' : 'disabled'} placeholder="為什麼想存這筆？想達成什麼？"
@@ -4039,7 +4470,7 @@ function hexA(hex, a) {
                         <option value="personal" ${d.scope === 'personal' ? 'selected' : ''}>只有我</option>
                         <option value="family" ${d.scope === 'family' ? 'selected' : ''}>全家共同目標</option></select></div>`}
                 ${g ? `<div class="text-[10px] text-pastel-muted bg-pastel-bg rounded-tile p-3">
-                    記帳時選擇標籤「${esc(g.project_tag)}」的支出，會自動從這個罐子的保留額扣抵。</div>` : ''}
+                    記帳時在「算進哪個目標？」選這個目標的支出${g.project_tag ? `（以及以前貼了「${esc(g.project_tag)}」標籤的支出）` : ''}，會自動從這個罐子的保留額扣抵。付款方式照常選現金或信用卡。</div>` : ''}
                 ${mine ? `<button onclick="saveGoal()" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile">${isEdit ? '儲存變更' : '建立目標'}</button>` : ''}
             </div>`);
     }
@@ -4047,7 +4478,8 @@ function hexA(hex, a) {
         stashGoalDraft();
         const goal = {
             goal_id: _goalDraft.goal_id || '', name: String(_goalDraft.name || '').trim(),
-            icon: _goalDraft.icon, target_amount: Number(_goalDraft.target_amount),
+            /* r6（R5-F03）：只改名稱、圖示、備註時，目標金額照原本儲存的數字（舊資料 100.49 不被改成 100）；改了金額才取整數元 */
+            icon: _goalDraft.icon, target_amount: keepOrYuan(_goalDraft.target_amount, _goalDraft.goal_id ? goalById(_goalDraft.goal_id)?.target_amount : undefined, !!_goalDraft.amtTouched),
             note: _goalDraft.note || '', scope: _goalDraft.scope
         };
         if (!goal.name) { buzz(30); return toast('請輸入名稱', true); }
@@ -4055,8 +4487,15 @@ function hexA(hex, a) {
         closeSheet();
         try {
             const r2 = await api.call('saveGoal', { goal });
+            /* r4（R3-F01）：共同目標的「看不到的那部分合計」（hidden_saved／hidden_spent）由後端依目前帳本算好隨回應附上；
+               直接用回應整筆取代，先前回應沒有這兩個欄位，改名後保留額就少扣別人看不到的支出（700 變 1000）。
+               前端不自己算、也不把這兩個數字送回後端；只有在回應缺欄位（例如舊版後端）時沿用上一次伺服器給的值，並在背景重新整理。 */
             const i = STATE.goals.findIndex(x => x.goal_id === r2.goal.goal_id);
-            if (i >= 0) STATE.goals[i] = r2.goal; else STATE.goals.push(r2.goal);
+            const prev = i >= 0 ? STATE.goals[i] : null, next = { ...r2.goal };
+            const missing = ['hidden_saved', 'hidden_spent'].filter(k => next[k] === undefined);
+            if (prev) missing.forEach(k => { if (prev[k] !== undefined) next[k] = prev[k]; });
+            if (i >= 0) STATE.goals[i] = next; else STATE.goals.push(next);
+            if (missing.length && next.scope === 'family') refreshData().catch(() => { });
             renderDashboard(); initAddForm(true); toast(goal.goal_id ? '已儲存' : '目標已建立');
         } catch (e) { toast(e.message, true); }
     }
@@ -4080,7 +4519,7 @@ function hexA(hex, a) {
             <p class="text-xs text-pastel-muted mb-5">還差 ${fmt(left)} ・ 單次滿 ${fmt(gold)} 會得到金幣</p>
             <div class="space-y-4">
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">劃撥金額</label>
-                    <input id="dpAmt" type="number" inputmode="decimal" value="" placeholder="0"
+                    <input id="dpAmt" type="number" inputmode="numeric" step="1" value="" placeholder="0"
                         oninput="paintCoinPreview('${esc(id)}')"
                         class="w-full p-3.5 rounded-tile bg-pastel-accentLight border-2 border-pastel-accent/40 text-stone-800 font-bold text-2xl font-tabular"></div>
                 <div class="flex gap-2">
@@ -4090,7 +4529,7 @@ function hexA(hex, a) {
                 <div id="coinPreview" class="flex items-center gap-3 p-3 rounded-tile bg-pastel-bg"></div>
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">從哪個帳戶劃撥</label>
                     <select id="dpTag" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
-                        ${tagChoices(PREF.get('tag', '')).map(t => `<option ${PREF.get('tag', '') === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
+                        ${tagChoices(prefTag()).map(t => `<option ${prefTag() === t.item_name ? 'selected' : ''}>${esc(t.item_name)}</option>`).join('')}</select></div>
                 <p class="text-[10px] text-pastel-muted leading-relaxed">劃撥不是支出，錢沒有離開你的口袋，只是被標記為「保留」，不會計入收支統計。</p>
                 <button onclick="doDeposit('${esc(id)}')" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile"><i class="fa-solid fa-coins mr-1.5"></i>投入籌碼</button>
             </div>`);
@@ -4111,8 +4550,8 @@ function hexA(hex, a) {
     }
     async function doDeposit(id) {
         const g = goalById(id); if (!g) return;
-        const amt = Number(document.getElementById('dpAmt').value);
-        if (!amt || amt <= 0) { buzz(30); return toast('請輸入金額', true); }
+        const amt = wholeYuan(document.getElementById('dpAmt').value);
+        if (amt <= 0) { buzz(30); return toast('請輸入金額', true); }
         const tag = document.getElementById('dpTag').value;
         closeSheet();
         await optimisticAdd({
@@ -4132,13 +4571,13 @@ function hexA(hex, a) {
         const reserved = goalReserved(id);
         openSheet(`
             <h3 class="text-lg font-bold text-stone-800 mb-1">從「${esc(g.name)}」提取</h3>
-            <p class="text-xs text-pastel-muted mb-5">目前可提取的保留額 ${fmt(reserved)}</p>
+            <p class="text-xs text-pastel-muted mb-5">目前可提取的保留額 ${fmt(floorYuan(reserved))}</p>
             <div class="space-y-4">
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">提取金額</label>
-                    <input id="wdAmt" type="number" inputmode="decimal" value="" placeholder="0"
+                    <input id="wdAmt" type="number" inputmode="numeric" step="1" value="" placeholder="0"
                         class="w-full p-3.5 rounded-tile bg-pastel-accentLight border-2 border-pastel-accent/40 text-stone-800 font-bold text-2xl font-tabular"></div>
                 <div class="flex gap-2">
-                    ${[Math.round(reserved / 2), reserved].filter((v, i, a) => v > 0 && a.indexOf(v) === i)
+                    ${[floorYuan(reserved / 2), floorYuan(reserved)].filter((v, i, a) => v > 0 && a.indexOf(v) === i)
                 .map(v => `<button onclick="document.getElementById('wdAmt').value=${v}" class="flex-1 py-2 rounded-tile bg-pastel-bg border border-pastel-border text-xs font-bold text-stone-600 tactile">${fmt(v)}</button>`).join('')}
                 </div>
                 <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">原因（選填）</label>
@@ -4153,14 +4592,14 @@ function hexA(hex, a) {
            個人目標限建立者；家庭目標限建立者或戶長（與結案相同）。 */
         const canWithdraw = g.owner_id === STATE.me?.member_id || (g.scope === 'family' && isGroupAdminMe());
         if (!canWithdraw) { buzz(30); return toast('只有建立者' + (g.scope === 'family' ? '或戶長' : '') + '可以從這個目標提取', true); }
-        const amt = Number(document.getElementById('wdAmt').value);
-        if (!amt || amt <= 0) { buzz(30); return toast('請輸入金額', true); }
-        if (amt > reserved + 0.01) { buzz(30); return toast(`不能超過可提取的 ${fmt(reserved)}`, true); }
+        const amt = wholeYuan(document.getElementById('wdAmt').value);
+        if (amt <= 0) { buzz(30); return toast('請輸入金額', true); }
+        if (toCents(amt) > toCents(reserved)) { buzz(30); return toast(`不能超過可提取的 ${fmt(floorYuan(reserved))}`, true); }
         const note = document.getElementById('wdNote').value;
         closeSheet();
         await optimisticAdd({
             date: todayISO(), entry_type: '劃撥儲蓄', category: '',
-            tag: PREF.get('tag', '') || (STATE.tags[0]?.item_name || ''), amount: amt,
+            tag: prefTag(), amount: amt,
             note: note || `提取：${g.name}`, nature: g.scope === 'family' ? '家庭公帳' : '純個人',
             related_id: id, member_id: STATE.me.member_id, payer_id: STATE.me.member_id,
             settle_member_id: 'RELEASE'
@@ -4178,10 +4617,10 @@ function hexA(hex, a) {
             <div class="space-y-2 mb-5 text-sm">
                 <div class="flex justify-between"><span class="text-pastel-muted">累計劃撥</span><span class="font-bold font-tabular">${fmt(saved)}</span></div>
                 <div class="flex justify-between"><span class="text-pastel-muted">已貼標花用</span><span class="font-bold font-tabular text-pastel-red">-${fmt(spent)}</span></div>
-                <div class="flex justify-between pt-2 border-t border-dashed border-pastel-border"><span class="font-bold">剩餘保留額</span><span class="font-bold font-tabular text-pastel-green">${fmt(remain)}</span></div>
+                <div class="flex justify-between pt-2 border-t border-dashed border-pastel-border"><span class="font-bold">剩餘保留額</span><span class="font-bold font-tabular text-pastel-green">${fmtC(remain)}</span></div>
             </div>
             ${!mine ? `<div class="p-3 rounded-tile bg-pastel-redLight text-pastel-red text-xs font-bold mb-4">只有建立者 ${esc(nameOf(g.owner_id))} 可以結案</div>` : `
-            ${remain > 0.01 ? `<div class="field mb-4"><label class="block text-xs font-bold text-stone-600 mb-1.5">剩餘的 ${fmt(remain)} 要怎麼處理</label>
+            ${toCents(remain) > 0 ? `<div class="field mb-4"><label class="block text-xs font-bold text-stone-600 mb-1.5">剩餘的 ${fmtC(remain)} 要怎麼處理</label>
                 <select id="clDest" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
                     <option value="personal">退回個人可支配現金</option>
                     <option value="pool">轉入家庭公帳</option></select></div>` : ''}
@@ -4195,7 +4634,7 @@ function hexA(hex, a) {
         renderDashboard(); toast('已結案');
         try {
             // remaining 是「使用者確認過的金額」，後端會以伺服器計算的剩餘額比對，不一致就要求重新整理
-            await api.call('closeGoal', { goal_id: id, remaining, destination: dest, tag: PREF.get('tag', ''), op_key: newOpKey('gclose') });
+            await api.call('closeGoal', { goal_id: id, remaining, destination: dest, tag: prefTag(), op_key: newOpKey('gclose') });
             await refreshData();
         } catch (e) {
             if (bak) { const i = STATE.goals.findIndex(x => x.goal_id === id); if (i >= 0) STATE.goals[i] = bak; }
@@ -4218,7 +4657,7 @@ function hexA(hex, a) {
                             <div class="text-stone-700 truncate">${esc(it.category || it.note || '未分類')}</div>
                             <div class="text-[10px] text-pastel-muted">${esc(it.date)}${it.tag ? ' ・ ' + esc(it.tag) : ''}</div>
                         </div>
-                        <div class="font-tabular flex-shrink-0 ${it.amount < 0 ? 'text-pastel-green' : 'text-stone-800'}">${it.amount < 0 ? '-' : ''}${fmt(Math.abs(it.amount))}</div>
+                        <div class="font-tabular flex-shrink-0 ${it.amount < 0 ? 'text-pastel-green' : 'text-stone-800'}">${it.amount < 0 ? '-' : ''}${fmtC(Math.abs(it.amount))}</div>
                     </div>`).join('')}
             </div>` : '';
         return `<div class="bg-pastel-bg p-4 rounded-tile">
@@ -4228,7 +4667,7 @@ function hexA(hex, a) {
                     ${items.length ? `<button onclick="toggleSettleDetail('${rid}',this)" class="text-[10px] text-pastel-accent font-bold mt-0.5 tactile">共 ${items.length} 筆 <i class="fa-solid fa-chevron-down ml-0.5"></i></button>` : ''}
                 </div>
                 <div class="text-right flex-shrink-0 ml-2">
-                    <div class="font-bold ${isPay ? 'text-pastel-red' : 'text-pastel-green'} font-tabular text-sm mb-1">${isPay ? '-' : '+'}${fmt(r.amount)}</div>
+                    <div class="font-bold ${isPay ? 'text-pastel-red' : 'text-pastel-green'} font-tabular text-sm mb-1">${isPay ? '-' : '+'}${fmtC(r.amount)}</div>
                     <button onclick="settleUp('${esc(r.member)}',${r.amount},'${dir}')" class="px-3 py-1.5 ${isPay ? 'bg-pastel-accent text-white' : 'bg-white border border-pastel-border text-stone-600'} rounded-lg text-[10px] font-bold shadow-sm">${isPay ? '撥款還款' : '標記已繳回'}</button>
                 </div>
             </div>
@@ -4247,7 +4686,9 @@ function hexA(hex, a) {
         /* rc2：沒有 parent 的成員↔公帳淨額結算是 group-level settlement，後端限戶長。
            前端先擋，避免一般成員送出後才看到拒絕，也避免把拒絕誤當成網路失敗重送。 */
         if (!isGroupAdminMe()) { buzz(30); return toast('成員與公帳的結算由戶長處理', true); }
-        if (!confirm(`確定要記錄一筆 ${fmt(amount)} 的結算給「${memberName}」嗎？`)) return;
+        amount = money(amount);
+        if (toCents(amount) <= 0) return;
+        if (!confirm(`確定要記錄一筆 ${fmtC(amount)} 的結算給「${memberName}」嗎？`)) return;
         const m = STATE.members.find(x => x.nickname === memberName), isPay = dir === 'pool2member';
         await optimisticAdd({
             date: todayISO(), entry_type: '還款', category: '', tag: '結算', amount,
@@ -4324,10 +4765,11 @@ function hexA(hex, a) {
         return !!(x && x.candidate && x.candidate.member && x.candidate.member === me.member && x.candidate.dep === me.dep);
     }
     function txnJob(payload, ruleAfter, owner) {
-        return { v: 1, id: 't_' + payload.txn.client_id, kind: 'txn', owner: owner || jobOwnerNow(), at: Date.now(), state: 'pending', payload, ...(ruleAfter ? { ruleAfter } : {}) };
+        /* r8（R7-F01）：記下產生這筆待送資料的 App 版本。沒有版本的＝更新前的舊版 App 產生（見 triageLegacyJobs） */
+        return { v: 1, id: 't_' + payload.txn.client_id, kind: 'txn', owner: owner || jobOwnerNow(), at: Date.now(), state: 'pending', app: CONFIG.BUILD, payload, ...(ruleAfter ? { ruleAfter } : {}) };
     }
     function ruleJob(owner, rule, opKey, txnId) {
-        return { v: 1, id: 'r_' + opKey, kind: 'rule', owner, at: Date.now(), state: 'pending', rule, op_key: opKey, txn_id: txnId };
+        return { v: 1, id: 'r_' + opKey, kind: 'rule', owner, at: Date.now(), state: 'pending', app: CONFIG.BUILD, rule, op_key: opKey, txn_id: txnId };
     }
     /** 寫入失敗的分類：retry 保留待送；auth 身分失效，整批保留；reject 後端明確拒絕，標示原因等擁有者處理 */
     function classifyJobError(e) {
@@ -4336,6 +4778,95 @@ function hexA(hex, a) {
         if (OQ_AUTH_CODES.includes(c)) return 'auth';
         if (OQ_RETRY_CODES.includes(c) || /Failed to fetch|NetworkError|Load failed|HTTP/i.test(String(e && e.message || ''))) return 'retry';
         return 'reject';
+    }
+    /** r8（R7-F01）：這筆待送資料是不是「更新前的舊版 App 產生、而且內容可能被新版的分攤語意影響」。
+        舊版（6.25）不認得 []（家人都 0 元＝自己負擔全額）：再記一次會存成空白（＝整筆代墊），還款／結算可能依錯的欠款金額產生。
+        這類資料沒辦法從內容本身證明是對的，所以不自動送出，交給本人在新版核對。
+        其他（純個人、家庭公帳、收入、轉帳、目標存提、固定收支規則）在新舊版的意思相同，照常自動送出——
+        規則本身沒有分攤欄位；目標提取有後端上限把關。 */
+    const REVIEW_NATURES = ['家庭代墊', '私人拆帳'];
+    function jobNeedsReview(j) {
+        if (!j || j.app || j.kind !== 'txn') return false;
+        const t = j.payload && j.payload.txn;
+        if (!t) return false;
+        return t.entry_type === '還款' || REVIEW_NATURES.includes(t.nature) || !!String(t.split_detail || '').trim();
+    }
+    const REVIEW_REASON = '這筆是更新前的舊版 App 記的分攤／代墊／還款。新版的分攤規則不同（例如「家人都 0 元」由自己負擔），舊版可能看錯了，所以沒有自動送出。請按「核對」確認，或捨棄。';
+    /** r8（R7-F01）：更新後第一次確認身分時整理舊版留下的待送資料（取代 r7 的「一律改回待送」）：
+        需要核對的 → 標成待處理（不自動送出）；不需要核對、只是當時被 NEED_UPDATE 擋下的 → 改回待送、自動補送。 */
+    function triageLegacyJobs() {
+        try {
+            jobsMine().forEach(j => {
+                if (j.app) return;
+                if (jobNeedsReview(j)) { if (j.code !== 'NEEDS_REVIEW') jobPut({ ...j, state: 'rejected', code: 'NEEDS_REVIEW', reason: REVIEW_REASON }); }
+                else if (j.state === 'rejected' && j.code === 'NEED_UPDATE') jobPut({ ...j, state: 'pending', reason: '', code: '' });
+            });
+        } catch (e) { }
+    }
+    /* r9（R8-F01～F03）：「核對」不再借用「再記一次」開一筆新的交易，而是在原本那一筆待送資料上做決定：
+         ・同一筆、同一個 client_id、同一份單據（payload.receipt 不動）——成功、失敗、重開 App 都只有這一筆，後端以 client_id 去重；
+         ・交易類型與關聯（還款的原交易、收款人、還款人）原樣保留；
+         ・只讓使用者決定舊版可能看錯的那一件事：分攤的意思（整筆代墊／自己負擔全額），或確認還款仍然有效。
+       確認後蓋上新版版本（app）與 reviewed，改回待送，接著補送；確認過就不再出現核對選項（只剩重送／捨棄）。 */
+    /** 這筆舊版還款目前還欠多少（只用後端已確認的紀錄；待送中的不算）。查不到原交易時回 null */
+    function reviewRepayRemaining(j) {
+        const t = j.payload.txn;
+        const src = STATE.transactions.find(x => x.txn_id === t.parent_txn_id && !isTmpRow(x) && x.status === '有效');
+        if (!src) return null;
+        const share = (parseSplit(src).find(x => x.member_id === t.settle_member_id) || {}).amount;
+        if (share === undefined) return null;
+        const paid = sumC(STATE.transactions.filter(x => !isTmpRow(x) && x.status === '有效' && x.entry_type === '還款' &&
+            x.parent_txn_id === t.parent_txn_id && x.settle_member_id === t.settle_member_id), x => x.amount);
+        return { src, remaining: money(share - paid) };
+    }
+    /** 核對的選項：[{ key, label, txn（確認後要送出的內容） }]；沒有可安全送出的選項時回空陣列，並附說明 */
+    function reviewChoices(j) {
+        const t = { ...j.payload.txn };
+        const total = money(t.amount);
+        if (t.entry_type === '還款') {
+            const r = reviewRepayRemaining(j);
+            const who = nameOf(t.related_id || (r && r.src.payer_id) || ''), whoH = esc(who);
+            if (!r) return { info: `歸還給 ${whoH} ${fmtC(total)}。這台裝置查不到原本那筆欠款（可能已刪除或不在目前的帳本）；送出後由後端確認，若欠款已不存在會被拒絕。`, choices: [{ key: 'send', label: `照這樣送出：歸還給 ${who} ${fmtC(total)}`, txn: t }] };
+            if (toCents(r.remaining) <= 0) return { info: `原本那筆欠款（${esc(r.src.date)} ${esc(r.src.note || r.src.category || '')}）目前已經還清（可能在其他裝置還過了），這筆不需要再送出。`, choices: [] };
+            if (toCents(total) > toCents(r.remaining)) return { info: `這筆歸還 ${fmtC(total)}，但原本那筆欠款目前只剩 ${fmtDue(r.remaining)}（可能已部分還過）。請捨棄這筆，再到該筆欠款重新歸還。`, choices: [] };
+            return { info: `歸還給 ${whoH}，原本那筆欠款：${esc(r.src.date)} ${esc(r.src.note || r.src.category || '')}，目前尚欠 ${fmtDue(r.remaining)}。`, choices: [{ key: 'send', label: `照這樣送出：歸還給 ${who} ${fmtC(total)}`, txn: t }] };
+        }
+        const sp = parseSplit(t).map(x => ({ member_id: x.member_id, amount: floorYuan(x.amount) })).filter(x => x.amount > 0);
+        if (sp.length) {
+            const others = sp.reduce((a, x) => a + x.amount, 0);
+            const txt = sp.map(x => `${nameOf(x.member_id)} ${fmtC(x.amount)}`).join('、');
+            return { info: '', choices: [{ key: 'send', label: `照這樣存：分攤 ${txt}，你負擔 ${fmtC(money(total - others))}`, txn: { ...t, split_detail: JSON.stringify(sp), related_id: sp.length === 1 ? sp[0].member_id : '' } }] };
+        }
+        const self = { key: 'self', label: `自己負擔全額 ${fmtC(total)}（不算任何人欠你）`, txn: { ...t, split_detail: '[]', related_id: '' } };
+        if (t.nature === '家庭代墊') return { info: '舊版記成「沒有指定家人」。新版的意思是「整筆代墊、家庭公帳還你全額」；如果你其實是自己負擔，請選第二個。', choices: [{ key: 'whole', label: `整筆代墊：家庭公帳還你 ${fmtC(total)}`, txn: { ...t, split_detail: '', related_id: '' } }, self] };
+        if (t.nature === '私人拆帳') return { info: '舊版記成「私人拆帳但沒有對象」。新版會存成自己負擔全額；如果其實要跟家人拆，請捨棄後重新記一筆。', choices: [self] };
+        return { info: '', choices: [{ key: 'send', label: '照這樣存', txn: t }] };
+    }
+    function offlineReview(id) {
+        const j = jobsMine().find(x => x.id === id);
+        if (!j || j.kind !== 'txn') return;
+        const t = j.payload.txn, rc = reviewChoices(j);
+        buzz();
+        openSheet(`<h3 class="text-lg font-bold text-stone-800 mb-1">核對舊版留下的資料</h3>
+            <p class="text-xs text-pastel-muted mb-3">${esc(t.date || '')} ・ ${esc(t.entry_type || '')} ・ ${esc(t.category || '')} ・ ${fmtC(t.amount)}${t.note ? ' ・ ' + esc(t.note) : ''}${j.payload.receipt ? ' ・ 附單據' : ''}</p>
+            ${rc.info ? `<p class="text-xs text-stone-600 leading-relaxed mb-3" data-review-info>${rc.info}</p>` : ''}
+            <div class="space-y-2" data-review-choices>
+                ${rc.choices.map(c => `<button type="button" data-review-choice="${c.key}" onclick="confirmReview('${esc(id)}', '${c.key}')" class="w-full text-left p-3 rounded-tile bg-pastel-bg border border-pastel-border text-xs font-bold text-stone-700 tactile">${esc(c.label)}</button>`).join('')}
+                <button type="button" data-review-discard onclick="closeSheet(); offlineDiscard('${esc(id)}')" class="w-full p-3 text-xs font-bold text-pastel-muted tactile">捨棄這筆</button>
+            </div>
+            ${j.ruleAfter ? '<p class="text-[10px] text-pastel-muted mt-3">原本勾選的「固定收支」會在這筆存好後一起建立。</p>' : ''}`);
+    }
+    async function confirmReview(id, key) {
+        const j = jobsMine().find(x => x.id === id);
+        if (!j || j.code !== 'NEEDS_REVIEW') { closeSheet(); return; }          // 已經處理過（例如連點、其他分頁）
+        const c = reviewChoices(j).choices.find(x => x.key === key);
+        if (!c) return toast('這個選項已經不適用，請重新核對', true);
+        if (!jobPut({ ...j, app: CONFIG.BUILD, reviewed: key, state: 'pending', reason: '', code: '', payload: { ...j.payload, txn: c.txn } }))
+            return toast('裝置儲存空間不足，請先釋放空間再確認', true);
+        closeSheet(); buzz(14);
+        restoreQueuedRows(); renderDataViews();
+        await syncOfflineQueue(false);
+        renderSettings(); refreshOfflineSheet();
     }
     function markJobRejected(job, e) {
         if (!jobExists(job.id)) return;          // 另一個分頁剛處理完：不要把它寫回來
@@ -4529,7 +5060,8 @@ function hexA(hex, a) {
                 <div class="flex justify-end">${actions}</div></div>`;
         return `<div class="space-y-3" data-offline-panel>
             ${s.mine.map(j => row(j,
-                (j.state === 'rejected' ? btn('重送', `offlineRetry('${esc(j.id)}')`) : '') + btn('捨棄', `offlineDiscard('${esc(j.id)}')`, 'text-pastel-muted'),
+                (j.code === 'NEEDS_REVIEW' ? btn('核對', `offlineReview('${esc(j.id)}')`)
+                    : j.state === 'rejected' ? btn('重送', `offlineRetry('${esc(j.id)}')`) : '') + btn('捨棄', `offlineDiscard('${esc(j.id)}')`, 'text-pastel-muted'),
                 j.state === 'rejected' ? '沒有存進帳本：' + (j.reason || '後端拒絕') : '待同步（連線並確認身分後自動補送）')).join('')}
             ${s.legacyVisible.length ? `<div class="text-[10px] font-bold text-stone-700 pt-1" data-legacy-review>升級前留下的離線資料：請確認是不是你記的</div>
                 ${s.legacyVisible.map(j => row(j, btn('是我記的，補送', `legacyAccept('${esc(j.id)}')`) + btn('刪除', `legacyDiscard('${esc(j.id)}')`, 'text-pastel-muted'),
@@ -4552,6 +5084,7 @@ function hexA(hex, a) {
     async function offlineRetry(id) {
         const j = jobsMine().find(x => x.id === id);
         if (!j) return;
+        if (j.code === 'NEEDS_REVIEW' || jobNeedsReview(j)) return offlineReview(id);     // r8：舊版的分攤資料只能核對後儲存，不能原樣重送
         if (!SESSION.verified) return toast('連線並確認身分後才能重送', true);
         jobPut({ ...j, state: 'pending', reason: '', code: '' });
         restoreQueuedRows(); renderDataViews();
@@ -5268,18 +5801,21 @@ function hexA(hex, a) {
             const prev = plTotals(scopedTxns(shiftYM(viewYM, -1)), currentMode).expense;
             if (prev > 0) {
                 const d = (exp - prev) / prev * 100;
-                cmp = `<div class="text-right text-[10px] font-bold mt-2 ${d <= 0 ? 'text-[#7BE0A5]' : 'text-[#FF9B85]'}">
+                /* r2：比上月的文字在淺色模式維持原本的綠／橘粉；深色模式（卡片轉亮灰白）文字為墨黑、箭頭為深綠／紅 */
+                cmp = `<div class="sum-cmp ${d <= 0 ? 'down' : 'up'} text-right text-[10px] font-bold mt-2">
                     <i class="fa-solid fa-arrow-${d <= 0 ? 'down' : 'up'} mr-1"></i>比上月${d <= 0 ? '少' : '多'}花 ${Math.abs(d).toFixed(0)}%</div>`;
             }
         }
+        /* v6.26.0 r2：摘要卡的配色改用專用 class（.sum-*），淺色模式與原本完全相同（#3A3430 底、薄荷綠收入、橘粉支出、白色結餘）；
+           深色模式反轉為亮灰白卡（#F2F2F5）＋墨黑字（#232327）。不用 Tailwind 的 dark: 前綴——它只跟系統設定走，不跟 App 的深色切換。 */
         const cell = (label, val, cls, sign) => `<div class="flex-1 text-center min-w-0">
-            <div class="text-[10px] text-white/55 mb-1">${label}</div>
+            <div class="sum-label text-[10px] mb-1">${label}</div>
             <div class="text-lg font-bold font-tabular truncate ${cls}">${sign}${fmt(Math.abs(val))}</div></div>`;
-        return `<div class="rounded-card px-3 py-3.5 shadow-md" style="background:#3A3430">
-            <div class="flex items-center divide-x divide-white/10">
-                ${cell('收入', inc, 'text-[#7BE0A5]', '+')}
-                ${cell('支出', exp, 'text-[#FF9B85]', '-')}
-                ${cell('結餘', net, net >= 0 ? 'text-white' : 'text-[#FF9B85]', net >= 0 ? '' : '-')}
+        return `<div class="sum-card rounded-card px-3 py-3.5 shadow-md">
+            <div class="sum-cols flex items-center divide-x">
+                ${cell('收入', inc, 'sum-inc', '+')}
+                ${cell('支出', exp, 'sum-exp', '-')}
+                ${cell('結餘', net, net >= 0 ? 'sum-net' : 'sum-net neg', net >= 0 ? '' : '-')}
             </div>${cmp}</div>`;
     }
 
@@ -5304,9 +5840,9 @@ function hexA(hex, a) {
         const parts = sp.length ? sp
             : (t.related_id ? [{ member_id: t.related_id, amount: Number(t.amount) || 0 }] : []);
         if (!parts.length) return null;
-        const expected = parts.reduce((a, b) => a + b.amount, 0);
-        const paid = parts.reduce((a, b) => a + Math.min(paidFor(t.txn_id, b.member_id), b.amount), 0);
-        const done = paid >= expected - 0.01;
+        const expected = sumC(parts, b => b.amount);
+        const paid = sumC(parts, b => Math.min(paidFor(t.txn_id, b.member_id), b.amount));
+        const done = toCents(paid) >= toCents(expected);
         const who = parts.length === 1 ? nameOf(parts[0].member_id) : `${parts.length} 人`;
         return { expected, paid, done, who };
     }
@@ -5459,7 +5995,7 @@ function hexA(hex, a) {
                 <button data-i="${esc(t.txn_id)}" onclick="retryTxn(this.dataset.i)" class="flex-1 py-2 rounded-lg bg-pastel-red text-white text-[10px] font-bold tactile">重新送出</button>
                 <button data-i="${esc(t.txn_id)}" onclick="discardTxn(this.dataset.i)" class="px-3 py-2 rounded-lg bg-white border border-pastel-red/30 text-pastel-red text-[10px] font-bold tactile">捨棄</button>
             </div></div>` : ''}
-        <div class="swipe-wrap relative w-full ${isLast ? '' : 'border-b border-pastel-border/50'} ${t._pending ? 'pending' : ''} ${t._failed ? 'failed-row' : ''} ${t._new ? 'is-new' : ''}" data-id="${esc(t.txn_id)}"${readOnly ? ' data-ro="1"' : ''}>
+        <div class="swipe-wrap relative w-full ${isLast ? '' : 'txn-sep border-b border-pastel-border/50'} ${t._pending ? 'pending' : ''} ${t._failed ? 'failed-row' : ''} ${t._new ? 'is-new' : ''}" data-id="${esc(t.txn_id)}"${readOnly ? ' data-ro="1"' : ''}>
             ${readOnly ? '' : `<div class="swipe-bg absolute inset-0 flex items-center justify-between pl-3 pr-6 text-white font-bold text-sm opacity-0 bg-pastel-blue">
                 <span class="flex items-center">
                     <span class="sw-edit flex flex-col items-center justify-center gap-0.5 w-[68px] py-1"><i class="fa-solid fa-pen"></i><span class="text-[10px]">編輯</span></span>
@@ -5483,15 +6019,15 @@ function hexA(hex, a) {
                         ${(() => {
             if (adv && adv.role === 'debtor') {
                 // 債務人：看的是「我還了多少」，不是別人的進度
-                const paid = Math.min(paidFor(t.txn_id, meId), adv.share), done = paid >= adv.share - 0.01;
+                const paid = Math.min(paidFor(t.txn_id, meId), adv.share), done = toCents(paid) >= toCents(adv.share);
                 return `<div class="text-[10px] mt-1 flex items-center gap-1.5 truncate ${done ? 'text-pastel-green' : 'text-pastel-accent'}">
                                 <i class="fa-solid ${done ? 'fa-circle-check' : 'fa-hourglass-half'}"></i>
-                                <span class="truncate">我已還 ${fmt(paid)} / ${fmt(adv.share)}</span></div>`;
+                                <span class="truncate">我已還 ${fmtC(paid)} / ${fmtC(adv.share)}</span></div>`;
             }
             const st = settleSummary(t); if (!st) return '';
             return `<div class="text-[10px] mt-1 flex items-center gap-1.5 truncate ${st.done ? 'text-pastel-green' : 'text-pastel-accent'}">
                                 <i class="fa-solid ${st.done ? 'fa-circle-check' : 'fa-hourglass-half'}"></i>
-                                <span class="truncate">${esc(nameOf(t.payer_id))}代墊 ・ ${esc(st.who)}已還 ${fmt(st.paid)} / ${fmt(st.expected)}</span></div>`;
+                                <span class="truncate">${esc(nameOf(t.payer_id))}代墊 ・ ${esc(st.who)}已還 ${fmtC(st.paid)} / ${fmtC(st.expected)}</span></div>`;
         })()}
                     </div>
                 </div>
@@ -5808,11 +6344,11 @@ function hexA(hex, a) {
                 <div class="p-3 rounded-tile bg-pastel-blueLight border border-pastel-blue/25 space-y-1.5">
                     <div class="selectable text-sm font-bold text-stone-800 break-words">${esc(originalPurpose(src))}</div>
                     ${kvLine('消費日期', src.date)}
-                    ${kvLine('原始總額', fmt(src.amount))}
+                    ${kvLine('原始總額', fmtC(src.amount))}
                     ${kvLine('代墊者', partyLabel(src.payer_id))}
-                    ${share != null ? kvLine(`${who}的分攤`, fmt(share)) : ''}
-                    ${kvLine('本次結清', fmt(t.amount))}
-                    ${share != null ? kvLine('目前累計已還', `${fmt(paid)} / ${fmt(share)}${paid >= share - 0.01 ? ' · 已結清' : ` · 尚欠 ${fmt(share - paid)}`}`) : ''}
+                    ${share != null ? kvLine(`${who}的分攤`, fmtC(share)) : ''}
+                    ${kvLine('本次結清', fmtC(t.amount))}
+                    ${share != null ? kvLine('目前累計已還', `${fmtC(paid)} / ${fmtC(share)}${toCents(paid) >= toCents(share) ? ' · 已結清' : ` · 尚欠 ${fmtDue(money(share - paid))}`}`) : ''}
                 </div>
                 ${traceBtn(src.txn_id, t.txn_id, '查看完整原始支出明細')}
             </div>`;
@@ -5834,8 +6370,8 @@ function hexA(hex, a) {
                 <div class="text-xs font-bold text-stone-600">在你的帳本裡</div>
                 ${kvLine('我的認列份額', adv.share > 0 ? `-${fmt(adv.share)}` : `${fmt(0)}（不計入我的支出）`)}
                 ${kvLine('認列日期', `${t.date}（原始消費日）`)}
-                ${adv.role === 'payer' ? kvLine('實付總額', fmt(adv.total)) : kvLine('代墊者', partyLabel(t.payer_id)) + kvLine('原始總額', fmt(adv.total))}
-                ${adv.role === 'payer' && others.length ? kvLine('別人負擔', others.map(x => `${partyLabel(x.member_id)} ${fmt(x.amount)}`).join('、')) : ''}
+                ${adv.role === 'payer' ? kvLine('實付總額', fmtC(adv.total)) : kvLine('代墊者', partyLabel(t.payer_id)) + kvLine('原始總額', fmtC(adv.total))}
+                ${adv.role === 'payer' && others.length ? kvLine('別人負擔', others.map(x => `${partyLabel(x.member_id)} ${fmtC(x.amount)}`).join('、')) : ''}
                 <div class="text-[10px] text-pastel-muted">之後的結清只是資金移動，不會再計一次支出。</div>
                 ${adv.reliable ? '' : `<div class="text-[10px] text-pastel-red">${esc(ADVANCE_REASON_TEXT[adv.reason] || '分攤資料不完整')}</div>`}
             </div>`;
@@ -5881,7 +6417,7 @@ function hexA(hex, a) {
         if (isSettle) {
             const sp = settleParts(t), fm = fundMovementInfo(t);
             head = `<h3 class="selectable text-lg font-bold text-stone-800 mb-4">代墊結清</h3>
-                <div class="text-[32px] font-bold font-tabular mb-4 text-pastel-blue" id="sheetAmount">${fmt(t.amount)}</div>`;
+                <div class="text-[32px] font-bold font-tabular mb-4 text-pastel-blue" id="sheetAmount">${fmtC(t.amount)}</div>`;
             body = `${row('結清日期', t.date)}${row('付款人 → 收款對象', sp.arrow || '—')}${sp.acct ? row('付款帳戶', sp.acct) : ''}
                 ${fm && fm.custom ? row('備註', fm.custom) : ''}${row('記帳者', nameOf(t.member_id))}
                 ${settlementDetailHtml(t)}`;
@@ -5899,7 +6435,7 @@ function hexA(hex, a) {
                 <div class="text-[32px] font-bold font-tabular mb-4 ${amtCls}" id="sheetAmount">${sign}${fmt(t.amount)}</div>
                 ${isAdvance(t) ? '<div class="text-[10px] text-pastel-muted -mt-3 mb-4">原始總額（這筆代墊實際付出的全額）</div>' : ''}`;
             body = `${row('日期', t.date)}${row('類型', t.entry_type)}${fm && fm.sub ? row('來源 → 去向', fm.sub) : ''}${fm || isFund ? '' : row('分類', t.category || '—')}${fm && (fm.kind === 'transfer' || fm.kind === 'inject') ? '' : row('帳戶', displayTag(t.tag) || '—')}
-                ${fm || isFund ? '' : row('費用歸屬', t.nature || '—')}${row('記帳者', nameOf(t.member_id))}${t.recurring_rule_id ? row('來源', t.client_id ? '固定收支首期（新增記帳時建立）' : '固定收支自動產生') : ''}
+                ${fm || isFund ? '' : row('費用歸屬', t.nature || '—')}${(() => { const gid = goalIdOfSpend(t), gg = gid ? goalById(gid) : null; return gg ? row('算進目標', gg.name) : ''; })()}${row('記帳者', nameOf(t.member_id))}${t.recurring_rule_id ? row('來源', t.client_id ? '固定收支首期（新增記帳時建立）' : '固定收支自動產生') : ''}
                 ${advanceDetailHtml(t)}`;
         }
         openSheet(`
@@ -5935,9 +6471,9 @@ function hexA(hex, a) {
     }
     function paintEditSplit() {
         const t = STATE.transactions.find(x => x.txn_id === _editSplit.id); if (!t) return;
-        const total = Number(t.amount) || 0;
-        const sum = Object.values(_editSplit.map).reduce((a, b) => a + (Number(b) || 0), 0);
-        const rest = total - sum, over = sum > total + 0.01;
+        const total = money(t.amount);
+        const sum = sumC(Object.values(_editSplit.map));
+        const rest = money(total - sum), over = toCents(sum) > toCents(total);
         openSheet(`
             <h3 class="text-lg font-bold text-stone-800 mb-1">調整分攤</h3>
             <p class="text-xs text-pastel-muted mb-5">${esc(t.note || t.category || '')} ・ 總額 ${fmt(total)}</p>
@@ -5951,44 +6487,47 @@ function hexA(hex, a) {
                             <i class="fa-solid fa-check text-[10px]"></i></button>
                         <div class="flex-1 min-w-0">
                             <div class="text-sm text-stone-700 truncate">${esc(m.nickname)}</div>
-                            ${paid > 0 ? `<div class="text-[10px] text-pastel-green">已還 ${fmt(paid)}（不可低於此數）</div>` : ''}</div>
+                            ${toCents(paid) > 0 ? `<div class="text-[10px] text-pastel-green">已還 ${fmtC(paid)}（不可低於此數）</div>` : ''}</div>
                         <div class="relative w-28 flex-shrink-0">
                             <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-pastel-muted">$</span>
-                            <input type="number" inputmode="decimal" ${on ? '' : 'disabled'} value="${on ? esc(_editSplit.map[m.member_id]) : ''}"
+                            <input type="number" inputmode="numeric" step="1" ${on ? '' : 'disabled'} value="${on ? esc(wholeYuan(_editSplit.map[m.member_id])) : ''}"
                                 oninput="setEditSplit('${esc(m.member_id)}', this.value)"
                                 class="w-full py-2 pl-6 pr-2 rounded-lg border text-sm text-right font-tabular ${on ? 'bg-pastel-bg border-pastel-border text-stone-800' : 'bg-stone-100/60 border-transparent text-stone-300'}">
                         </div></div>`;
                 }).join('')}
             </div>
             <div class="text-[10px] pt-2 border-t border-pastel-border flex justify-between mb-4 ${over ? 'text-pastel-red font-bold' : 'text-pastel-muted'}">
-                <span>已分攤 ${fmt(sum)} / 總額 ${fmt(total)}</span>
-                <span>${over ? '超過總額！' : rest > 0.01 ? `你自己吸收 ${fmt(rest)}` : '無人吸收剩餘'}</span></div>
+                <span>已分攤 ${fmtC(sum)} / 總額 ${fmtC(total)}</span>
+                <span>${over ? '超過總額！' : toCents(rest) > 0 ? `你自己負擔 ${fmtC(rest)}` : '無人吸收剩餘'}</span></div>
             <button onclick="saveEditSplit()" class="w-full py-4 bg-pastel-accent text-white font-bold rounded-tile shadow-md text-sm tactile">儲存分攤設定</button>`);
     }
     function toggleEditSplitMember(id) {
         buzz();
         const t = STATE.transactions.find(x => x.txn_id === _editSplit.id);
         if (_editSplit.map[id] !== undefined) {
-            if (paidFor(t.txn_id, id) > 0) return toast('對方已還款，不能整筆移除', true);
+            if (toCents(paidFor(t.txn_id, id)) > 0) return toast('對方已還款，不能整筆移除', true);
             delete _editSplit.map[id];
         } else _editSplit.map[id] = 0;
         paintEditSplit();
     }
-    function setEditSplit(id, v) { _editSplit.map[id] = Number(v) || 0; }
+    function setEditSplit(id, v) { _editSplit.map[id] = floorYuan(v); }     // r5：別人的份額是整數元（無條件捨去）
 
     async function saveEditSplit() {
         const t = STATE.transactions.find(x => x.txn_id === _editSplit.id); if (!t) return;
-        const total = Number(t.amount) || 0;
-        const list = Object.entries(_editSplit.map).filter(([, v]) => Number(v) > 0)
-            .map(([member_id, amount]) => ({ member_id, amount: Number(amount) }));
-        if (list.reduce((a, b) => a + b.amount, 0) > total + 0.01) { buzz(30); return toast('分攤加總超過總額', true); }
+        const total = money(t.amount);
+        const list = Object.entries(_editSplit.map).filter(([, v]) => toCents(v) > 0)
+            .map(([member_id, amount]) => ({ member_id, amount: money(amount) }));
+        if (toCents(sumC(list, b => b.amount)) > toCents(total)) { buzz(30); return toast('分攤加總超過總額', true); }
         for (const x of list) {
             const paid = paidFor(t.txn_id, x.member_id);
-            if (x.amount < paid - 0.01) { buzz(30); return toast(`${nameOf(x.member_id)} 已還 ${fmt(paid)}，分攤不能低於此數`, true); }
+            if (toCents(x.amount) < toCents(paid)) { buzz(30); return toast(`${nameOf(x.member_id)} 已還 ${fmtC(paid)}，分攤不能低於此數`, true); }
         }
         closeSheet();
         const backup = { ...t };
-        t.split_detail = list.length ? JSON.stringify(list) : '';
+        /* r6（R5-F01）：原本有明確分攤、改到每人 0 元 → 存 []（付款人負擔全額）；原本就是整筆代墊（空白）而且沒有指定任何人 → 維持空白 */
+        /* r7（R6-F01-B）：這次有明確勾選任何家人（即使都是 0 元）也存 []；只有「原本就是整筆代墊、這次也沒勾任何人」才維持空白 */
+        const anyPicked = Object.keys(_editSplit.map).length > 0;
+        t.split_detail = list.length ? JSON.stringify(list) : (anyPicked || hasExplicitSplit(backup) || backup.nature === '私人拆帳' ? '[]' : '');
         t.related_id = list.length === 1 ? list[0].member_id : '';
         t._pending = true;
         renderDataViews(); toast('分攤已更新');
@@ -6118,7 +6657,7 @@ function hexA(hex, a) {
             let b = kpBorrow.buf || '';
             if (k === 'C') b = '';
             else if (k === 'del') b = b.slice(0, -1);
-            else if (k === '.') { if (b.indexOf('.') < 0) b = (b || '0') + '.'; }
+            else if (k === '00') { if (b && b !== '0') b += '00'; }
             else if (/^[0-9]$/.test(k)) b = (b === '0' ? '' : b) + k;
             kpBorrow.buf = b;
             paintAmount();
@@ -6136,9 +6675,10 @@ function hexA(hex, a) {
         else if (k === 'del') { e = e.length > 1 ? e.slice(0, -1) : '0'; }
         else if (OPS.includes(k)) {
             if (OPS.includes(e.slice(-1))) e = e.slice(0, -1) + k; else e += k;
-        } else if (k === '.') {
+        } else if (k === '00') {
+            /* r5：台幣沒有小數，「.」鍵改成「00」（輸入 1500 可按 1、5、00） */
             const last = e.split(/[+\-×÷]/).pop();
-            if (!last.includes('.')) e += last === '' ? '0.' : '.';
+            if (last !== '' && last !== '0') e += '00';
         } else {
             const last = e.split(/[+\-×÷]/).pop();
             e = (e === '0') ? k : (last === '0' ? e.slice(0, -1) + k : e + k);
@@ -6166,7 +6706,7 @@ function hexA(hex, a) {
         const v = evalExpr(addState.expr);
         d.innerHTML = hasOp(addState.expr)
             ? `<span class="text-2xl text-pastel-muted">${esc(addState.expr)}</span>`
-            : `<span class="num-sym text-2xl">$</span>${Number(v).toLocaleString('en-US')}`;
+            : `<span class="num-sym text-2xl">$</span>${wholeYuan(v).toLocaleString('en-US')}`;
         if (h) h.innerText = hasOp(addState.expr) ? `= ${fmt(v)}` : '';
     }
 
@@ -6177,7 +6717,7 @@ function hexA(hex, a) {
         addState.mode = m;
         addState.cat = '';
         initAddForm(true);
-        if (m !== 'transfer') setTimeout(openCatDrawer, 320);
+        if (m !== 'transfer') setTimeout(() => { if (currentTab === 'add') openCatDrawer(); }, 320);
     }
     function pickTag(n) { buzz(); addState.tag = n; paintTagRow(); }
 
@@ -6187,21 +6727,33 @@ function hexA(hex, a) {
        欄位才會被當成流程的一部分，貼錯／漏貼的機率低很多。 */
     function paintGoalRow() {
         const r2 = document.getElementById('goalRow'); if (!r2) return;
-        const gs = activeGoals();
+        /* v6.26.0 r2：目標與付款方式分開。編輯的這筆原本算進的目標若已結案，仍列出來（才看得出、也保留得住原本的連結） */
+        const gs = activeGoals().slice();
+        const cur = addState.goal ? goalById(addState.goal) : null;
+        if (cur && !gs.some(g => g.goal_id === cur.goal_id)) gs.unshift(cur);
         r2.innerHTML = gs.map(g => {
-            const on = addState.tag === g.project_tag;
+            const on = addState.goal === g.goal_id;
             return `<button onclick="pickGoal('${esc(g.goal_id)}')"
                 class="flex-shrink-0 flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-bold border transition-all tactile ${on ? 'bg-pastel-accent text-white border-transparent shadow-sm' : 'bg-white text-stone-700 border-pastel-border'}">
                 <i class="fa-solid ${esc(g.icon || 'fa-piggy-bank')}"></i>
                 <span class="whitespace-nowrap">${esc(g.name)}</span>
                 ${on ? '<i class="fa-solid fa-check text-[10px]"></i>' : ''}</button>`;
-        }).join('') + `<button onclick="pickGoal('')" class="flex-shrink-0 px-3.5 py-2 rounded-full text-xs font-bold border tactile ${gs.every(g => addState.tag !== g.project_tag) ? 'bg-stone-800 text-white border-stone-800' : 'bg-white text-stone-600 border-pastel-border'}">不算</button>`;
+        }).join('') + `<button onclick="pickGoal('')" data-goal-none class="flex-shrink-0 px-3.5 py-2 rounded-full text-xs font-bold border tactile ${!addState.goal ? 'bg-stone-800 text-white border-stone-800' : 'bg-white text-stone-600 border-pastel-border'}">不算</button>`;
+        const hint = document.getElementById('goalHint');
+        if (hint) {
+            /* r3：後端尚未更新（6.25）時，算進目標只能用目標標籤表示，付款方式存不進去——要說清楚 */
+            const oldBackendGoal = !goalColSupported() && !!addState.goal;
+            const legacyHint = !!addState._legacyGoalTag && !!addState.goal;      // 按了「不算」就不再提示「存檔後仍算進同一個目標」
+            hint.classList.toggle('hidden', !legacyHint && !oldBackendGoal);
+            hint.innerText = oldBackendGoal ? '帳本的後端還沒更新到 6.26：算進目標的支出會以目標標籤存檔，無法同時記付款方式；按「不算」則以下方選的帳戶存檔。'
+                : legacyHint ? `這筆以前用標籤「${addState._legacyGoalTag}」算進目標，沒有記付款方式；請在下方選擇付款方式，存檔後仍算進同一個目標。` : '';
+        }
     }
+    /** 選目標只改「算進哪個目標」，不動付款方式（標籤） */
     function pickGoal(id) {
         buzz();
-        const g = id ? goalById(id) : null;
-        addState.tag = g ? g.project_tag : (PREF.get('tag', '') || STATE.tags[0]?.item_name || '');
-        paintGoalRow(); paintTagRow();
+        addState.goal = id && goalById(id) ? id : '';
+        paintGoalRow();
     }
 
     /* 一筆我付的錢裡面，真正屬於我的支出是多少。
@@ -6209,11 +6761,11 @@ function hexA(hex, a) {
        先前這裡算的是全額，導致代墊愈多、個人預算看起來爆得愈兇，
        而別人還錢回來時又完全沒有反映。 */
     function myShareOf(t) {
-        const a = Math.round(Number(t.amount) || 0);
+        const a = money(t.amount);
         if (!isAdvance(t)) return a;
         /* v6.23.1：改由 advanceShare 統一計算（付款人視角）。沒填分攤＝整筆都是別人要還的。
            目前只剩家庭帳本匯出使用這個「付款人份額」口徑；個人帳本一律走 plAmount。 */
-        return Math.round(advanceShare(t, t.payer_id).share);
+        return money(advanceShare(t, t.payer_id).share);
     }
 
     /* ---------- 帳戶標籤的歸屬過濾 ----------
@@ -6306,11 +6858,11 @@ function hexA(hex, a) {
             if (t.tag !== tagName) return sum;
             const d = String(t.date).slice(0, 10);
             if (d < start || d > end) return sum;
-            const a = Math.round(Number(t.amount) || 0);
+            const a = toCents(t.amount);                      // r3（BASE-F02）：以分加總，最後才換回元（不逐筆取整）
             if (t.entry_type === '支出') return sum + a;      // 代墊也算：卡片仍要繳全額
             if (t.entry_type === '收入') return sum - a;      // 刷退
             return sum;                                       // 還款／轉帳（含繳卡費）不進帳單
-        }, 0);
+        }, 0) / 100;
     }
     /** 把週期與金額組成一張卡的完整帳單資訊 */
     function cardStatement(card, refISO) {
@@ -6460,12 +7012,17 @@ function hexA(hex, a) {
     function splitSum() {
         return Object.entries(addState.splits || {})
             .filter(([id]) => id !== ME_ID())
-            .reduce((a, [, v]) => a + (Number(v) || 0), 0);
+            .reduce((a, [id, v]) => a + toCents(keptShare(id, v)), 0) / 100;      // r5：別人的份額一律整數元（舊紀錄沒改的那一份除外）
     }
-    const selfAmount = () => Number((addState.splits || {})[ME_ID()]) || 0;
-    const allocated = () => splitSum() + selfAmount();
+    const selfAmount = () => money((addState.splits || {})[ME_ID()]);
+    const allocated = () => money(splitSum() + selfAmount());
     const splitMode = () => addState.splitMode || 'even';
-    const splitTotal = () => Math.round(evalExpr(addState.expr) || 0);
+    /* r5：記帳金額＝整數元。只有「編輯舊紀錄、金額沒有動」時保留原本儲存的數字（不改寫歷史，BASE-F01） */
+    const entryAmount = () => {
+        const raw = evalExpr(addState.expr) || 0;
+        return addState._origExpr != null && String(addState.expr) === String(addState._origExpr) ? money(raw) : wholeYuan(raw);
+    };
+    const splitTotal = () => entryAmount();
     const pctSum = () => Object.keys(addState.splits || {})
         .reduce((a, i) => a + (Number((addState.pcts || {})[i]) || 0), 0);
 
@@ -6489,30 +7046,61 @@ function hexA(hex, a) {
         const total = splitTotal();
         const ids = Object.keys(addState.splits || {});
         if (!ids.length) return;
+        /* r5（使用者決定：台幣沒有分，除不盡由登記者多負擔）：
+           ・別人的份額一律是整數元，無條件捨去；總額扣掉別人的合計，就是登記者（自己）負擔的金額。
+           ・自己有沒有勾進分攤都一樣：除不盡的差額由自己負擔，不會加在最後一位家人身上。
+             例：100 元三人（含自己）均分＝家人 33／33、自己 34；101 元只分給兩位家人＝家人各 50、自己負擔 1。
+           ・均分：別人＝floor(總額÷人數)（人數含自己，若有勾）。比例：別人＝floor(總額×比例)。
+             比例合計不到 100% 的部分，同樣留給自己負擔。手動輸入的份額也會捨去到整數元（splitList）。 */
+        const totalC = toCents(total), others = ids.filter(i => i !== ME_ID()), hasMe = ids.includes(ME_ID());
         if (splitMode() === 'even') {
-            const each = Math.floor(total / ids.length);
-            ids.forEach(i => addState.splits[i] = each);
-            /* 除不盡的餘數要有人扛，否則分攤總額會少幾塊，對帳時很惱人。
-               自己有參與就自己吸收，沒有就加在最後一位身上。 */
-            const rest = total - each * ids.length;
-            if (rest) addState.splits[ids.includes(ME_ID()) ? ME_ID() : ids[ids.length - 1]] += rest;
+            const each = Math.floor(totalC / ids.length / 100);
+            others.forEach(i => addState.splits[i] = each);
         } else if (splitMode() === 'pct') {
             addState.pcts = addState.pcts || {};
-            ids.forEach(i => addState.splits[i] = Math.round(total * (Number(addState.pcts[i]) || 0) / 100));
-        }
+            others.forEach(i => addState.splits[i] = Math.floor(totalC * (Number(addState.pcts[i]) || 0) / 10000 + 1e-9));
+        } else return;
+        if (hasMe) addState.splits[ME_ID()] = Math.max(0, money(total - splitSum()));
     }
     /* 分攤面板兩態：平常只佔一行摘要，要調整才展開。
        80% 的情況（整筆代墊、固定均分）看一眼摘要就夠了，
        把完整編輯器一直攤在表單上，等於為了 20% 的情境每次都付出版面。 */
     /** v6.24.0 分攤摘要第一行：幾個人、哪種分法、自己負擔多少（還沒分配出去的金額算在自己身上） */
+    /** r6（R5-F01）：家庭代墊沒有選任何家人＝舊式「整筆代墊」：公帳欠你全額（存檔 split_detail 空白，語意與以前相同） */
+    function poolWholeAdvance() {
+        const nature = document.getElementById('inpNature')?.value || addState.nature;
+        return nature === '家庭代墊' && !addState._zeroSplit && !Object.keys(addState.splits || {}).some(id => id !== ME_ID());
+    }
+    /** r6（R5-F01）：存檔用的 split_detail——有份額就存份額；有選人但每人都是 0 元（或編輯時原本就是 []）就存 []，
+        代表「明確指定、自己負擔全額」；什麼都沒指定才存空白（舊式語意） */
+    /* r7（R6-F01）：
+         ・私人拆帳沒有任何家人份額 → 一律 []（自己負擔全額）。新紀錄不再存出「沒有記錄對方」的舊語意。
+         ・家庭代墊：只有「整筆代墊」狀態（poolWholeAdvance：沒選家人、而且不是編輯／再記一次 [] 的紀錄）才存空白；
+           其餘（選了家人但都 0 元、或原本就是 [] 而取消了所有人）都存 []。
+           要把 [] 改成整筆代墊，必須按「改成整筆代墊」明確切換（makeWholeAdvance），畫面同時改寫成「家庭公帳還你全額」。 */
+    function splitDetailFor(nature, sl) {
+        if (sl.length) return JSON.stringify(sl);
+        if (nature === '私人拆帳') return '[]';
+        if (nature === '家庭代墊') return poolWholeAdvance() ? '' : '[]';
+        return '';
+    }
+    /** r7：把 [] 的家庭代墊明確改成「整筆代墊」（家庭公帳還你全額） */
+    function makeWholeAdvance() {
+        buzz();
+        addState._zeroSplit = false;
+        addState.splits = { [ME_ID()]: 0 }; addState.pcts = {};
+        recalcSplits();
+        renderSplitBox(document.getElementById('inpNature')?.value || addState.nature);
+    }
     function splitHeadline() {
         const ids = Object.keys(addState.splits || {});
-        if (!ids.length) return '尚未設定分攤';
+        if (poolWholeAdvance()) return `整筆代墊・家庭公帳還你 ${fmtC(splitTotal())}`;
+        if (!ids.length) return `沒有選人・你負擔 ${fmtC(splitTotal())}`;     // r7：與存檔（[]）一致
         const md = splitMode();
         const modeName = md === 'even' ? '平均' : md === 'pct' ? '比例' : '手動';
         const total = splitTotal(), others = splitSum();
         const mine = Math.max(0, total - others);
-        return `${ids.length} 人${modeName}分攤・${mine > 0 ? `你負擔 ${fmt(mine)}` : '你不負擔'}`;
+        return `${ids.length} 人${modeName}分攤・${toCents(mine) > 0 ? `你負擔 ${fmtC(mine)}` : '你不負擔'}`;   // 自己沒勾也一樣：除不盡的差額由你負擔
     }
     /** 展開分攤時收起導覽列；離開記帳頁、收合或切到不需分攤的歸屬時一定恢復 */
     function setSplitStage(on) {
@@ -6549,7 +7137,7 @@ function hexA(hex, a) {
             if (!Object.keys(addState.splits || {}).length) addState.splits = { [ME_ID()]: 0 };
             recalcSplits();
             renderSplitBox(v);
-        } else { addState.splits = {}; addState.splitOpen = false; setSplitStage(false); }
+        } else { addState.splits = {}; addState._zeroSplit = false; addState.splitOpen = false; setSplitStage(false); }
         lockSaveIfOver();
     }
     function setSplitMode(m) {
@@ -6582,7 +7170,7 @@ function hexA(hex, a) {
         setSplitStage(!!addState.splitOpen && currentTab === 'add');
         if (!addState.splitOpen) {
             const total = splitTotal(), used = allocated();
-            const bad = used > total + 0.01 || (md === 'pct' && pctSum() > 100.01);
+            const bad = toCents(used) > toCents(total) || (md === 'pct' && Math.round(pctSum() * 100) > 10000);
             b.innerHTML = `
                 <button type="button" onclick="toggleSplitOpen()"
                     class="w-full flex items-center gap-2 p-3 rounded-tile bg-white border ${bad ? 'border-pastel-red' : 'border-pastel-accent/25'} tactile text-left">
@@ -6600,6 +7188,9 @@ function hexA(hex, a) {
 
         b.innerHTML = `
             <div class="p-3 bg-white rounded-tile border border-pastel-accent/25 space-y-3">
+                ${isPool && !poolWholeAdvance() && !Object.keys(addState.splits).some(id => id !== ME_ID()) ? `
+                <button type="button" data-make-whole onclick="makeWholeAdvance()" class="w-full text-left text-[10px] text-pastel-accent font-bold tactile">
+                    <i class="fa-solid fa-arrow-right-arrow-left mr-1"></i>目前是「自己負擔全額」，改成整筆代墊（家庭公帳還你全額）</button>` : ''}
                 <div class="flex justify-between items-center">
                     <div class="font-bold text-stone-700 text-xs">${isPool ? '分攤給誰？' : '與誰拆帳？'}</div>
                     <button type="button" onclick="toggleSplitOpen()" class="tap44 text-xs font-bold text-pastel-accent tactile">
@@ -6643,7 +7234,7 @@ function hexA(hex, a) {
         const total = splitTotal();
         const ids = Object.keys(addState.splits || {});
         if (!total || !ids.length) { bar.innerHTML = ''; return; }
-        const over = allocated() > total + 0.01;
+        const over = toCents(allocated()) > toCents(total);
         const segs = ids.map(id => {
             const v = Math.max(0, Number(addState.splits[id]) || 0);
             const m = (STATE.members || []).find(x => x.member_id === id);
@@ -6652,7 +7243,7 @@ function hexA(hex, a) {
                 pct: Math.min(100, v / total * 100),
                 // 自己吸收的那段用低飽和，別人欠的用該成員的光環色 —— 一眼分得出「我的」與「別人的」
                 color: over ? '#F05838' : isMe ? '#C9BFB2' : getLevelInfo(m?.streak_days).ring,
-                label: (isMe ? '我' : (m?.nickname || '')) + ' ' + fmt(v)
+                label: (isMe ? '我' : (m?.nickname || '')) + ' ' + fmtC(v)
             };
         }).filter(x => x.pct > 0.5);
         const used = segs.reduce((a, b) => a + b.pct, 0);
@@ -6664,15 +7255,15 @@ function hexA(hex, a) {
         paintSplitBar();
         const el = document.getElementById('splitSummary'); if (!el) return;
         const total = splitTotal(), others = splitSum(), mine = selfAmount(), used = allocated();
-        const over = used > total + 0.01;
-        const pctOver = splitMode() === 'pct' && pctSum() > 100.01;
-        const rest = total - used;
+        const over = toCents(used) > toCents(total);
+        const pctOver = splitMode() === 'pct' && Math.round(pctSum() * 100) > 10000;
+        const rest = money(total - used);
         el.innerHTML = `<div class="${over || pctOver ? 'text-pastel-red font-bold' : 'text-pastel-muted'}">
-            已分攤 ${fmt(others)} / 總額 ${fmt(total)}
-            ${over ? `（超額 ${fmt(used - total)}）⚠️`
+            已分攤 ${fmtC(others)} / 總額 ${fmtC(total)}
+            ${over ? `（超額 ${fmtC(money(used - total))}）⚠️`
                 : pctOver ? `（比例合計 ${pctSum()}%）⚠️`
-                    : rest > 0.01 ? `（你自己吸收 ${fmt(mine + rest)}）🤝`
-                        : mine > 0 ? `（你自己吸收 ${fmt(mine)}）🤝` : '（你不分攤）🤝'}</div>`;
+                    : toCents(rest) > 0 ? `（你自己負擔 ${fmtC(money(mine + rest))}）🤝`
+                        : toCents(mine) > 0 ? `（你自己負擔 ${fmtC(mine)}）🤝` : '（你不分攤）🤝'}</div>`;
         lockSaveIfOver();
     }
     /** 超額時鎖住儲存鍵：讓錯的資料存不進去，比事後對帳好 */
@@ -6680,8 +7271,8 @@ function hexA(hex, a) {
         const btn = document.getElementById('saveBtn'); if (!btn) return;
         const box = document.getElementById('splitDetailBox');
         const active = box && !box.classList.contains('hidden');
-        const bad = active && (allocated() > splitTotal() + 0.01 ||
-            (splitMode() === 'pct' && pctSum() > 100.01));
+        const bad = active && (toCents(allocated()) > toCents(splitTotal()) ||
+            (splitMode() === 'pct' && Math.round(pctSum() * 100) > 10000));
         btn.disabled = !!bad;
         btn.classList.toggle('opacity-40', !!bad);
         btn.classList.toggle('pointer-events-none', !!bad);
@@ -6717,7 +7308,7 @@ function hexA(hex, a) {
             onInput: v => {
                 const n = Number(v) || 0;
                 if (md === 'pct') { addState.pcts[memberId] = n; recalcSplits(); rememberRatio(); }
-                else addState.splits[memberId] = n;
+                else addState.splits[memberId] = memberId === ME_ID() ? wholeYuan(n) : floorYuan(n);
                 paintSplitSummary();
             },
             onDone: () => {
@@ -6726,7 +7317,7 @@ function hexA(hex, a) {
             }
         });
     }
-    function setSplitAmount(id, v) { addState.splits[id] = Number(v) || 0; paintSplitSummary(); }
+    function setSplitAmount(id, v) { addState.splits[id] = id === ME_ID() ? wholeYuan(v) : floorYuan(v); paintSplitSummary(); }
     function setSplitPct(id, v) {
         addState.pcts = addState.pcts || {};
         addState.pcts[id] = Number(v) || 0;
@@ -6734,11 +7325,16 @@ function hexA(hex, a) {
         paintSplitSummary();
         rememberRatio();
     }
+    /** r5：別人的份額＝整數元（捨去）；例外是「編輯舊紀錄、這一份沒有改」→ 照原本儲存的數字 */
+    function keptShare(id, v) {
+        const o = addState._origSplits;
+        return o && o[id] !== undefined && toCents(o[id]) === toCents(v) ? money(v) : floorYuan(v);
+    }
     function splitList() {
         // split_detail 只記錄別人欠的錢，自己那一份是自己吸收，不是債務
         return Object.entries(addState.splits || {})
-            .filter(([id, v]) => id !== ME_ID() && Number(v) > 0)
-            .map(([member_id, amount]) => ({ member_id, amount: Number(amount) }));
+            .map(([member_id, amount]) => ({ member_id, amount: keptShare(member_id, amount) }))
+            .filter(x => x.member_id !== ME_ID() && toCents(x.amount) > 0);   // r5：整數元（手動輸入的零頭由登記者負擔）
     }
     function toggleRecurringBox() { document.getElementById('recurringBox').classList.toggle('hidden', !document.getElementById('isRecurring').checked); }
 
@@ -6751,9 +7347,9 @@ function hexA(hex, a) {
         if (!keepValues) {
             addState = {
                 mode: 'expense', expr: '0', cat: '', note: '', date: todayISO(), _dateTouched: false,
-                tag: PREF.get('tag', '') || (STATE.tags[0]?.item_name || ''),
+                tag: prefTag(), goal: '',
                 nature: PREF.get('nature', '純個人'),
-                from: PREF.get('tag', '') || (STATE.tags[0]?.item_name || ''),
+                from: prefTag(),
                 to: STATE.tags[1]?.item_name || '', splits: {}, pcts: {},
                 splitMode: PREF.get('splitMode', 'even'), splitOpen: false
             };
@@ -6787,7 +7383,7 @@ function hexA(hex, a) {
                     <span class="text-[10px] font-bold opacity-85">${isTr ? '轉帳金額' : isExp ? '支出金額' : '收入金額'}</span>
                     <span class="text-[10px] font-bold bg-white/25 px-2 py-1 rounded-lg">點擊輸入 <i class="fa-solid fa-calculator ml-1"></i></span></div>
                 <div class="text-[32px] font-bold font-tabular tracking-tight leading-none">
-                    <span class="num-sym text-2xl">$</span>${Number(amt).toLocaleString('en-US')}</div>
+                    <span class="num-sym text-2xl">$</span>${wholeYuan(amt).toLocaleString('en-US')}</div>
             </button>
 
             <div class="bg-white border border-pastel-border/60 rounded-card shadow-card divide-y divide-pastel-border/70 overflow-hidden">
@@ -6821,12 +7417,13 @@ function hexA(hex, a) {
                     <!-- 聯想晶片列：橫向捲動，不用下拉選單 —— 鍵盤彈起時下拉會被遮住 -->
                     <div id="memoBar" class="js-hide flex gap-2 mt-2 overflow-x-auto hide-scrollbar pb-0.5"></div></div>
 
-                ${(!isTr && isExp && activeGoals().length) ? `
+                ${(!isTr && isExp && (activeGoals().length || addState.goal)) ? `
                 <div class="px-4 py-3">
                     <div class="flex justify-between items-center mb-2">
                         <span class="text-sm text-stone-600">算進哪個目標？</span>
                         <span class="text-[10px] text-pastel-muted">選填</span></div>
                     <div id="goalRow" class="flex gap-2 overflow-x-auto hide-scrollbar pb-1"></div>
+                    <p id="goalHint" class="hidden text-[10px] text-pastel-accent font-bold leading-relaxed mt-2"></p>
                 </div>` : ''}
                 <div class="px-4 py-3">
                     <div class="flex justify-between items-center mb-2">
@@ -6880,19 +7477,23 @@ function hexA(hex, a) {
     function openCatDrawer() {
         const group = addState.mode === 'income' ? 'INCOME_CATEGORY' : 'EXPENSE_CATEGORY';
         const cats = STATE.categories.filter(c => c.item_group === group);
+        /* v6.26.0 r2：方塊無光極簡。未選＝透明底＋分類色 1.5px 外框＋分類色圖示，名稱淺色模式深石板灰、深色模式米白；
+           選中＝分類色實心＋白字白圖示，完全不加陰影。外框在兩種狀態都佔 1.5px（選中時透明），切換時方塊不跳動。
+           名稱顏色用專用 class（.cat-tile-name），不用 inline 顏色：先前 inline 的 #3A3330 在深色模式蓋不掉，字和暗底融在一起。 */
         openSheet(`
             <h3 class="text-lg font-bold text-stone-800 mb-1">選擇分類</h3>
-            <p class="text-xs text-pastel-muted mb-5">選好後會自動跳出金額鍵盤</p>
-            <div class="grid grid-cols-4 gap-2.5">
+            <p class="text-xs text-pastel-muted mb-4">選好後會自動跳出金額鍵盤</p>
+            <div class="grid grid-cols-4 gap-y-2.5 gap-x-2 py-1">
                 ${cats.map(c => {
             const on = c.item_name === addState.cat, col = catColor(c.item_name);
-            return `<button onclick="chooseCat('${esc(c.item_name)}')" class="rounded-tile py-3 px-1 flex flex-col items-center gap-1 tactile transition-all"
-                        style="background:${on ? col : hexA(col, .12)};color:${on ? '#fff' : '#3A3330'};${on ? `box-shadow:0 4px 14px ${hexA(col, .45)}` : ''}">
+            return `<button type="button" onclick="chooseCat('${esc(c.item_name)}')" data-cat-tile="${on ? 'on' : 'off'}"
+                        class="cat-tile ${on ? 'on' : 'off'} h-16 rounded-tile flex flex-col items-center justify-center gap-1 p-1 tactile"
+                        style="${on ? `background:${col};color:#FFFFFF;border-color:transparent` : `background:transparent;border-color:${col};color:${col}`}">
                         <i class="fa-solid ${esc(normIcon(c.icon_emoji, c.item_group))} text-xl leading-none"></i>
-                        <span class="text-[10px] font-bold leading-tight text-center truncate w-full px-0.5">${esc(c.item_name)}</span></button>`;
+                        <span class="cat-tile-name text-[10px] ${on ? 'font-bold' : 'font-medium'} leading-none text-center truncate w-full px-1">${esc(c.item_name)}</span></button>`;
         }).join('')}
-                <button onclick="addItem('${group}')" class="rounded-tile py-3 px-1 flex flex-col items-center gap-1 border-2 border-dashed border-pastel-border text-pastel-muted">
-                    <i class="fa-solid fa-plus text-xl leading-none"></i><span class="text-[10px] font-bold">新增</span></button>
+                <button type="button" onclick="addItem('${group}')" class="cat-tile-add h-16 rounded-tile flex flex-col items-center justify-center gap-1 p-1 tactile">
+                    <i class="fa-solid fa-plus text-xl leading-none"></i><span class="text-[10px] font-medium leading-none">新增</span></button>
             </div>`);
     }
 
@@ -6925,7 +7526,7 @@ function hexA(hex, a) {
                 ${key('7', '7')}${key('8', '8')}${key('9', '9')}${key('÷', '÷', 'bg-pastel-bg text-pastel-accent')}
                 ${key('4', '4')}${key('5', '5')}${key('6', '6')}${key('×', '×', 'bg-pastel-bg text-pastel-accent')}
                 ${key('1', '1')}${key('2', '2')}${key('3', '3')}${key('-', '−', 'bg-pastel-bg text-pastel-accent')}
-                ${key('.', '.')}${key('0', '0')}${key('del', '<i class="fa-solid fa-delete-left text-sm"></i>', 'bg-pastel-bg text-stone-600')}${key('+', '+', 'bg-pastel-bg text-pastel-accent')}
+                ${key('00', '00')}${key('0', '0')}${key('del', '<i class="fa-solid fa-delete-left text-sm"></i>', 'bg-pastel-bg text-stone-600')}${key('+', '+', 'bg-pastel-bg text-pastel-accent')}
             </div>
             <div class="flex gap-2.5">
                 <button onclick="kp('C')" class="w-20 py-4 bg-white border border-pastel-border text-stone-500 font-bold rounded-tile text-sm shadow-sm tactile">清除</button>
@@ -6943,8 +7544,8 @@ function hexA(hex, a) {
             if (done) done();
             return;
         }
-        if (evalExpr(addState.expr) <= 0) { buzz(30); return toast('請輸入金額', true); }
-        addState.expr = String(evalExpr(addState.expr));
+        if (entryAmount() <= 0) { buzz(30); return toast('請輸入金額', true); }
+        addState.expr = String(entryAmount());
         closeSheet(); buzz();
         initAddForm(true);
         paintSplitSummary();
@@ -6980,9 +7581,15 @@ function hexA(hex, a) {
         const lock = debtLockReason(t, STATE.transactions, STATE.intents);
         if (lock) { buzz(30); return toast(lock, true); }
         editingTxnId = id;
+        /* v6.26.0 r2：目標另外載入；舊紀錄若是以「目標標籤」記的，標籤改帶預設付款帳戶並提示確認 */
+        const goalId = goalIdOfSpend(t);
+        /* r3（R2-F04）：不論後端版本，目標標籤都不放進「標籤／帳戶」欄位（後端較舊時，存檔才依是否算進目標決定送哪個標籤），
+           否則按「不算」只清掉畫面上的目標，存檔仍送出目標標籤、照樣算進目標 */
+        const legacyTag = !String(t.goal_id || '').trim() && goalId && isGoalTagName(t.tag) ? txtOf(t.tag) : '';
         addState = {
             mode: loadModeOf(t),
-            expr: String(t.amount), cat: txtOf(t.category), tag: txtOf(t.tag), nature: loadNatureOf(t),
+            expr: String(t.amount), _origExpr: String(t.amount), cat: txtOf(t.category), tag: legacyTag ? prefTag() : txtOf(t.tag), nature: loadNatureOf(t),
+            goal: goalId, _legacyGoalTag: legacyTag,
             date: t.date, note: txtOf(t.note), from: txtOf(t.tag), to: txtOf(t.related_id),
             /* 既有紀錄的分攤金額是既成事實，一律用金額模式載入，
                否則切回均分會把原本談好的數字覆寫掉。 */
@@ -6993,10 +7600,13 @@ function hexA(hex, a) {
             splits: (() => {
                 const o = parseSplit(t).reduce((m, s2) => (m[s2.member_id] = s2.amount, m), {});
                 const others = Object.values(o).reduce((a, b) => a + b, 0);
-                const mine = Math.round(Number(t.amount) || 0) - others;
+                const mine = money(money(t.amount) - others);
                 if (Object.keys(o).length && mine > 0) o[STATE.me?.member_id || 'me'] = mine;
                 return o;
-            })()
+            })(),
+            _zeroSplit: hasExplicitSplit(t) && !parseSplit(t).length,
+            /* r5：舊紀錄的分攤若有零頭，沒有改動的那一份照原數字送回（不改寫歷史）；改過的才套用整數元 */
+            _origSplits: parseSplit(t).reduce((m, s2) => (m[s2.member_id] = s2.amount, m), {})
         };
         switchTab('add'); initAddForm(true);
         toast('已載入，修改後按更新');
@@ -7078,9 +7688,9 @@ function hexA(hex, a) {
         const isGoalTag = (STATE.goals || []).some(g => g.project_tag && g.project_tag === t.tag);
         addState = {
             mode: loadModeOf(t),
-            expr: String(Math.round(Number(t.amount) || 0)),
+            expr: String(wholeYuan(t.amount)),     // r5：再記一次是新的一筆，整數元
             cat: txtOf(t.category),
-            tag: isGoalTag ? (PREF.get('tag', '') || STATE.tags[0]?.item_name || '') : txtOf(t.tag),
+            tag: isGoalTag ? prefTag() : txtOf(t.tag), goal: '',
             nature: loadNatureOf(t),
             date: todayISO(),             // 一律改成今天
             note: txtOf(t.note),
@@ -7089,12 +7699,14 @@ function hexA(hex, a) {
             poolPayer: t.payer_id === 'family_pool' ? 'pool' : 'me', poolPayerLocked: t.nature === '家庭公帳',
             splitMode: 'amt', pcts: {},
             splits: (() => {
-                const o = parseSplit(t).reduce((m, s2) => (m[s2.member_id] = s2.amount, m), {});
+                /* r5：再記一次是新的一筆——別人的份額捨去成整數元、總額取整數元，差額由自己負擔 */
+                const o = parseSplit(t).reduce((m, s2) => (m[s2.member_id] = floorYuan(s2.amount), m), {});
                 const others = Object.values(o).reduce((a, b) => a + b, 0);
-                const mine = Math.round(Number(t.amount) || 0) - others;
+                const mine = wholeYuan(t.amount) - others;
                 if (Object.keys(o).length && mine > 0) o[STATE.me?.member_id || 'me'] = mine;
                 return o;
-            })()
+            })(),
+            _zeroSplit: hasExplicitSplit(t) && !parseSplit(t).length
         };
         switchTab('add'); initAddForm(true);
         setTimeout(openKeypadDrawer, 260);
@@ -7125,8 +7737,8 @@ function hexA(hex, a) {
            顯示端的 fmt() 本來就會四捨五入，但存進去的若是 33.33333333333336，
            明細加起來就會跟總額差幾分錢 —— 那種「幽靈帳目」最難查。
            除法（100÷3）是唯一會產生小數的路徑，在這裡收斂掉。 */
-        const raw = evalExpr(addState.expr);
-        const amount = Math.round(Number(raw) || 0);
+        /* r5：整數元；編輯舊紀錄而金額沒動時保留原本的數字（entryAmount） */
+        const amount = entryAmount();
         if (!Number.isFinite(amount) || amount <= 0) { buzz(30); openKeypadDrawer(); return toast('請先輸入金額', true); }
         if (amount > 99999999) { buzz(30); return toast('金額超出可記錄範圍', true); }
         const isTr = addState.mode === 'transfer';
@@ -7152,7 +7764,7 @@ function hexA(hex, a) {
         const nature = document.getElementById('inpNature')?.value || '純個人';
         const isExp = addState.mode === 'expense';
         const sl = (nature === '家庭代墊' || nature === '私人拆帳') ? splitList() : [];
-        if (sl.reduce((a, b) => a + b.amount, 0) > amount + 0.01) {
+        if (toCents(sumC(sl, b => b.amount)) > toCents(amount)) {
             buzz(30); return toast('分攤金額加總超過總額，請調整', true);
         }
         // 歸屬決定「錢從誰的口袋動」與「算哪一種型態」，集中在這裡判斷：
@@ -7165,18 +7777,25 @@ function hexA(hex, a) {
            後者我的錢包確實少了錢，個人明細就必須看得到。 */
         const poolFromMe = isPoolMoney && addState.poolPayer !== 'pool';
         const isInject = !isExp && nature === '公帳注資';
+        const entryType = isInject ? '注資' : (isExp ? '支出' : '收入');
+        /* v6.26.0 r2：目標另外存（goal_id），標籤就是付款方式。後端較舊（沒有目標欄）時沿用舊表示法：標籤＝目標專屬標籤 */
+        const goalSel = entryType === '支出' && addState.goal ? goalById(addState.goal) : null;
+        const legacyGoal = goalSel && !goalColSupported();
+        /* r3（R2-F04）：沒有算進目標時，送出的標籤一定是付款帳戶（縱深防線：畫面上的標籤若仍是目標標籤，改用預設帳戶） */
+        const payTag = isGoalTagName(addState.tag) ? prefTag() : addState.tag;
         const txn = {
             date: addState.date || todayISO(),
-            entry_type: isInject ? '注資' : (isExp ? '支出' : '收入'),
-            category: addState.cat, tag: addState.tag, amount,
+            entry_type: entryType,
+            category: addState.cat, tag: legacyGoal ? goalSel.project_tag : payTag, amount,
             note: addState.note, nature,
-            split_detail: sl.length ? JSON.stringify(sl) : '',
+            split_detail: (nature === '家庭代墊' || nature === '私人拆帳') ? splitDetailFor(nature, sl) : '',
             related_id: sl.length === 1 ? sl[0].member_id : '',
             member_id: STATE.me.member_id,
             payer_id: (isPoolMoney && !poolFromMe) ? 'family_pool' : STATE.me.member_id
         };
-        // 記住這次的選擇，下次直接帶入
-        PREF.set('tag', addState.tag);
+        if (goalColSupported()) txn.goal_id = goalSel ? goalSel.goal_id : '';
+        // 記住這次的選擇，下次直接帶入（目標專屬標籤不是付款方式，不記）
+        if (!isGoalTagName(addState.tag)) PREF.set('tag', addState.tag);
         PREF.set('nature', nature);
         PREF.set('cat_' + (isExp ? 'EXPENSE_CATEGORY' : 'INCOME_CATEGORY'), addState.cat);
 
@@ -7184,7 +7803,7 @@ function hexA(hex, a) {
         const wantRec = document.getElementById('isRecurring')?.checked;
         const rec = wantRec ? {
             name: txn.note || txn.category, entry_type: txn.entry_type, category: txn.category,
-            tag: txn.tag, amount, note: txn.note, nature,
+            tag: addState.tag, amount, note: txn.note, nature,      // r2：固定收支不帶目標（每期是否算進目標另外決定）
             freq: document.getElementById('recFreq').value,
             auto_mode: document.getElementById('recMode').value,
             start_date: txn.date, end_date: document.getElementById('recEnd').value || '',
@@ -7477,7 +8096,7 @@ const BANKS = [
         buzz();
         const i = getLevelInfo(m.streak_days);
         const isMe = m.member_id === STATE.me?.member_id;
-        const owe = othersOweMe().filter(x => x.memberId === memberId).reduce((a, b) => a + b.remaining, 0);
+        const owe = sumC(othersOweMe().filter(x => x.memberId === memberId), b => b.remaining);
         openSheet(`
             <div class="flex items-center gap-3 mb-4">
                 <div class="w-14 h-14 rounded-full border-[3px] ${i.border} ${i.bg} overflow-hidden flex items-center justify-center text-2xl flex-shrink-0">${avatarInner(m.avatar_emoji)}</div>
@@ -7486,18 +8105,18 @@ const BANKS = [
                     <div class="text-[10px] ${i.color} font-bold">${esc(i.name)}光環 ・ 連續 ${Number(m.streak_days) || 0} 天</div>
                 </div>
             </div>
-            ${owe > 0.01 ? `<div class="mb-3 p-3 rounded-tile bg-pastel-greenLight border border-pastel-green/25 flex justify-between items-center">
+            ${toCents(owe) > 0 ? `<div class="mb-3 p-3 rounded-tile bg-pastel-greenLight border border-pastel-green/25 flex justify-between items-center">
                 <span class="text-xs font-bold text-stone-700">還沒還我</span>
-                <span class="font-bold font-tabular text-pastel-green">${fmt(owe)}</span></div>` : ''}
+                <span class="font-bold font-tabular text-pastel-green">${fmtDue(owe)}</span></div>` : ''}
             ${payeeBlock(m)}
             ${isMe ? `<button onclick="closeSheet();openProfileModal()" class="w-full mt-4 py-3 bg-pastel-bg border border-pastel-border text-stone-700 font-bold rounded-tile text-sm tactile">編輯我的收款資訊</button>` : ''}
             ${canManageLogin(m) ? `<div class="mt-4 pt-4 border-t border-dashed border-pastel-border space-y-2" data-member-login="${esc(m.member_id)}">
-                <div class="flex justify-between gap-3 text-xs"><span class="text-pastel-muted flex-shrink-0">手機登入</span>
+                <div class="flex justify-between gap-3 text-xs"><span class="text-pastel-muted flex-shrink-0">${devicesSupported() ? '登入裝置' : '手機登入'}</span>
                     <span id="memberLoginStatus" class="font-bold text-stone-700 text-right min-w-0">讀取中…</span></div>
                 ${m.role === 'admin'
                     ? `<p class="text-[10px] text-pastel-muted leading-relaxed" data-head-code-note>戶長的登入碼只能從 Google 試算表選單「🏠 家庭記帳 → 登入與安全 → 產生戶長登入碼」產生（限已登記的帳號、10 分鐘內有效）。</p>`
                     : `<button onclick="issueLoginCodeFor('${esc(m.member_id)}')" data-issue-code class="w-full py-3 bg-pastel-blueLight text-pastel-blue font-bold rounded-tile text-sm tactile"><i class="fa-solid fa-key mr-1.5"></i>產生登入碼</button>`}
-                <button onclick="revokeLoginFor('${esc(m.member_id)}')" data-revoke-login class="w-full py-3 bg-white border border-pastel-border text-stone-600 font-bold rounded-tile text-sm tactile"><i class="fa-solid fa-right-from-bracket mr-1.5"></i>讓目前裝置登出</button>
+                <button onclick="revokeLoginFor('${esc(m.member_id)}')" data-revoke-login class="w-full py-3 bg-white border border-pastel-border text-stone-600 font-bold rounded-tile text-sm tactile"><i class="fa-solid fa-right-from-bracket mr-1.5"></i>${devicesSupported() ? (isMe ? '讓我在所有裝置登出' : '讓他在所有裝置登出') : '讓目前裝置登出'}</button>
             </div>` : ''}`);
         if (canManageLogin(m)) loadLoginStatus(m.member_id);
     }
@@ -7672,6 +8291,9 @@ const BANKS = [
         settingsOpenSections = settingsOpenSections.includes(id) ? [] : [id];
         paintSettingsSections();
         buzz(6);
+        /* v6.26.0：展開時才向後端讀取（每次展開都重讀，看到的是最新狀態） */
+        if (settingsOpenSections.includes(id) && id === 'devices') loadMyDevices();
+        if (settingsOpenSections.includes(id) && id === 'invites') loadInvites();
         const btn = document.getElementById('secBtn-' + id);
         if (btn && settingsOpenSections.includes(id)) btn.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
@@ -7704,9 +8326,13 @@ const BANKS = [
         if (!group) return `<div class="text-xs text-pastel-muted py-2">尚未加入群組。</div>`;
         const fam = group.members;
         const isAdmin = STATE.me?.role === 'admin';
-        /* v6.25.0 r2：通用邀請入口暫時隱藏（方案 A）。新邀請流程（收到邀請才建立自己的成員）於下一版實作；
-           在那之前，家人登入一律由戶長在成員卡片「產生登入碼」。 */
-        const help = isAdmin
+        /* v6.25.0 r2：通用邀請入口隱藏（方案 A）。v6.26.0 起新家人改由「邀請與加入申請」產生的邀請連結加入（收到邀請才建立自己的成員）；
+           既有家人換手機或多一台裝置，仍由戶長在成員卡片「產生登入碼」。後端較舊時沿用 v6.25 的說明。 */
+        const help = devicesSupported()
+            ? (isAdmin
+                ? `邀請新的家人：到下方「邀請與加入申請」產生邀請連結。已經在帳本裡的家人換手機或多一台裝置：點他的頭像，按「產生登入碼」交給他（原本的裝置不會被登出）。`
+                : `換手機或多一台裝置時，請戶長點你的頭像產生登入碼；登入中的裝置可在「我的裝置」查看與移除。`)
+            : isAdmin
             ? `新增成員請在 Google Sheets 的 <b>Members</b> 分頁加一列（member_id 自取、不重複即可），回到 App 按同步即生效。家人要在自己手機上登入：點他的頭像，按「產生登入碼」交給他。`
             : `新增成員與產生登入碼由戶長處理。換手機或重裝 App 時，請戶長點你的頭像產生登入碼。`;
         return `<div data-group-id="${esc(group.id)}" class="space-y-3">
@@ -7738,8 +8364,224 @@ const BANKS = [
     }
 
     /* ==========================================================
+       v6.26.0 我的裝置（每位成員）、邀請與加入申請（戶長）
+       清單只在展開該區時向後端讀取，存在記憶體；整頁重畫（同步後）時沿用，不會清空。
+       ========================================================== */
+    const devicesSupported = () => !CONFIG.DEMO && !verLt(BACKEND_VERSION, CONFIG.MIN_DEVICE_BACKEND);
+    const DEV = { list: null, legacy: null, max: 20, loading: false, err: '' };
+    const INV = { requests: null, invites: null, loading: false, err: '' };
+    const ORIGIN_LABEL = { code: '登入碼', head_code: '戶長登入碼', invite: '受邀加入' };
+    function devicesSummary() {
+        if (!DEV.list) return '這個帳本在哪些裝置登入';
+        return `${DEV.list.length + (DEV.legacy ? 1 : 0)} 台裝置登入中`;
+    }
+    function devicesBodyHtml() {
+        if (DEV.loading && !DEV.list) return `<div class="text-xs text-pastel-muted py-2" role="status">讀取中…</div>`;
+        if (DEV.err && !DEV.list) return `<div class="text-xs text-pastel-red py-2">${esc(DEV.err)}</div>
+            <button type="button" onclick="loadMyDevices()" class="tap44 text-xs font-bold text-pastel-accent">重新讀取</button>`;
+        if (!DEV.list) return '';
+        const row = (sid, label, sub, current) => `<div class="flex items-center gap-3 py-2 border-b border-dashed border-pastel-border last:border-0" data-device="${esc(sid)}">
+                <i class="fa-solid ${/iPhone|Android/.test(label) ? 'fa-mobile-screen-button' : 'fa-laptop'} text-pastel-muted w-4 text-center flex-shrink-0"></i>
+                <div class="flex-1 min-w-0">
+                    <div class="text-xs font-bold text-stone-700 truncate">${esc(label)}${current ? ' <span class="ml-1 px-1.5 py-0.5 rounded-full bg-pastel-accentLight text-pastel-accent text-[10px]">這台</span>' : ''}</div>
+                    <div class="text-[10px] text-pastel-muted leading-relaxed">${sub}</div>
+                </div>
+                <button type="button" data-revoke-device="${esc(sid)}" onclick="revokeMyDevice(this.dataset.revokeDevice)" class="tap44 px-2 text-[10px] font-bold text-pastel-red flex-shrink-0">${current ? '登出' : '移除'}</button>
+            </div>`;
+        const rows = DEV.list.map(d => row(d.session_id, d.device_label || '未命名的裝置',
+            esc([ORIGIN_LABEL[d.origin] || '登入', d.created_at ? fmtDay(d.created_at) + ' 登入' : '', d.last_seen_on ? '最近使用 ' + d.last_seen_on.replace(/-/g, '/') : ''].filter(Boolean).join(' · ')), d.current));
+        if (DEV.legacy) rows.push(row('legacy', '更新前登入的裝置', esc('6.26 以前登入的那一台' + (DEV.legacy.seenOn ? ' · 最近使用 ' + DEV.legacy.seenOn.replace(/-/g, '/') : '')), DEV.legacy.current));
+        /* r2：重新讀取失敗時，清單是上一次讀到的內容——要說清楚，不能看起來像最新狀態 */
+        return `${DEV.err ? `<div class="text-xs text-pastel-red" data-devices-stale>${esc(DEV.err)}（下面是上次讀到的清單） <button type="button" onclick="loadMyDevices()" class="tap44 font-bold text-pastel-accent">重新讀取</button></div>` : ''}
+            ${rows.length ? `<div>${rows.join('')}</div>` : `<div class="text-xs text-pastel-muted py-2">沒有登入中的裝置。</div>`}
+            <p class="text-[10px] text-pastel-muted leading-relaxed">每台裝置各自登入，移除一台不影響其他台。看到不認得的裝置就移除它；要在新裝置登入，請戶長產生登入碼。最多 ${Number(DEV.max) || 20} 台。</p>`;
+    }
+    function paintDevices() {
+        const b = document.getElementById('devicesBox'); if (b) b.innerHTML = devicesBodyHtml();
+        const s = document.getElementById('devicesSummary'); if (s) s.innerText = devicesSummary();
+    }
+    async function loadMyDevices() {
+        if (!devicesSupported() || DEV.loading) return;
+        DEV.loading = true; DEV.err = ''; paintDevices();
+        try {
+            const d = await api.call('listMySessions');
+            DEV.list = Array.isArray(d.sessions) ? d.sessions : []; DEV.legacy = d.legacy || null; DEV.max = Number(d.max) || 20;
+        } catch (e) {
+            if (e.code === 'CONTEXT_CHANGED') return;
+            if (isAuthFailure(e)) return handleAuthLost(e);
+            DEV.err = e.code === 'OFFLINE' ? '目前離線，連上網路後再試' : (e.message || '暫時無法讀取');
+        } finally { DEV.loading = false; paintDevices(); }
+    }
+    async function revokeMyDevice(sid) {
+        const d = sid === 'legacy' ? (DEV.legacy ? { device_label: '更新前登入的裝置', current: DEV.legacy.current } : null)
+            : (DEV.list || []).find(x => x.session_id === sid);
+        if (!d) return;
+        if (!confirm(d.current ? '要登出這台裝置嗎？\n\n登出後要再登入，需要戶長產生的登入碼。其他裝置不受影響。'
+            : `移除「${d.device_label || '未命名的裝置'}」？\n\n那台裝置下次連線時就會登出；要再使用，需要戶長產生的登入碼。`)) return;
+        buzz(12);
+        try {
+            const r = await api.call('revokeMySession', { sessionId: sid });
+            if (r && r.current) { AUTH.clear(); toast('已登出這台裝置'); setTimeout(() => location.reload(), 1200); return; }
+            toast('已移除這台裝置');
+            /* r2：只有後端確認移除後才從清單拿掉（先前失敗時也會先拿掉，離線時畫面會顯示「已移除」但其實沒有） */
+            DEV.list = DEV.list && DEV.list.filter(x => x.session_id !== sid);
+            if (sid === 'legacy') DEV.legacy = null;
+            paintDevices();
+        } catch (e) {
+            if (e.code === 'CONTEXT_CHANGED') return;
+            if (isAuthFailure(e)) return handleAuthLost(e);
+            toast(e.code === 'RESULT_UNKNOWN' ? '連線中斷，不確定是否已移除；清單會重新讀取' : e.message, true);
+        }
+        loadMyDevices();
+    }
+
+    function invitesSummary() {
+        const n = Number(STATE.pendingJoins) || 0;
+        return n ? `${n} 筆加入申請等你核准` : '邀請新的家人加入';
+    }
+    const INV_STATE_LABEL = { ACTIVE: '可使用', INVITE_EXPIRED: '已過期', INVITE_REVOKED: '已取消', INVITE_USED_UP: '已用完', INVITE_INVALID: '無效' };
+    function invitesBodyHtml() {
+        const reqs = INV.requests || [], invs = INV.invites || [];
+        const reqHtml = !INV.requests ? '' : reqs.length ? `<div class="space-y-2" data-join-requests>
+                <div class="text-xs font-bold text-stone-700">待核准的加入申請</div>
+                ${reqs.map(r => `<div class="p-3 rounded-tile bg-pastel-accentLight border border-pastel-accent/30 space-y-2" data-join-request="${esc(r.request_id)}">
+                    <div class="flex justify-between items-baseline gap-2"><span class="text-sm font-bold text-stone-800 truncate">${esc(r.nickname)}</span>
+                        <span class="text-[10px] text-pastel-muted flex-shrink-0">${esc(fmtSyncTime(r.created_at))} · ${r.invite_kind === 'group' ? '多人邀請' : '單人邀請'}</span></div>
+                    <div class="flex gap-2">
+                        <button type="button" data-rid="${esc(r.request_id)}" onclick="decideJoin(this.dataset.rid,'approve')" class="flex-1 py-2 rounded-tile bg-pastel-accent text-white text-xs font-bold tactile">核准</button>
+                        <button type="button" data-rid="${esc(r.request_id)}" onclick="decideJoin(this.dataset.rid,'rename')" class="flex-1 py-2 rounded-tile bg-white border border-pastel-border text-stone-700 text-xs font-bold tactile">改名後核准</button>
+                        <button type="button" data-rid="${esc(r.request_id)}" onclick="decideJoin(this.dataset.rid,'reject')" class="flex-1 py-2 rounded-tile bg-white border border-pastel-red/30 text-pastel-red text-xs font-bold tactile">拒絕</button>
+                    </div></div>`).join('')}
+            </div>` : `<div class="text-xs text-pastel-muted">目前沒有待核准的加入申請。</div>`;
+        const invHtml = !INV.invites ? '' : invs.length ? `<div class="space-y-1" data-invite-list>
+                <div class="text-xs font-bold text-stone-700 mb-1">邀請紀錄</div>
+                ${invs.map(v => `<div class="flex items-center gap-3 py-2 border-b border-dashed border-pastel-border last:border-0" data-invite="${esc(v.invite_id)}">
+                    <div class="flex-1 min-w-0">
+                        <div class="text-xs font-bold text-stone-700 truncate">${v.kind === 'group' ? '多人邀請' : '單人邀請'} · <span class="${v.state === 'ACTIVE' ? 'text-pastel-green' : 'text-pastel-muted'}">${esc(INV_STATE_LABEL[v.state] || v.state)}</span></div>
+                        <div class="text-[10px] text-pastel-muted truncate">已使用 ${Number(v.used) || 0}／${Number(v.max_uses) || 0} · ${esc(fmtSyncTime(v.expires_at))} 到期${v.approval === 'required' ? ' · 需核准' : ''}${v.created_by_name ? ' · ' + esc(v.created_by_name) : ''}</div>
+                    </div>
+                    ${v.state === 'ACTIVE' ? `<button type="button" data-iid="${esc(v.invite_id)}" onclick="revokeInvite(this.dataset.iid)" class="tap44 px-2 text-[10px] font-bold text-pastel-red flex-shrink-0">取消</button>` : ''}
+                </div>`).join('')}</div>` : '';
+        return `${INV.loading && !INV.requests ? `<div class="text-xs text-pastel-muted" role="status">讀取中…</div>` : ''}
+            ${INV.err ? `<div class="text-xs text-pastel-red">${esc(INV.err)} <button type="button" onclick="loadInvites()" class="tap44 font-bold text-pastel-accent">重新讀取</button></div>` : ''}
+            ${reqHtml}
+            <div class="space-y-2">
+                <div class="text-xs font-bold text-stone-700">產生邀請</div>
+                <div class="p-3 rounded-tile bg-pastel-bg border border-pastel-border space-y-2">
+                    <div class="text-xs text-stone-700"><b>單人邀請</b>：傳給一位家人，24 小時內有效，用一次就失效。</div>
+                    <label class="flex items-center gap-2 text-[10px] text-stone-600"><input type="checkbox" id="invApprove" class="w-4 h-4 accent-pastel-accent">他送出後要等我核准</label>
+                    <button type="button" onclick="createInvite('single')" data-create-invite="single" class="w-full py-2.5 rounded-tile bg-pastel-accent text-white text-xs font-bold tactile"><i class="fa-solid fa-user-plus mr-1.5"></i>產生單人邀請</button>
+                </div>
+                <div class="p-3 rounded-tile bg-pastel-bg border border-pastel-border space-y-2">
+                    <div class="text-xs text-stone-700"><b>多人邀請</b>：可以貼在家族群組，7 天內最多 10 人，每個人都要你核准。</div>
+                    <button type="button" onclick="createInvite('group')" data-create-invite="group" class="w-full py-2.5 rounded-tile bg-white border border-pastel-border text-stone-700 text-xs font-bold tactile"><i class="fa-solid fa-users mr-1.5"></i>產生多人邀請</button>
+                </div>
+                <p class="text-[10px] text-pastel-muted leading-relaxed">邀請只能讓「新的家人」加入成為一般成員。已經在帳本裡的家人換手機或多一台裝置，請不要傳邀請：到「群組與成員」點他的頭像，按「產生登入碼」。</p>
+            </div>
+            ${invHtml}`;
+    }
+    function paintInvites() {
+        const b = document.getElementById('invitesBox');
+        if (b) {
+            const keep = document.getElementById('invApprove');        // 重畫時保留勾選
+            const was = keep ? keep.checked : false;
+            b.innerHTML = invitesBodyHtml();
+            const now = document.getElementById('invApprove'); if (now) now.checked = was;
+        }
+        const s = document.getElementById('invitesSummary'); if (s) s.innerText = invitesSummary();
+        paintJoinBadge();
+    }
+    function paintJoinBadge() {
+        const dot = document.getElementById('navSettingsDot');
+        const n = Number(STATE.pendingJoins) || 0;
+        if (dot) dot.classList.toggle('hidden', !(isGroupAdminMe() && devicesSupported() && n > 0));
+    }
+    async function loadInvites() {
+        if (!devicesSupported() || !isGroupAdminMe() || INV.loading) return;
+        INV.loading = true; INV.err = ''; paintInvites();
+        try {
+            const [r, i] = await Promise.all([api.call('listJoinRequests'), api.call('listInvitations')]);
+            INV.requests = Array.isArray(r.requests) ? r.requests : [];
+            INV.invites = Array.isArray(i.invitations) ? i.invitations : [];
+            STATE.pendingJoins = INV.requests.length;
+        } catch (e) {
+            if (e.code === 'CONTEXT_CHANGED') return;
+            if (isAuthFailure(e)) return handleAuthLost(e);
+            INV.err = e.code === 'OFFLINE' ? '目前離線，連上網路後再試' : (e.message || '暫時無法讀取');
+        } finally { INV.loading = false; paintInvites(); }
+    }
+    let _inviteShare = null;
+    async function createInvite(kind) {
+        if (!devicesSupported()) return;
+        const approval = kind === 'single' && document.getElementById('invApprove')?.checked ? 'required' : 'auto';
+        const btn = document.querySelector(`[data-create-invite="${kind}"]`);
+        if (btn) btn.disabled = true;
+        buzz(12);
+        try {
+            const d = await api.call('createInvitation', { kind, approval });
+            const link = inviteLinkFor(d.secret);
+            if (!link) throw new Error('無法組成邀請連結（缺少帳本資訊），請重新開啟 App 後再試');
+            const fam = STATE.familyName || '家庭記帳';
+            /* r2：需要核准的邀請，分享文字說「申請加入」，不讓對方以為點了就能用 */
+            const needOk = d.kind === 'group' || d.approval === 'required';
+            _inviteShare = { link, text: `邀請你加入「${fam}」的家庭記帳。點連結、輸入你的名字就${needOk ? '能申請加入（我核准後就能使用）' : '可以加入'}：` };
+            openSheet(`
+                <h3 class="text-lg font-bold text-stone-800 mb-1">${d.kind === 'group' ? '多人邀請' : '單人邀請'}已產生</h3>
+                <p class="text-xs text-pastel-muted mb-4">${d.kind === 'group' ? `${esc(fmtSyncTime(d.expiresAt))} 前有效，最多 ${Number(d.maxUses) || 0} 人，每個人都要你核准。` : `${esc(fmtSyncTime(d.expiresAt))} 前有效，只能一個人使用${d.approval === 'required' ? '，送出後要你核准' : ''}。`}</p>
+                <div class="selectable text-[10px] bg-pastel-bg rounded-tile p-3 break-all text-stone-700" data-invite-link>${esc(link)}</div>
+                <div class="flex gap-2 mt-4">
+                    <button type="button" onclick="copyInviteLink()" class="flex-1 py-3 rounded-tile bg-pastel-accent text-white font-bold text-sm tactile"><i class="fa-solid fa-copy mr-1.5"></i>複製連結</button>
+                    ${navigator.share ? `<button type="button" onclick="shareInviteLink()" class="flex-1 py-3 rounded-tile bg-white border border-pastel-border text-stone-700 font-bold text-sm tactile"><i class="fa-solid fa-share-nodes mr-1.5"></i>分享</button>` : ''}
+                </div>
+                <div class="mt-4 space-y-1.5 text-[10px] text-pastel-muted leading-relaxed">
+                    <p>連結裡有這本帳的家庭代碼與邀請碼，請只傳給要邀請的家人。這個畫面關掉後就看不到這個連結了；需要的話再產生一個，或在「邀請紀錄」取消。</p>
+                    <p>對方用 iPhone 的話，請他先依畫面指示加入主畫面，再從主畫面打開。</p>
+                </div>`);
+        } catch (e) {
+            if (e.code !== 'CONTEXT_CHANGED') toast(e.code === 'RESULT_UNKNOWN' ? '連線中斷，不確定邀請是否已產生；請看「邀請紀錄」，用不到的可以取消' : e.message, true);
+        } finally { if (btn) btn.disabled = false; }
+        loadInvites();
+    }
+    function copyInviteLink() { if (_inviteShare) copyText(_inviteShare.text + '\n' + _inviteShare.link, '已複製邀請連結'); }
+    async function shareInviteLink() {
+        if (!_inviteShare || !navigator.share) return;
+        try { await navigator.share({ title: '家庭記帳邀請', text: _inviteShare.text, url: _inviteShare.link }); }
+        catch (e) { if (e && e.name !== 'AbortError') copyInviteLink(); }
+    }
+    async function revokeInvite(id) {
+        const v = (INV.invites || []).find(x => x.invite_id === id); if (!v) return;
+        if (!confirm(`取消這個${v.kind === 'group' ? '多人' : '單人'}邀請？\n\n之後就沒有人能再用這個連結申請加入。已經送出的申請不受影響（待核准的仍由你決定）。`)) return;
+        buzz(12);
+        try { await api.call('revokeInvitation', { inviteId: id }); toast('已取消邀請'); }
+        catch (e) { if (e.code !== 'CONTEXT_CHANGED') toast(e.message, true); }
+        loadInvites();
+    }
+    async function decideJoin(rid, mode) {
+        const r = (INV.requests || []).find(x => x.request_id === rid); if (!r) return;
+        const fam = STATE.familyName || '家庭記帳';
+        const payload = { requestId: rid, approve: mode !== 'reject' };
+        if (mode === 'reject') {
+            if (!confirm(`不讓「${r.nickname}」加入「${fam}」？\n\n對方會看到「戶長沒有核准」。`)) return;
+        } else if (mode === 'rename') {
+            const n = prompt(`核准「${r.nickname}」加入，名字改成：`, r.nickname);
+            if (n == null) return;
+            const nick = String(n).replace(/\s+/g, ' ').trim();
+            if (!nick) return toast('名字不能是空的', true);
+            payload.nickname = nick;
+        } else if (!confirm(`讓「${r.nickname}」加入「${fam}」？\n\n他會成為一般成員；之後可以在成員卡片管理他的登入。`)) return;
+        buzz(12);
+        try {
+            const d = await api.call('decideJoinRequest', payload);
+            toast(d.status === 'approved' ? `已核准「${d.nickname || r.nickname}」加入` : '已拒絕');
+            if (d.status === 'approved') revalidate();     // 成員名單多了一位
+        } catch (e) {
+            if (e.code !== 'CONTEXT_CHANGED') toast(e.code === 'RESULT_UNKNOWN' ? '連線中斷，不確定是否已處理；清單會重新讀取' : e.message, true);
+        }
+        loadInvites();
+    }
+    /* ==========================================================
        v6.25.0 r2 戶長：成員登入管理
-       ・產生登入碼：指定這位成員、24 小時內有效、只能用一次；兌換後他原本的登入會被取代。
+       ・產生登入碼：指定這位成員、24 小時內有效、只能用一次；v6.26.0 起兌換後是「多一台裝置」，原本的裝置不受影響（6.25 後端：取代原本的登入）。
        ・讓目前裝置登出：手機遺失時使用，立即讓他現在的登入失效（尚未兌換的登入碼一併作廢）。
        這是修補期的首次登入／恢復措施；長期改為「帳號＋群組成員資格」，換裝置不必每次找戶長。
        ========================================================== */
@@ -7759,7 +8601,7 @@ const BANKS = [
             /* r4（R3-F04）：「最近一次回報的版本」只是這位成員某台裝置最近一次連線時帶的版本，不是裝置盤點；
                有「未回報版本的使用」（舊版 App 不帶版本）時另外提示 */
             const oldUse = x.noVersionOn && (!x.clientVersionOn || x.noVersionOn >= x.clientVersionOn);
-            b2.innerHTML = `${x.hasToken ? '已登入' + (x.tokenSeenOn ? `・最近使用 ${esc(x.tokenSeenOn)}` : '') : '目前沒有登入'}`
+            b2.innerHTML = `${x.hasToken ? (x.devices > 0 ? `${Number(x.devices)} 台裝置登入中` : '已登入') + (x.tokenSeenOn ? `・最近使用 ${esc(x.tokenSeenOn)}` : '') : '目前沒有登入'}`
                 + (x.clientVersion ? `<br>最近一次回報的版本：${esc(x.clientVersion)}${x.clientVersionOn ? `（${esc(x.clientVersionOn)}）` : ''}` : '')
                 + (oldUse ? `<br><span class="text-pastel-red">${esc(x.noVersionOn)} 有未回報版本的使用（可能是舊版 App 或舊分頁）</span>` : '')
                 + (x.pendingCode ? `<br>有一組登入碼尚未使用，${esc(fmtSyncTime(x.pendingCode.expiresAt))} 到期` : '');
@@ -7771,7 +8613,10 @@ const BANKS = [
     async function issueLoginCodeFor(memberId) {
         const m = memberOf(memberId); if (!m) return;
         const isMe = memberId === STATE.me?.member_id;
-        if (!confirm(`為「${m.nickname}」產生登入碼？\n\n・24 小時內有效，只能用一次。\n・${isMe ? '你用登入碼登入後，原本的登入（包括這台裝置）會失效。' : '他用登入碼登入後，原本在其他裝置的登入會失效。'}\n・之前產生、還沒用掉的登入碼會作廢。`)) return;
+        const effect = devicesSupported()
+            ? (isMe ? '你用登入碼在新裝置登入後，這台裝置仍保持登入。' : '他用登入碼在新裝置登入後，原本已登入的裝置仍保持登入（可在他的「我的裝置」移除）。')
+            : (isMe ? '你用登入碼登入後，原本的登入（包括這台裝置）會失效。' : '他用登入碼登入後，原本在其他裝置的登入會失效。');
+        if (!confirm(`為「${m.nickname}」產生登入碼？\n\n・24 小時內有效，只能用一次。\n・${effect}\n・之前產生、還沒用掉的登入碼會作廢。`)) return;
         buzz(12);
         try {
             const d = await api.call('issueLoginCode', { targetMemberId: memberId });
@@ -7791,14 +8636,15 @@ const BANKS = [
     async function revokeLoginFor(memberId) {
         const m = memberOf(memberId); if (!m) return;
         const isMe = memberId === STATE.me?.member_id;
-        if (!confirm(isMe ? '讓你自己目前的登入失效？\n\n這台裝置會立刻登出，之後需要從試算表選單產生戶長登入碼才能再登入。'
-            : `讓「${m.nickname}」目前的登入失效？\n\n他的裝置會在下次連線時登出（例如手機遺失時使用）。之後要再登入，需要你產生新的登入碼。`)) return;
+        const all = devicesSupported();
+        if (!confirm(isMe ? `讓你自己${all ? '在所有裝置' : '目前的登入'}登出？\n\n這台裝置會立刻登出，之後需要從試算表選單產生戶長登入碼才能再登入。`
+            : `讓「${m.nickname}」${all ? '在所有裝置登出' : '目前的登入失效'}？\n\n他的${all ? '每一台' : ''}裝置會在下次連線時登出（例如手機遺失時使用），還沒用掉的登入碼也會作廢。之後要再登入，需要你產生新的登入碼。`)) return;
         buzz(12);
         try {
-            await api.call('revokeMemberLogin', { targetMemberId: memberId });
+            const r = await api.call('revokeMemberLogin', { targetMemberId: memberId });
             closeSheet();
             if (isMe) return handleAuthLost({ code: 'NEED_AUTH' });
-            toast(`已讓「${m.nickname}」登出`);
+            toast(all && r && r.sessions != null ? `已讓「${m.nickname}」在所有裝置登出` : `已讓「${m.nickname}」登出`);
         } catch (e) { toast(e.message, true); }
     }
 
@@ -8137,6 +8983,12 @@ const BANKS = [
                 groups.length ? `${esc(groups[0].name)} · ${gCount} 人` : '尚未加入群組', '',
                 groups.length ? groups.map(g => renderGroupMembers(g)).join('') : renderGroupMembers(null))}
 
+            ${devicesSupported() && isGroupAdminMe() ? section('invites', 'fa-solid fa-user-plus text-pastel-green', '邀請與加入申請',
+                `<span id="invitesSummary">${esc(invitesSummary())}</span>`, '', `<div id="invitesBox" class="space-y-4">${invitesBodyHtml()}</div>`) : ''}
+
+            ${devicesSupported() ? section('devices', 'fa-solid fa-mobile-screen-button text-pastel-blue', '我的裝置',
+                `<span id="devicesSummary">${esc(devicesSummary())}</span>`, '', `<div id="devicesBox" class="space-y-3">${devicesBodyHtml()}</div>`) : ''}
+
             ${section('fixed', 'fa-solid fa-rotate text-pastel-green', '固定收支', `個人 ${nPersonal} 條 · 群組 ${nGroup} 條`, '', fixedBody)}
 
             ${section('cat-expense', 'fa-solid fa-icons text-pastel-blue', '支出分類', `${cat('EXPENSE_CATEGORY').length} 項${sortNote('EXPENSE_CATEGORY')}`,
@@ -8189,6 +9041,7 @@ const BANKS = [
 
                 </div>`)}`;
         paintSettingsSections();
+        paintJoinBadge();
         updateLevelDisplays();
         syncFrameHeight();
     }
@@ -8215,7 +9068,7 @@ const BANKS = [
                         <select id="rType" onchange="ruleTypeChanged(); ruleFundUi()" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm">
                             <option ${isExp ? 'selected' : ''}>支出</option><option ${!isExp ? 'selected' : ''}>收入</option></select></div>
                     <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">金額</label>
-                        <input id="rAmount" type="number" inputmode="decimal" value="${esc(r?.amount || '')}" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm"></div></div>
+                        <input id="rAmount" type="number" inputmode="numeric" step="1" oninput="this.dataset.touched = '1'" value="${esc(r && r.amount !== '' && r.amount != null ? wholeYuan(r.amount) : '')}" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm"></div></div>
                 <div class="grid grid-cols-2 gap-3">
                     <div class="field"><label class="block text-xs font-bold text-stone-600 mb-1.5">分類</label>
                         <select id="rCat" class="w-full p-3 rounded-tile bg-pastel-bg border border-pastel-border text-sm truncate">${catOpts(isExp ? 'EXPENSE_CATEGORY' : 'INCOME_CATEGORY')}</select></div>
@@ -8285,11 +9138,17 @@ const BANKS = [
             .filter(c => c.item_group === (isExp ? 'EXPENSE_CATEGORY' : 'INCOME_CATEGORY'))
             .map(c => `<option value="${esc(c.item_name)}">${esc(c.item_name)}</option>`).join('');
     }
+    /** r5：固定收支的金額＝整數元；舊規則若有零頭、而且沒有改金額，照原本的數字送回（不改寫既有設定） */
+    function ruleAmountInput(ruleId) {
+        const ex = ruleId ? (STATE.rules || []).find(x => x.rule_id === ruleId) : null;
+        const el = document.getElementById('rAmount');
+        return keepOrYuan(el.value, ex ? ex.amount : undefined, el.dataset.touched === '1');
+    }
     async function saveRule(ruleId) {
         const rule = {
             rule_id: ruleId || '', name: document.getElementById('rName').value.trim(),
             entry_type: document.getElementById('rType').value,
-            amount: Number(document.getElementById('rAmount').value),
+            amount: ruleAmountInput(ruleId),
             category: document.getElementById('rCat').value, tag: document.getElementById('rTag').value,
             freq: document.getElementById('rFreq').value, auto_mode: document.getElementById('rMode').value,
             start_date: document.getElementById('rStart').value || todayISO(),
@@ -8853,10 +9712,10 @@ const BANKS = [
         既然要補，就直接輸出人看得懂的字串，不必先吐 JSON 再要使用者自己解析。 */
     function splitPlain(t) {
         const sp = parseSplit(t);
-        if (!sp.length) return '';
-        const total = Math.round(Number(t.amount) || 0);
+        if (!sp.length) return hasExplicitSplit(t) ? `${t.payer_id === STATE.me?.member_id ? '我' : nameOf(t.payer_id)}自付 ${fmt(t.amount)}` : '';
+        const total = money(t.amount);
         const others = sp.reduce((a, b) => a + (Number(b.amount) || 0), 0);
-        const mine = total - others;
+        const mine = money(total - others);
         const parts = sp.map(s => `${nameOf(s.member_id)} ${fmt(s.amount)}`);
         // v6.23.1：債務人也會看到別人代墊的這筆，「自付」指的是付款人本人，不是「我」
         if (mine > 0) parts.push(`${t.payer_id === STATE.me?.member_id ? '我' : nameOf(t.payer_id)}自付 ${fmt(mine)}`);
@@ -8872,13 +9731,14 @@ const BANKS = [
             const pl = countsInPL(t) && plKind(t, currentMode) !== null;
             /* 我的分攤：個人帳本＝認列的份額（付款人：總額扣掉別人；債務人：被記的那一份）。
                家庭帳本維持既有的付款人份額口徑（見更新說明「既有差異」）。 */
-            const mine = currentMode === 'personal' ? Math.round(plAmount(t, 'personal')) : myShareOf(t);
+            /* r4（R3-F02）：以分保留（先前四捨五入到元，兩筆 100.49 匯出成 200，與首頁的 200.98 對不起來） */
+            const mine = money(currentMode === 'personal' ? plAmount(t, 'personal') : myShareOf(t));
             return {
                 date: t.date,
                 type: t.entry_type,
                 category: t.category || '',
                 tag: displayTag(t.tag),          // 走遮罩：不把別人的卡片真名寫進檔案
-                amount: Math.round(Number(t.amount) || 0),
+                amount: money(t.amount),
                 mine: mine,
                 inPL: pl,
                 isIncome: plKind(t, currentMode) === 'income',
@@ -8899,12 +9759,13 @@ const BANKS = [
 
     /** 依匯出資料算出正確合計（只認計入損益的「我的分攤」） */
     function exportTotals(rows) {
+        /* r4（R3-F02）：以整數分加總，避免浮點誤差（0.1＋0.2）讓合計多出或少掉一分 */
         let income = 0, expense = 0, excluded = 0;
         rows.forEach(r => {
             if (!r.inPL) { excluded++; return; }
-            if (r.isIncome) income += r.amount; else expense += r.mine;
+            if (r.isIncome) income += toCents(r.amount); else expense += toCents(r.mine);
         });
-        return { income, expense, net: income - expense, excluded, count: rows.length };
+        return { income: income / 100, expense: expense / 100, net: (income - expense) / 100, excluded, count: rows.length };
     }
 
     /** 檔案輸出：iOS PWA 對 <a download> 支援差，優先走系統分享 */
@@ -8974,7 +9835,7 @@ const BANKS = [
         const byCat = {};
         rows.filter(r => r.inPL && !r.isIncome).forEach(r => {
             const k = r.category || '未分類';
-            byCat[k] = (byCat[k] || 0) + r.mine;
+            byCat[k] = money((byCat[k] || 0) + r.mine);
         });
         const cats = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
         const maxCat = cats.length ? cats[0][1] : 0;
@@ -8987,7 +9848,7 @@ const BANKS = [
           <td class="cat">${esc2(name)}</td>
           <td class="barcell"><div class="bar" style="width:${maxCat ? (amt / maxCat * 100).toFixed(1) : 0}%;background:${catColor(name)}"></div></td>
           <td class="pct">${T.expense ? (amt / T.expense * 100).toFixed(1) : '0.0'}%</td>
-          <td class="amt">${fmt(amt)}</td>
+          <td class="amt">${fmtC(amt)}</td>
         </tr>`).join('');
 
         const txnRows = rows.map(r => `
@@ -8996,8 +9857,8 @@ const BANKS = [
           <td>${esc2(r.type)}</td>
           <td>${esc2(r.category)}</td>
           <td>${esc2(r.tag)}</td>
-          <td class="amt">${fmt(r.amount)}</td>
-          <td class="amt">${r.inPL && !r.isIncome ? fmt(r.mine) : '—'}</td>
+          <td class="amt">${fmtC(r.amount)}</td>
+          <td class="amt">${r.inPL && !r.isIncome ? fmtC(r.mine) : '—'}</td>
           <td class="note">${esc2(r.note)}${r.split ? `<div class="split">${esc2(r.split)}</div>` : ''}</td>
           <td>${esc2(r.who)}</td>
         </tr>`).join('');
@@ -9056,9 +9917,9 @@ const BANKS = [
 </div>
 
 <div class="kpis">
-  <div class="kpi"><div class="lbl">總收入</div><div class="val green">${fmt(T.income)}</div></div>
-  <div class="kpi"><div class="lbl">總支出</div><div class="val">${fmt(T.expense)}</div></div>
-  <div class="kpi"><div class="lbl">淨結餘</div><div class="val ${T.net >= 0 ? 'green' : 'blue'}">${fmt(T.net)}</div></div>
+  <div class="kpi"><div class="lbl">總收入</div><div class="val green">${fmtC(T.income)}</div></div>
+  <div class="kpi"><div class="lbl">總支出</div><div class="val">${fmtC(T.expense)}</div></div>
+  <div class="kpi"><div class="lbl">淨結餘</div><div class="val ${T.net >= 0 ? 'green' : 'blue'}">${fmtC(T.net)}</div></div>
 </div>
 
 ${cats.length ? `<section>

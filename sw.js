@@ -8,7 +8,7 @@
    ・啟用時只刪「本 App 自己的舊快取」（jiating- 開頭），同網域其他程式的快取不碰。
    ・安裝成功後才 skipWaiting。 */
 const CACHE_PREFIX = 'jiating-';
-const CACHE = CACHE_PREFIX + 'v6-25-0';
+const CACHE = CACHE_PREFIX + 'v6-26-0';
 const CORE = ['./', './index.html'];
 const OPTIONAL = ['./manifest.json', './icon-192.png', './icon-512.png', './sortable.min.js'];
 
